@@ -1,80 +1,103 @@
 package com.apex.backend.controller;
 
-import com.apex.backend.service.BotStrategy;
-import com.apex.backend.service.FyersService;
+import com.apex.backend.dto.PerformanceMetrics;
+import com.apex.backend.model.Trade;
+import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:4200") // Allow Angular access
+@RequestMapping("/api/trades")
 @RequiredArgsConstructor
+@Slf4j
+@CrossOrigin(origins = "http://localhost:4200")
 public class TradeController {
 
-    private final FyersService fyersService;
-    private final BotStrategy botStrategy;
-    // Status check for UI
-    @GetMapping("/status")
-    public Map<String, Object> getSystemStatus() {
-        String quoteResponse = fyersService.getQuote(null);
-        boolean isConnected = (quoteResponse != null);
-        return Map.of(
-                "status", isConnected ? "ONLINE" : "OFFLINE",
-                "message", isConnected ? "Token Active" : "Need Token Exchange",
-                "botActive", botStrategy.getStatus(),
-                "botState", botStrategy.getBotState(),
-                "performance", botStrategy.getPerformance()
-        );
+    private final TradeRepository tradeRepository;
+
+    @GetMapping
+    public List<Trade> getAllTrades() {
+        log.info("📊 Fetching all trades");
+        return tradeRepository.findAll();
     }
 
-    // --- Core Bot Endpoints ---
-
-    @GetMapping("/logs")
-    public List<String> getLogs() {
-        return botStrategy.getLiveLogs();
+    @GetMapping("/recent")
+    public List<Trade> getRecentTrades(@RequestParam(defaultValue = "10") int limit) {
+        log.info("📊 Fetching recent {} trades", limit);
+        List<Trade> allTrades = tradeRepository.findAll();
+        int startIndex = Math.max(0, allTrades.size() - limit);
+        return allTrades.subList(startIndex, allTrades.size());
     }
 
-    @GetMapping("/paper-orders")
-    public List<Map<String, Object>> getPaperOrders() {
-        return botStrategy.getPaperOrders();
+    @GetMapping("/stats")
+    public Map<String, Object> getTradeStats() {
+        log.info("📊 Calculating trade stats");
+        List<Trade> allTrades = tradeRepository.findAll();
+
+        if (allTrades.isEmpty()) {
+            return Map.of(
+                    "totalTrades", 0,
+                    "winningTrades", 0,
+                    "losingTrades", 0,
+                    "winRate", 0.0,
+                    "profitFactor", 0.0,
+                    "totalProfit", 0.0,
+                    "totalLoss", 0.0,
+                    "bestTrade", 0.0,
+                    "worstTrade", 0.0
+            );
+        }
+
+        long winCount = allTrades.stream().filter(t -> t.getPnl() != null && t.getPnl() > 0).count();
+        long lossCount = allTrades.stream().filter(t -> t.getPnl() != null && t.getPnl() < 0).count();
+
+        double totalProfit = allTrades.stream()
+                .filter(t -> t.getPnl() != null && t.getPnl() > 0)
+                .mapToDouble(Trade::getPnl)
+                .sum();
+
+        double totalLoss = Math.abs(allTrades.stream()
+                .filter(t -> t.getPnl() != null && t.getPnl() < 0)
+                .mapToDouble(Trade::getPnl)
+                .sum());
+
+        double profitFactor = totalLoss > 0 ? totalProfit / totalLoss : 0.0;
+        double winRate = allTrades.size() > 0 ? (double) winCount / allTrades.size() * 100 : 0.0;
+
+        double bestTrade = allTrades.stream()
+                .filter(t -> t.getPnl() != null)
+                .mapToDouble(Trade::getPnl)
+                .max()
+                .orElse(0.0);
+
+        double worstTrade = allTrades.stream()
+                .filter(t -> t.getPnl() != null)
+                .mapToDouble(Trade::getPnl)
+                .min()
+                .orElse(0.0);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalTrades", allTrades.size());
+        stats.put("winningTrades", (int) winCount);
+        stats.put("losingTrades", (int) lossCount);
+        stats.put("winRate", Double.parseDouble(String.format("%.2f", winRate)));
+        stats.put("profitFactor", Double.parseDouble(String.format("%.2f", profitFactor)));
+        stats.put("totalProfit", Double.parseDouble(String.format("%.2f", totalProfit)));
+        stats.put("totalLoss", Double.parseDouble(String.format("%.2f", totalLoss)));
+        stats.put("bestTrade", Double.parseDouble(String.format("%.2f", bestTrade)));
+        stats.put("worstTrade", Double.parseDouble(String.format("%.2f", worstTrade)));
+
+        return stats;
     }
 
-    // ✅ FIXED: Updated to match new FyersService signature
-    @GetMapping("/placeOrder")
-    public String placeOrder(@RequestParam String symbol,
-                             @RequestParam int qty,
-                             @RequestParam String side, // Now expects "BUY" or "SELL"
-                             @RequestParam(defaultValue = "MARKET") String type,
-                             @RequestParam(defaultValue = "0.0") double price,
-                             @RequestParam(defaultValue = "true") boolean paperMode) {
-
-        fyersService.placeOrder(symbol, qty, side, type, price, paperMode);
-        return "Order Command Issued: " + side + " " + qty + " " + symbol;
-    }
-
-    // START COMMAND (dynamic symbol, strategy, mode)
-    @GetMapping("/bot/start")
-    public String startBot(
-            @RequestParam(defaultValue = "NSE:SBIN-EQ") String symbol,
-            @RequestParam(defaultValue = "MOMENTUM") String strategy,
-            @RequestParam(defaultValue = "true") boolean paperMode
-    ) {
-        botStrategy.startBot(symbol, strategy, paperMode);
-        return "Bot Started using " + strategy + " on " + symbol + " | Paper: " + paperMode;
-    }
-
-    @GetMapping("/bot/stop")
-    public String stopBot() {
-        botStrategy.stopBot();
-        return "Bot Stopped";
-    }
-
-    // Quote endpoint for UI
-    @GetMapping("/quote")
-    public String getQuote(@RequestParam String symbol) {
-        return fyersService.getQuote(symbol);
+    @GetMapping("/all")
+    public List<Trade> getAllTradesHistory() {
+        log.info("📊 Fetching complete trade history");
+        return tradeRepository.findAll();
     }
 }

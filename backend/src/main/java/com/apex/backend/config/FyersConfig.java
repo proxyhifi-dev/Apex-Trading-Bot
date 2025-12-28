@@ -1,15 +1,19 @@
 package com.apex.backend.config;
 
-import lombok.Data;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.config.annotation.CorsRegistry;
+import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 
-@Data
 @Configuration
-@ConfigurationProperties(prefix = "fyers")
-public class FyersConfig {
-    private String appId;
-    private String secretId;
-    private String userId;
-    private String accessToken;
+public class FyersConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addCorsMappings(CorsRegistry registry) {
+        registry.addMapping("/api/**")
+                .allowedOrigins("http://localhost:4200", "http://localhost:3000")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true)
+                .maxAge(3600);
+    }
 }

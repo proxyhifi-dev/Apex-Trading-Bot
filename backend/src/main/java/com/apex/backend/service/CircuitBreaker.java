@@ -1,22 +1,24 @@
 package com.apex.backend.service;
 
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 @Slf4j
 @Component
 public class CircuitBreaker {
-
     private double dailyPnL = 0.0;
     private int consecutiveLosses = 0;
+    private int totalTrades = 0; // NEW
 
     // Limits
     private static final double MAX_DAILY_LOSS_PCT = 0.05; // 5%
-    private static final int MAX_CONSECUTIVE_LOSSES = 4;
+    private static final int MAX_CONSECUTIVE_LOSSES = 3; // Reduced from 4
+    private static final int MAX_DAILY_TRADES = 10; // NEW
 
     public void recordTrade(double pnl) {
         this.dailyPnL += pnl;
+        this.totalTrades++;
+
         if (pnl < 0) {
             consecutiveLosses++;
         } else {
@@ -38,11 +40,26 @@ public class CircuitBreaker {
             return false;
         }
 
+        // NEW: Check Max Trades
+        if (totalTrades >= MAX_DAILY_TRADES) {
+            log.warn("⛔ CIRCUIT BREAKER: Max Daily Trades Hit ({})", totalTrades);
+            return false;
+        }
+
         return true;
     }
 
     public void resetDailyStats() {
         this.dailyPnL = 0.0;
         this.consecutiveLosses = 0;
+        this.totalTrades = 0;
+    }
+
+    public double getDailyPnL() {
+        return dailyPnL;
+    }
+
+    public int getTotalTrades() {
+        return totalTrades;
     }
 }

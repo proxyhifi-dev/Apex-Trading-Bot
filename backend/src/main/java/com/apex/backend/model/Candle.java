@@ -1,13 +1,17 @@
+// Candle.java
 package com.apex.backend.model;
 
-import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.Builder;
 import lombok.NoArgsConstructor;
+import lombok.AllArgsConstructor;
+
 import java.time.LocalDateTime;
 
 @Data
-@AllArgsConstructor
+@Builder
 @NoArgsConstructor
+@AllArgsConstructor
 public class Candle {
     private double open;
     private double high;
