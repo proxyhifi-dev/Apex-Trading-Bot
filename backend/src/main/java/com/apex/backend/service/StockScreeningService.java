@@ -3,19 +3,13 @@ package com.apex.backend.service;
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Candle;
 import com.apex.backend.model.StockScreeningResult;
-import com.apex.backend.model.TradingStrategy;
-import com.apex.backend.model.WatchlistStock;
 import com.apex.backend.repository.StockScreeningResultRepository;
-import com.apex.backend.repository.TradingStrategyRepository;
-import com.apex.backend.repository.WatchlistStockRepository;
 import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -23,112 +17,52 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StockScreeningService {
 
-    private final FyersService fyersService;
-    private final TradingStrategyRepository strategyRepo;
-    private final WatchlistStockRepository watchlistRepo;
-    private final StockScreeningResultRepository screeningRepo;
-    private final IndicatorEngine indicatorEngine;
     private final StrategyConfig config;
+    private final FyersService fyersService;
     private final SmartSignalGenerator signalGenerator;
+    private final StockScreeningResultRepository screeningRepo;
 
-    @Scheduled(fixedDelayString = "${apex.scanner.interval}000") // Added prefix apex.
-    public void runDynamicScreening() {
-        if (!config.getScanner().isEnabled()) {
-            return;
-        }
+    public List<String> getUniverse() {
+        // Returns symbol list from application.properties
+        return config.getTrading().getUniverse().getSymbols();
+    }
 
-        log.info("🔍 Starting Dynamic Stock Screening...");
-
+    // ✅ FIXED: Updated to use Multi-Timeframe Data
+    public void runScreening() {
         List<String> universe = getUniverse();
-        List<TradingStrategy> activeStrategies = strategyRepo.findByActiveTrue();
-
-        if (activeStrategies.isEmpty()) {
-            log.warn("⚠️ No active strategies found in DB");
-            return;
-        }
-        TradingStrategy strategy = activeStrategies.get(0);
-
-        int candidatesFound = 0;
-        int minScore = config.getScanner().getMinScore();
-        int maxCandidates = config.getScanner().getMaxCandidates();
-
         for (String symbol : universe) {
-            if (candidatesFound >= maxCandidates) {
-                log.info("✅ Max candidates ({}) reached, stopping scan", maxCandidates);
-                break;
-            }
-
             try {
-                Thread.sleep(200); // Rate limit
+                // Fetch Multi-Timeframe Data (to match SmartSignalGenerator signature)
+                List<Candle> m5 = fyersService.getHistoricalData(symbol, 200, "5");
+                List<Candle> m15 = fyersService.getHistoricalData(symbol, 200, "15");
+                List<Candle> h1 = fyersService.getHistoricalData(symbol, 200, "60");
+                List<Candle> daily = fyersService.getHistoricalData(symbol, 200, "D");
 
-                SignalDecision decision = processSymbolSmart(symbol, strategy);
+                if (m5.size() < 50) continue;
 
-                if (decision != null && decision.hasSignal && decision.score >= minScore) {
-                    saveSignal(symbol, strategy, decision);
-                    candidatesFound++;
-                    log.info("🔥 Signal #{} saved: {} | Score: {} | Grade: {}",
-                            candidatesFound, symbol, decision.score, decision.grade);
+                // ✅ CALL NEW SIGNATURE
+                SignalDecision decision = signalGenerator.generateSignalSmart(symbol, m5, m15, h1, daily);
+
+                if (decision.isHasSignal()) {
+                    saveSignal(decision);
                 }
-
             } catch (Exception e) {
-                log.error("❌ Screening failed for {}: {}", symbol, e.getMessage());
+                log.error("Error screening {}: {}", symbol, e.getMessage());
             }
         }
-
-        log.info("✅ Scan complete. Saved {} / {} candidates.", candidatesFound, universe.size());
     }
 
-    private List<String> getUniverse() {
-        // ✅ FIXED: Correct access path for symbols in new StrategyConfig
-        List<String> symbols = config.getTrading().getUniverse().getSymbols();
-
-        if (symbols != null && !symbols.isEmpty()) {
-            log.debug("📋 Using configured universe: {} symbols", symbols.size());
-            return symbols;
-        }
-
-        log.warn("⚠️ No universe configured, using Watchlist fallback");
-        return getWatchlistSymbols();
-    }
-
-    private List<String> getWatchlistSymbols() {
-        List<WatchlistStock> watchlist = watchlistRepo.findByActiveTrue();
-        List<String> symbols = new ArrayList<>();
-        for (WatchlistStock stock : watchlist) {
-            symbols.add(stock.getSymbol());
-        }
-        return symbols;
-    }
-
-    private SignalDecision processSymbolSmart(String symbol, TradingStrategy strategy) {
-        List<Candle> history = fyersService.getHistoricalData(symbol, 200);
-        if (history.size() < 50) {
-            return null;
-        }
-
-        double currentAtr = indicatorEngine.calculateATR(history, 10);
-        double avgAtr = indicatorEngine.calculateATR(
-                history.size() > 100 ? history.subList(0, 100) : history, 10
-        );
-
-        return signalGenerator.generateSignalSmart(symbol, history, currentAtr, avgAtr);
-    }
-
-    private void saveSignal(String symbol, TradingStrategy strategy, SignalDecision decision) {
-        if (screeningRepo.findBySymbolAndApprovalStatus(symbol, StockScreeningResult.ApprovalStatus.PENDING).isPresent()) {
-            return;
-        }
-
+    private void saveSignal(SignalDecision decision) {
         StockScreeningResult result = StockScreeningResult.builder()
-                .strategy(strategy)
-                .symbol(symbol)
+                .symbol(decision.getSymbol())
+                .signalScore(decision.getScore())
+                .grade(decision.getGrade())
+                .entryPrice(decision.getEntryPrice())
+                .stopLoss(decision.getSuggestedStopLoss())
                 .scanTime(LocalDateTime.now())
-                .currentPrice(decision.entryPrice)
-                .signalScore(decision.score)
-                .hasEntrySignal(true)
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
+                .analysisReason(decision.getReason())
                 .build();
-
         screeningRepo.save(result);
     }
 }

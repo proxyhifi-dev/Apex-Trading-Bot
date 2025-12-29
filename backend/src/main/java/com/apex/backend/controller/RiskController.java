@@ -1,11 +1,14 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.RiskStatusDTO;
+import com.apex.backend.service.CircuitBreaker;
+import com.apex.backend.service.PortfolioService;
 import com.apex.backend.service.RiskManagementEngine;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.LocalTime;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/risk")
@@ -14,27 +17,24 @@ import java.time.LocalTime;
 public class RiskController {
 
     private final RiskManagementEngine riskEngine;
+    private final CircuitBreaker circuitBreaker;
+    private final PortfolioService portfolioService;
 
     @GetMapping("/status")
     public RiskStatusDTO getRiskStatus() {
-        double assumedEquity = 100000.0;
-        boolean tradingHalted = riskEngine.isTradingHalted(assumedEquity);
-        boolean goodTradingTime = isWithinTradingHours();
+        double equity = portfolioService.getAvailableEquity(false); // Assume Live for monitoring
+
+        // ✅ FIXED: Calls valid methods
+        boolean dailyLimitHit = riskEngine.isTradingHalted(equity);
+        boolean globalHalt = circuitBreaker.isGlobalHalt();
+        boolean entryHalt = circuitBreaker.isEntryHalt();
 
         return RiskStatusDTO.builder()
-                .tradingHalted(tradingHalted)
-                .goodTradingTime(goodTradingTime)
-                .reason(tradingHalted ? "Risk limits exceeded" : null)
-                .currentDrawdown(null)
-                .maxDrawdown(null)
+                .isTradingHalted(dailyLimitHit || globalHalt)
+                .isGlobalHalt(globalHalt)
+                .isEntryHalt(entryHalt)
                 .consecutiveLosses(riskEngine.getConsecutiveLosses())
+                .dailyDrawdownPct(riskEngine.getDailyLossPercent(equity))
                 .build();
-    }
-
-    private boolean isWithinTradingHours() {
-        LocalTime now = LocalTime.now();
-        LocalTime marketOpen = LocalTime.of(9, 15);
-        LocalTime marketClose = LocalTime.of(15, 30);
-        return now.isAfter(marketOpen) && now.isBefore(marketClose);
     }
 }

@@ -1,18 +1,17 @@
 package com.apex.backend.model;
 
-import lombok.Data;
-import lombok.Builder;
-import lombok.NoArgsConstructor;
-import lombok.AllArgsConstructor;
-
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+@Entity
+@Table(name = "watchlist_stocks")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Entity
-@Table(name = "watchlist_stocks")
 public class WatchlistStock {
 
     @Id
@@ -22,10 +21,11 @@ public class WatchlistStock {
     @Column(nullable = false)
     private String symbol;
 
+    @Column(nullable = false)
+    private boolean active;
+
+    // ✅ FIXED: Ensure no CascadeType.ALL here
     @ManyToOne
     @JoinColumn(name = "strategy_id", nullable = false)
     private TradingStrategy strategy;
-
-    @Column(nullable = false)
-    private boolean active = true;  // ✅ Field name is "active" not "isActive"
 }

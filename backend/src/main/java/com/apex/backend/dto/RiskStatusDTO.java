@@ -1,19 +1,15 @@
 package com.apex.backend.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 @Data
 @Builder
-@NoArgsConstructor
-@AllArgsConstructor
 public class RiskStatusDTO {
-    private Boolean tradingHalted;
-    private Boolean goodTradingTime;
-    private String reason;
-    private Double currentDrawdown;
-    private Double maxDrawdown;
-    private Integer consecutiveLosses;
+    // ✅ Matching fields for RiskController builder
+    private boolean isTradingHalted;
+    private boolean isGlobalHalt;
+    private boolean isEntryHalt;
+    private int consecutiveLosses;
+    private double dailyDrawdownPct;
 }

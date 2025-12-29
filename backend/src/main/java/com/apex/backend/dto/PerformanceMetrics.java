@@ -16,7 +16,7 @@ public class PerformanceMetrics {
     private int winningTrades;
     private int losingTrades;
     private double winRate;
-    private double totalProfitLoss;
+    private double netProfit; // ✅ FIXED: Renamed from totalProfitLoss to match Controller
     private double averageWin;
     private double averageLoss;
     private double profitFactor;

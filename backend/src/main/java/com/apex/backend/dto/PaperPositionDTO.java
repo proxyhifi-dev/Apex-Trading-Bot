@@ -12,5 +12,8 @@ import lombok.NoArgsConstructor;
 public class PaperPositionDTO {
     private String symbol;
     private Integer quantity;
-    private Double avgPrice;
+    private Double entryPrice; // ✅ Renamed from avgPrice to match Controller
+    private Double ltp;        // ✅ Added
+    private Double pnl;        // ✅ Added
+    private Double pnlPercent; // ✅ Added
 }

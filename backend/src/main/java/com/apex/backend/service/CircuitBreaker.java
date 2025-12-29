@@ -1,65 +1,77 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.model.CircuitBreakerLog;
+import com.apex.backend.model.Trade;
+import com.apex.backend.repository.CircuitBreakerLogRepository;
+import com.apex.backend.repository.TradeRepository;
+import com.apex.backend.service.PortfolioService;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+
+@Service
 @Slf4j
-@Component
+@RequiredArgsConstructor
 public class CircuitBreaker {
-    private double dailyPnL = 0.0;
-    private int consecutiveLosses = 0;
-    private int totalTrades = 0; // NEW
 
-    // Limits
-    private static final double MAX_DAILY_LOSS_PCT = 0.05; // 5%
-    private static final int MAX_CONSECUTIVE_LOSSES = 3; // Reduced from 4
-    private static final int MAX_DAILY_TRADES = 10; // NEW
+    private final StrategyConfig config;
+    private final CircuitBreakerLogRepository logRepository;
+    private final TradeRepository tradeRepository;
+    private final PortfolioService portfolioService;
 
-    public void recordTrade(double pnl) {
-        this.dailyPnL += pnl;
-        this.totalTrades++;
+    @Getter
+    private boolean isGlobalHalt = false;
+    @Getter
+    private boolean isEntryHalt = false;
 
-        if (pnl < 0) {
-            consecutiveLosses++;
-        } else {
-            consecutiveLosses = 0;
+    private LocalDateTime pauseUntil = null;
+
+    // ✅ Re-added for backward compatibility
+    public boolean isOpen() { return isGlobalHalt; }
+
+    public boolean canTrade() {
+        if (isGlobalHalt) return false;
+        if (pauseUntil != null) {
+            if (LocalDateTime.now().isBefore(pauseUntil)) return false;
+            pauseUntil = null;
+        }
+        return !isEntryHalt;
+    }
+
+    public void updateMetrics() {
+        double currentEquity = portfolioService.getAvailableEquity(false);
+        double dailyPnl = calculatePnl(LocalDate.now());
+
+        if (dailyPnl <= -(100000.0 * config.getRisk().getDailyLossLimitPct())) {
+            if (!isEntryHalt) {
+                isEntryHalt = true;
+                log.error("⛔ Daily Limit Hit. Halting Entries.");
+                logRepository.save(CircuitBreakerLog.builder()
+                        .triggerTime(LocalDateTime.now())
+                        .reason("DAILY_LIMIT")
+                        .triggeredValue(dailyPnl)
+                        .actionTaken("HALT_ENTRIES").build());
+            }
         }
     }
 
-    public boolean canTrade(double currentEquity, double startingEquity) {
-        // Check Daily Drawdown
-        double maxLossAmount = startingEquity * MAX_DAILY_LOSS_PCT;
-        if (dailyPnL <= -maxLossAmount) {
-            log.warn("⛔ CIRCUIT BREAKER: Daily Loss Limit Hit ({})", dailyPnL);
-            return false;
-        }
-
-        // Check Consecutive Losses
-        if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
-            log.warn("⛔ CIRCUIT BREAKER: Max Consecutive Losses Hit ({})", consecutiveLosses);
-            return false;
-        }
-
-        // NEW: Check Max Trades
-        if (totalTrades >= MAX_DAILY_TRADES) {
-            log.warn("⛔ CIRCUIT BREAKER: Max Daily Trades Hit ({})", totalTrades);
-            return false;
-        }
-
-        return true;
+    private double calculatePnl(LocalDate since) {
+        return tradeRepository.findAll().stream()
+                .filter(t -> t.getExitTime() != null && t.getExitTime().toLocalDate().isAfter(since.minusDays(1)))
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0.0)
+                .sum();
     }
 
-    public void resetDailyStats() {
-        this.dailyPnL = 0.0;
-        this.consecutiveLosses = 0;
-        this.totalTrades = 0;
-    }
-
-    public double getDailyPnL() {
-        return dailyPnL;
-    }
-
-    public int getTotalTrades() {
-        return totalTrades;
+    @Scheduled(cron = "0 0 0 * * *")
+    public void resetDaily() {
+        isEntryHalt = false;
+        log.info("🔄 Daily Circuit Breaker Reset.");
     }
 }

@@ -16,5 +16,6 @@ public class PaperStatsDTO {
     private Double winRate;
     private Double totalProfit;
     private Double totalLoss;
-    private Double netPnL;
+    private Double netPnl; // ✅ FIXED: Changed netPnL to netPnl to match Controller
+    private Double profitFactor; // ✅ Added to prevent potential future error
 }

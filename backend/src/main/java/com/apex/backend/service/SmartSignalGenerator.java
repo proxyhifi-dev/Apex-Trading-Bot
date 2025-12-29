@@ -2,6 +2,8 @@ package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Candle;
+import com.apex.backend.service.IndicatorEngine.AdxResult;
+import com.apex.backend.service.IndicatorEngine.MacdResult;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -36,76 +38,55 @@ public class SmartSignalGenerator {
         public double adx;
         public double rsi;
 
-        public static SignalDecision noSignal(String reason) {
-            return SignalDecision.builder()
-                    .hasSignal(false)
-                    .reason(reason)
-                    .score(0)
-                    .grade("F")
-                    .build();
+        // Helper to check signal
+        public boolean isHasSignal() { return hasSignal; }
+    }
+
+    public SignalDecision generateSignalSmart(String symbol, List<Candle> m5, List<Candle> m15, List<Candle> h1, List<Candle> daily) {
+        if (m5.size() < 50) return SignalDecision.builder().hasSignal(false).reason("Insufficient Data").build();
+
+        AdxResult adxRes = indicatorEngine.calculateADX(m5);
+        double rsi = indicatorEngine.calculateRSI(m5);
+        MacdResult macdRes = indicatorEngine.calculateMACD(m5);
+        boolean squeeze = indicatorEngine.hasBollingerSqueeze(m5);
+        double currentAtr = indicatorEngine.calculateATR(m5, 14);
+
+        double minAdx = config.getStrategy().getAdxThreshold();
+
+        if (adxRes.getAdx() < minAdx) {
+            return SignalDecision.builder().hasSignal(false).reason("ADX Low").build();
         }
 
-        public static SignalDecision signalGenerated(String symbol, int score, String grade, double entry, double sl, double macd, double adx, double rsi) {
+        int score = 0;
+        StringBuilder reason = new StringBuilder();
+
+        if (macdRes.getMacdLine() > macdRes.getSignalLine()) { score += 20; reason.append("MACD "); }
+        if (adxRes.getAdx() >= minAdx) { score += 20; reason.append("Trend "); }
+
+        if (rsi >= 40 && rsi <= 70) { score += 20; reason.append("RSI "); }
+        if (squeeze) { score += 20; reason.append("Squeeze "); }
+
+        double close = m5.get(m5.size() - 1).getClose();
+        if (close > indicatorEngine.calculateEMA(m5, 50)) { score += 10; reason.append("EMA50 "); }
+
+        if (score >= config.getStrategy().getMinEntryScore()) {
+            double sl = close - (currentAtr * 2.0);
+            String grade = score >= 90 ? "A+" : (score >= 80 ? "A" : "B");
+
             return SignalDecision.builder()
                     .hasSignal(true)
                     .symbol(symbol)
                     .score(score)
                     .grade(grade)
-                    .entryPrice(entry)
+                    .entryPrice(close)
                     .suggestedStopLoss(sl)
-                    .reason("Score: " + score)
-                    .macdLine(macd)
-                    .adx(adx)
+                    .reason(reason.toString())
+                    .macdLine(macdRes.getMacdLine())
+                    .adx(adxRes.getAdx())
                     .rsi(rsi)
                     .build();
         }
-    }
 
-    public SignalDecision generateSignalSmart(String symbol, List<Candle> candles, double currentAtr, double avgAtr) {
-        if (candles.size() < 50) return SignalDecision.noSignal("Insufficient Data");
-
-        IndicatorEngine.AdxResult adxRes = indicatorEngine.calculateADX(candles);
-        double rsi = indicatorEngine.calculateRSI(candles);
-        IndicatorEngine.MacdResult macdRes = indicatorEngine.calculateMACD(candles);
-        boolean squeeze = indicatorEngine.hasBollingerSqueeze(candles);
-
-        double minAdx = config.getStrategy().getAdx().getThreshold();
-        double rsiMin = config.getStrategy().getRsi().getGoldilocksMin();
-        double rsiMax = config.getStrategy().getRsi().getGoldilocksMax();
-
-        if (adxRes.getAdx() < minAdx) return SignalDecision.noSignal("ADX too low: " + String.format("%.1f", adxRes.getAdx()));
-        if (rsi < rsiMin || rsi > rsiMax) return SignalDecision.noSignal("RSI out of zone: " + String.format("%.1f", rsi));
-
-        int score = 0;
-        // ✅ FIXED: Accessed .getScoring() directly from config, not getStrategy().getScoring()
-        var weights = config.getScoring();
-
-        if (macdRes.isBullish()) score += weights.getMomentumWeight();
-        if (adxRes.isStrongTrend()) score += weights.getTrendWeight();
-        if (rsi >= rsiMin && rsi <= rsiMax) score += weights.getRsiWeight();
-        if (squeeze) score += weights.getSqueezeWeight();
-
-        double close = candles.get(candles.size() - 1).getClose();
-        double atrPercent = (currentAtr / close) * 100;
-        if (atrPercent >= config.getStrategy().getAtr().getMinPercent() &&
-                atrPercent <= config.getStrategy().getAtr().getMaxPercent()) {
-            score += weights.getVolatilityWeight();
-        }
-
-        int minScore = config.getScanner().getMinScore();
-        if (score >= minScore) {
-            double sl = close - (currentAtr * config.getStrategy().getAtr().getStopMultiplier());
-            return SignalDecision.signalGenerated(symbol, score, getGrade(score), close, sl, macdRes.getMacdLine(), adxRes.getAdx(), rsi);
-        }
-
-        return SignalDecision.noSignal("Score too low: " + score);
-    }
-
-    private String getGrade(int score) {
-        if (score >= 90) return "A+++";
-        if (score >= 85) return "A++";
-        if (score >= 80) return "A+";
-        if (score >= 75) return "A";
-        return "B";
+        return SignalDecision.builder().hasSignal(false).score(score).reason("Low Score").build();
     }
 }

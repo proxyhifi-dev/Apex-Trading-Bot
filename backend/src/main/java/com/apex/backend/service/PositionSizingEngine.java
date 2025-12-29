@@ -1,95 +1,83 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class PositionSizingEngine {
 
-    private static final double DEFAULT_RISK_PCT = 0.01;
-    private static final double HIGH_SCORE_BOOST = 1.3;
-    private static final double LOW_SCORE_REDUCTION = 0.8;
-    private static final double MAX_POSITION_PCT = 0.25;
+    private final StrategyConfig config;
 
-    /**
-     * Intelligent position sizing with all safety checks
-     */
     public int calculateQuantityIntelligent(
-            double portfolioEquity,
+            double currentEquity,
             double entryPrice,
             double stopLoss,
-            int signalScore,
-            double currentAtr,
-            double averageAtr,
-            RiskManagementEngine riskMgmt) {  // ADDED THIS PARAMETER
+            String grade,           // ✅ Grade (A, A++, etc)
+            double currentVix,      // ✅ VIX Input
+            RiskManagementEngine riskMgmt) {
 
-        log.info("📊 Calculating position size - Equity: {}, Entry: {}, SL: {}, Score: {}",
-                portfolioEquity, entryPrice, stopLoss, signalScore);
-
-        // Step 1: Get adaptive risk based on volatility
-        double adaptiveRisk = riskMgmt.getAdaptiveRiskPercent(currentAtr, averageAtr);
-        log.info("📊 Adaptive risk: {}%", adaptiveRisk * 100);
-
-        // Step 2: Account for slippage
-        double slippageAdjustedEntry = riskMgmt.getSlippageAdjustedPrice(entryPrice, true);
-        double riskPerShare = Math.abs(slippageAdjustedEntry - stopLoss);
-
-        if (riskPerShare < 0.01) {
-            log.warn("⚠️ Risk per share too low: {}", riskPerShare);
+        // 1. Minimum Capital Check (₹50,000)
+        if (currentEquity < config.getRisk().getMinEquity()) {
+            log.warn("⛔ Sizing: Insufficient Capital (₹{} < ₹50,000). Trade Skipped.", (int)currentEquity);
             return 0;
         }
 
-        // Step 3: Calculate base quantity
-        double amountToRisk = portfolioEquity * adaptiveRisk;
-        int baseQty = (int) (amountToRisk / riskPerShare);
-        log.info("📊 Base quantity: {} | Risk: ₹{}", baseQty, amountToRisk);
+        // 2. Base Risk (1% default)
+        double riskPercent = config.getRisk().getMaxPositionLossPct();
+        log.info("🔹 Base Risk: {}%", riskPercent * 100);
 
-        // Step 4: Apply confidence boost for high-score signals
-        int boostedQty = baseQty;
-        if (signalScore >= 85) {
-            boostedQty = (int) (baseQty * HIGH_SCORE_BOOST);
-            log.info("🚀 High confidence boost (score: {}) applied: {} → {}", signalScore, baseQty, boostedQty);
-        } else if (signalScore < 75) {
-            boostedQty = (int) (baseQty * LOW_SCORE_REDUCTION);
-            log.info("⚠️ Low confidence reduction (score: {}) applied: {} → {}", signalScore, baseQty, boostedQty);
+        // 3. Grade Multiplier
+        double gradeMultiplier = 1.0;
+        switch (grade) {
+            case "A+++": gradeMultiplier = 2.0; break;
+            case "A++":  gradeMultiplier = 1.5; break;
+            case "A+":
+            case "A":    gradeMultiplier = 1.0; break;
+            default:     gradeMultiplier = 0.75; // Penalize B/C grades
+        }
+        riskPercent *= gradeMultiplier;
+        log.info("📊 Grade '{}' Multiplier: {}x -> New Risk: {}%", grade, gradeMultiplier, String.format("%.2f", riskPercent * 100));
+
+        // 4. Dynamic Risk Adjustment (After Losses)
+        if (riskMgmt.getConsecutiveLosses() > 0) {
+            riskPercent *= 0.75;
+            log.info("📉 Consecutive Losses Detected ({}). Reducing Risk by 0.75x -> {}%", riskMgmt.getConsecutiveLosses(), String.format("%.2f", riskPercent * 100));
         }
 
-        // Step 5: Apply maximum position cap (25% of portfolio)
-        int maxQty = (int) ((portfolioEquity * MAX_POSITION_PCT) / slippageAdjustedEntry);
-        int finalQty = Math.min(boostedQty, maxQty);
+        // 5. Safety Cut (High VIX or High Daily Drawdown)
+        double currentDailyLossPct = riskMgmt.getDailyLossPercent(currentEquity);
+        boolean highVix = currentVix > 25.0;
+        boolean highDrawdown = currentDailyLossPct > 3.0; // 3% Loss
 
-        log.info("✅ FINAL POSITION SIZE: {} shares | Risk: ₹{} | Max Cap: {}",
-                finalQty, amountToRisk, maxQty);
+        if (highVix || highDrawdown) {
+            riskPercent *= 0.50; // 50% Safety Cut
+            log.warn("⚠️ High Risk Mode (VIX: {} | DD: {}%). Safety Cut 50% -> Final Risk: {}%", currentVix, currentDailyLossPct, String.format("%.2f", riskPercent * 100));
+        }
 
-        return finalQty;
-    }
-
-    /**
-     * Legacy method - kept for backwards compatibility
-     */
-    public int calculateQuantity(double portfolioEquity, double entryPrice, double stopLoss, int score) {
-        double amountToRisk = portfolioEquity * DEFAULT_RISK_PCT;
+        // --- Calculate Quantity ---
+        double maxRiskAmount = currentEquity * riskPercent;
         double riskPerShare = Math.abs(entryPrice - stopLoss);
 
-        if (riskPerShare < 0.01) {
-            log.warn("⚠️ Risk per share too low - returning 0 qty");
-            return 0;
+        if (riskPerShare == 0) riskPerShare = entryPrice * 0.01; // Avoid div/0
+
+        int quantity = (int) (maxRiskAmount / riskPerShare);
+
+        // 6. Max Capital Allocation Check (Max 35% per trade)
+        double maxAllocatedCapital = currentEquity * config.getRisk().getMaxSingleTradeCapitalPct(); // 35%
+        int maxQtyByCapital = (int) (maxAllocatedCapital / entryPrice);
+
+        if (quantity > maxQtyByCapital) {
+            log.info("🔒 Quantity Capped by Max Capital (35%). Reduced {} -> {}", quantity, maxQtyByCapital);
+            quantity = maxQtyByCapital;
         }
 
-        int qty = (int) (amountToRisk / riskPerShare);
+        if (quantity < 1) quantity = 0;
 
-        if (score >= 85) {
-            qty = (int) (qty * HIGH_SCORE_BOOST);
-            log.info("🚀 High score boost applied - Score: {} | Qty: {}", score, qty);
-        }
-
-        int maxQty = (int) ((portfolioEquity * MAX_POSITION_PCT) / entryPrice);
-        int finalQty = Math.min(qty, maxQty);
-
-        log.info("📊 Position Size - Risk: ₹{}, Qty: {}, Max: {}, Final: {}",
-                amountToRisk, qty, maxQty, finalQty);
-
-        return finalQty;
+        log.info("🧮 Final Sizing: Qty={} | Risk Amt=₹{} | Eq=₹{}", quantity, (int)(quantity * riskPerShare), (int)currentEquity);
+        return quantity;
     }
 }

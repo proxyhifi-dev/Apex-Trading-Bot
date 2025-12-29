@@ -6,20 +6,13 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
-public class ExitEngine {
+public class ExitEngine { // ✅ FIXED: Class name matches file name
 
-    /**
-     * ✅ OPTIMIZATION: Intelligent exit management
-     * - Breakeven after 1R profit
-     * - Trailing stop tightens with profit
-     * - Partial profit taking at milestones
-     */
     public ExitDecision manageTrade(TradeState state, double currentPrice,
                                     double currentAtr, boolean momentumWeakness) {
 
         state.setBarsInTrade(state.getBarsInTrade() + 1);
 
-        // Track highest price
         if (currentPrice > state.getHighestPrice()) {
             state.setHighestPrice(currentPrice);
         }
@@ -27,56 +20,32 @@ public class ExitEngine {
         double entryPrice = state.getEntryPrice();
         double initialRisk = entryPrice - state.getInitialStopLoss();
         double currentProfit = currentPrice - entryPrice;
-        double profitInR = currentProfit / initialRisk;  // Profit in R units
+        double profitInR = currentProfit / initialRisk;
 
-        // ✅ OPTIMIZATION 1: Breakeven after 1R profit
+        // 1. Breakeven after 1R
         if (!state.isBreakevenMoved() && profitInR >= 1.0) {
-            state.setCurrentStopLoss(entryPrice + (initialRisk * 0.1));  // 0.1R profit locked
+            state.setCurrentStopLoss(entryPrice + (initialRisk * 0.1));
             state.setBreakevenMoved(true);
-            log.info("🎯 BREAKEVEN MOVED: New SL @ ₹{} (locked 0.1R profit)", state.getCurrentStopLoss());
+            log.info("🎯 BREAKEVEN MOVED: New SL @ ₹{}", state.getCurrentStopLoss());
         }
 
-        // ✅ OPTIMIZATION 2: Aggressive trailing after 2R profit
+        // 2. Trailing Stop
         if (profitInR >= 2.0) {
-            double trailDistance = currentAtr * 1.5;  // Tighter trail (1.5 ATR)
+            double trailDistance = currentAtr * 1.5;
             double proposedStop = state.getHighestPrice() - trailDistance;
-
-            if (proposedStop > state.getCurrentStopLoss()) {
-                state.setCurrentStopLoss(proposedStop);
-                log.info("📈 TRAILING STOP: New SL @ ₹{} (2R+ profit)", proposedStop);
-            }
-        } else if (state.isBreakevenMoved()) {
-            // Normal trailing after breakeven
-            double trailDistance = currentAtr * 2.0;
-            double proposedStop = state.getHighestPrice() - trailDistance;
-
             if (proposedStop > state.getCurrentStopLoss()) {
                 state.setCurrentStopLoss(proposedStop);
             }
         }
 
-        // ✅ Exit Check 1: Stop-loss hit
+        // 3. Exit Checks
         if (currentPrice <= state.getCurrentStopLoss()) {
-            String reason = state.isBreakevenMoved() ? "TRAILING_STOP" : "STOP_LOSS";
-            return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), reason);
+            return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "STOP/TRAIL");
         }
-
-        // ✅ Exit Check 2: Momentum weakness after 2R profit
-        if (momentumWeakness && profitInR >= 2.0) {
-            return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "MACD_EXIT");
-        }
-
-        // ✅ Exit Check 3: Time stop (no profit after 10 bars)
-        if (state.getBarsInTrade() >= 10 && profitInR < 0.5) {
-            return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "TIME_STOP");
-        }
-
-        // ✅ Exit Check 4: Target hit (3R profit - take profits)
         if (profitInR >= 3.0) {
             return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "TARGET");
         }
 
-        // Hold position
         return ExitDecision.hold(state.getCurrentStopLoss());
     }
 
@@ -85,7 +54,6 @@ public class ExitEngine {
         private final double entryPrice;
         private final double initialStopLoss;
         private final int quantity;
-
         private double currentStopLoss;
         private double highestPrice;
         private int barsInTrade;

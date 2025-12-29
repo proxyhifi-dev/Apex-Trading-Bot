@@ -4,7 +4,6 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -12,123 +11,69 @@ import java.util.List;
 @Data
 public class StrategyConfig {
 
-    // These fields match what RiskManagementEngine expects
     private Trading trading = new Trading();
     private Strategy strategy = new Strategy();
-    private Risk risk = new Risk(); // ✅ This generates getRisk()
-    private Scoring scoring = new Scoring();
-    private Sizing sizing = new Sizing();
-    private Exit exit = new Exit();
+    private Risk risk = new Risk();
     private Scanner scanner = new Scanner();
 
     @Data
     public static class Trading {
+        // ✅ NEW: Global Paper Mode Toggle (Default: true)
+        private boolean paperMode = true;
         private double capital;
-        private double riskPercent;
-        private int maxPositions;
-        private Universe universe = new Universe();
-    }
+        private Universe universe;
 
-    @Data
-    public static class Universe {
-        private List<String> symbols = new ArrayList<>();
-        private boolean useFallback = true;
+        @Data
+        public static class Universe {
+            private List<String> symbols;
+        }
     }
 
     @Data
     public static class Strategy {
-        private Macd macd = new Macd();
-        private Adx adx = new Adx();
-        private Rsi rsi = new Rsi();
-        private Atr atr = new Atr();
-        private Squeeze squeeze = new Squeeze();
-    }
-
-    @Data
-    public static class Macd {
-        private int fastPeriod;
-        private int slowPeriod;
-        private int signalPeriod;
-    }
-
-    @Data
-    public static class Adx {
-        private int period;
-        private double threshold;
-        private double strongThreshold;
-    }
-
-    @Data
-    public static class Rsi {
-        private int period;
-        private double goldilocksMin;
-        private double goldilocksMax;
-        private double overbought;
-        private double oversold;
-    }
-
-    @Data
-    public static class Atr {
-        private int period;
-        private double minPercent;
-        private double maxPercent;
-        private double stopMultiplier;
-        private double targetMultiplier;
-    }
-
-    @Data
-    public static class Squeeze {
-        private int bollingerPeriod;
-        private double bollingerDeviation;
-        private int keltnerPeriod;
-        private double keltnerAtrMultiplier;
-        private int minBars;
-        private double tightThreshold;
+        private String name;
+        private int rsiPeriod = 14;
+        private double rsiNeutral = 50.0;
+        private int rsiWeight = 20;
+        private int macdFastPeriod = 12;
+        private int macdSlowPeriod = 26;
+        private int macdSignalPeriod = 9;
+        private int macdWeight = 20;
+        private int adxPeriod = 14;
+        private int adxWeight = 20;
+        private double adxThreshold = 25.0;
+        private int bollingerPeriod = 20;
+        private double bollingerStdDev = 2.0;
+        private int squeezeWeight = 20;
+        private double initialCapital = 100000.0;
+        private int minEntryScore = 70;
     }
 
     @Data
     public static class Risk {
-        private double dailyLossLimitPct;
-        private int maxConsecutiveLosses;
-        private double minEquity;
-        private double maxPositionLossPct;
-        private double slippagePct;
-    }
+        private double maxPositionLossPct = 0.01;
+        private double dailyLossLimitPct = 0.02;
+        private int maxConsecutiveLosses = 3;
+        private double minEquity = 50000.0;
+        // ✅ Slippage for Paper Mode (0.1%)
+        private double slippagePct = 0.001;
 
-    @Data
-    public static class Scoring {
-        private double vwapWeight;
-        private double momentumWeight;
-        private double trendWeight;
-        private double rsiWeight;
-        private double volatilityWeight;
-        private double squeezeWeight;
-        private int minEntryScore;
-    }
+        private double maxSingleTradeCapitalPct = 0.35;
+        private int maxOpenPositions = 3;
+        private int maxSectorPositions = 2;
+        private double maxCorrelation = 0.7;
 
-    @Data
-    public static class Sizing {
-        private double multiplierA3;
-        private double multiplierA2;
-        private double multiplierA1;
-        private double multiplierA0;
-        private double multiplierB;
-    }
-
-    @Data
-    public static class Exit {
-        private double breakevenThreshold;
-        private double trailingThreshold;
-        private double trailingMultiplier;
-        private int timeStopBars;
-        private int maxBars;
+        // Circuit Breakers
+        private double weeklyLossLimitPct = 0.10;
+        private double monthlyLossLimitPct = 0.15;
+        private double maxDrawdownPct = 0.20;
+        private int consecutivePauseHours = 24;
     }
 
     @Data
     public static class Scanner {
         private boolean enabled = true;
-        private int minScore = 60;
-        private int maxCandidates = 10;
-        private long interval = 300000;
+        private int interval = 60;
+        private int minScore = 70;
     }
 }

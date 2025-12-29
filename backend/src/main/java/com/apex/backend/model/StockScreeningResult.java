@@ -20,21 +20,20 @@ public class StockScreeningResult {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "strategy_id")
-    private TradingStrategy strategy;
-
     @Column(nullable = false)
     private String symbol;
 
     @Column(nullable = false)
-    private Double currentPrice;
-
-    @Column
     private Integer signalScore;
 
+    @Column(nullable = false)
+    private String grade;
+
+    @Column(nullable = false)
+    private Double entryPrice;
+
     @Column
-    private Boolean hasEntrySignal;
+    private Double stopLoss;
 
     @Column(nullable = false)
     private LocalDateTime scanTime;
@@ -43,7 +42,24 @@ public class StockScreeningResult {
     @Column(nullable = false)
     private ApprovalStatus approvalStatus;
 
-    // Enums
+    @Column(length = 1000)
+    private String analysisReason;
+
+    // Indicators snapshot
+    private Double macdValue;
+    private Double rsiValue;
+    private Double adxValue;
+
+    // ✅ FIXED: Removed 'cascade = CascadeType.ALL' which caused the crash
+    @ManyToOne
+    @JoinColumn(name = "strategy_id")
+    private TradingStrategy strategy;
+
+    // Helper method
+    public Double getCurrentPrice() {
+        return entryPrice;
+    }
+
     public enum ApprovalStatus {
         PENDING, APPROVED, REJECTED, EXECUTED
     }

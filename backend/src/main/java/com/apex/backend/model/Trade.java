@@ -1,10 +1,7 @@
 package com.apex.backend.model;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Data;
-import lombok.NoArgsConstructor;
+import lombok.*;
 
 import java.time.LocalDateTime;
 
@@ -20,15 +17,10 @@ public class Trade {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne
-    @JoinColumn(name = "strategy_id")
-    private TradingStrategy strategy;
-
     @Column(nullable = false)
     private String symbol;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private TradeType tradeType;
 
     @Column(nullable = false)
@@ -37,64 +29,39 @@ public class Trade {
     @Column(nullable = false)
     private Double entryPrice;
 
-    @Column
     private Double exitPrice;
 
     @Column(nullable = false)
     private LocalDateTime entryTime;
 
-    @Column
     private LocalDateTime exitTime;
 
-    @Column(nullable = false)
+    // ✅ Initial Stop Loss (Fixed at entry)
     private Double stopLoss;
 
-    @Column
+    // ✅ Dynamic Stop Loss (Moves with Trailing)
     private Double currentStopLoss;
 
-    @Column
+    // ✅ Stored ATR for dynamic Targets (3xATR)
+    private Double atr;
+
+    // ✅ Track Highest Price for Trailing Logic
     private Double highestPrice;
 
-    @Column
-    private Integer barsInTrade;
-
     @Column(nullable = false)
-    private boolean breakevenMoved;  // FIXED: primitive boolean
-
-    @Column
-    private Double pnl;
-
-    @Column
-    private Double pnlPercent;
-
-    @Column(nullable = false)
-    private boolean isPaperTrade;  // FIXED: primitive boolean
+    private boolean isPaperTrade;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private TradeStatus status;
 
     @Enumerated(EnumType.STRING)
-    @Column
     private ExitReason exitReason;
 
-    // Enums
-    public enum TradeType {
-        LONG, SHORT
-    }
+    private boolean breakevenMoved;
 
-    public enum TradeStatus {
-        OPEN, CLOSED, CANCELLED
-    }
+    private Double realizedPnl;
 
-    public enum ExitReason {
-        STOP_LOSS,
-        TARGET,
-        TRAILING_STOP,
-        TIME_STOP,
-        BREAKEVEN,
-        MACD_EXIT,
-        DIVERGENCE,
-        MANUAL
-    }
+    public enum TradeType { LONG, SHORT }
+    public enum TradeStatus { OPEN, CLOSED }
+    public enum ExitReason { STOP_LOSS, TARGET, TIME_EXIT, MANUAL, SIGNAL }
 }
