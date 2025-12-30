@@ -62,6 +62,7 @@ public class StrategyConfig {
         private int maxOpenPositions = 3;
         private int maxSectorPositions = 2;
         private double maxCorrelation = 0.7;
+        private double targetMultiplier = 3.0;
 
         // Circuit Breakers
         private double weeklyLossLimitPct = 0.10;
