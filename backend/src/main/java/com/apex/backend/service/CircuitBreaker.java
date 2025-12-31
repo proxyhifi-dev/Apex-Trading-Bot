@@ -49,5 +49,25 @@ public class CircuitBreaker {
         } catch (Exception e) {
             log.error("Failed to check risk limits", e);
         }
+
+    
+        /**
+     * Check if circuit breaker allows trading
+     */
+    public boolean canTrade() {
+        return !isCircuitBreakerTriggered();
     }
+    
+    /**
+     * Update risk metrics and circuit breaker status
+     */
+    public void updateMetrics() {
+        try {
+            log.info("Updating circuit breaker metrics");
+            checkRiskLimits();
+            log.debug("Circuit breaker metrics updated");
+        } catch (Exception e) {
+            log.error("Failed to update metrics", e);
+        }
+    }}
 }
