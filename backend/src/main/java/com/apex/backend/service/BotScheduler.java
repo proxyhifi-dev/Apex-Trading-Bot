@@ -66,7 +66,8 @@ public class BotScheduler {
             log.info("✅ Bot Cycle Complete");
         } catch (Exception e) {
             log.error("❌ Error in bot cycle", e);
-            circuitBreaker.recordFailure();
+            // Update metrics to trigger circuit breaker if needed
+            circuitBreaker.updateMetrics();
         }
     }
     
