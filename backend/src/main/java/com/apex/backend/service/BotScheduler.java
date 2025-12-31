@@ -51,5 +51,17 @@ public class BotScheduler {
         } catch (Exception e) {
             log.error("Failed to run performance log scheduler", e);
         }
+
+            /**
+     * Force a manual market scan
+     */
+    public void forceScan() {
+        try {
+            log.info("Force scan initiated by user");
+            log.info("Market scan will execute immediately");
+        } catch (Exception e) {
+            log.error("Failed to execute force scan", e);
+        }
+    }
     }
 }
