@@ -1,86 +1,92 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
-import com.apex.backend.dto.HoldingDTO;
-import com.apex.backend.dto.UserProfileDTO;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class PortfolioService {
 
-    private final StrategyConfig strategyConfig;
-    private final TradeRepository tradeRepo;
-    private final FyersService fyersService;
+    private final TradeRepository tradeRepository;
 
-    public UserProfileDTO getPortfolioSnapshot() {
-        // 1. Base Capital
-        double initialCapital = strategyConfig.getTrading().getCapital();
+    @Value("${apex.trading.capital:100000}")
+    private double initialCapital;
 
-        // 2. Realized P&L
-        Double realPnL = tradeRepo.getTotalPnlByMode(false); // false = REAL
-        Double paperPnL = tradeRepo.getTotalPnlByMode(true); // true = PAPER
-
-        double totalRealPnL = (realPnL != null) ? realPnL : 0.0;
-        double totalPaperPnL = (paperPnL != null) ? paperPnL : 0.0;
-
-        // 3. Available Funds
-        double availableRealFunds = initialCapital + totalRealPnL;
-        double availablePaperFunds = initialCapital + totalPaperPnL;
-
-        // 4. Open Positions
-        List<Trade> openLiveTrades = tradeRepo.findByIsPaperTradeAndStatus(false, Trade.TradeStatus.OPEN);
-        List<HoldingDTO> holdings = calculateHoldings(openLiveTrades);
-
-        // 5. Aggregate Totals
-        double totalInvested = holdings.stream().mapToDouble(h -> h.getAvgPrice() * h.getQuantity()).sum();
-        double currentHoldingsValue = holdings.stream().mapToDouble(h -> h.getCurrentPrice() * h.getQuantity()).sum();
-        double todaysPnl = currentHoldingsValue - totalInvested;
-
-        return UserProfileDTO.builder()
-                .name("Apex Trader")
-                .availableFunds(availableRealFunds)      // Legacy
-                .availableRealFunds(availableRealFunds)  // Live
-                .availablePaperFunds(availablePaperFunds)// Paper
-                .totalInvested(totalInvested)
-                .currentValue(availableRealFunds + currentHoldingsValue)
-                .todaysPnl(todaysPnl)
-                .holdings(holdings)
-                .build();
+    /**
+     * Get current portfolio value
+     */
+    public double getPortfolioValue(boolean isPaper) {
+        try {
+            Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            double pnl = (totalPnl != null) ? totalPnl : 0;
+            return initialCapital + pnl;
+        } catch (Exception e) {
+            log.error("Failed to calculate portfolio value", e);
+            return initialCapital;
+        }
     }
 
-    // Helper: Calculate live value of positions
-    private List<HoldingDTO> calculateHoldings(List<Trade> trades) {
-        return trades.stream().map(t -> {
-            double currentLtp = fyersService.getLTP(t.getSymbol());
-            if (currentLtp == 0) currentLtp = t.getEntryPrice();
-
-            double currentValue = currentLtp * t.getQuantity();
-            double invested = t.getEntryPrice() * t.getQuantity();
-            double pnl = currentValue - invested;
-
-            return HoldingDTO.builder()
-                    .symbol(t.getSymbol())
-                    .quantity(t.getQuantity())
-                    .avgPrice(t.getEntryPrice())
-                    .currentPrice(currentLtp)
-                    .pnl(pnl)
-                    .build();
-        }).collect(Collectors.toList());
+    /**
+     * Get available cash
+     */
+    public double getAvailableCash(boolean isPaper) {
+        try {
+            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            double usedCapital = openTrades.stream()
+                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
+                    .sum();
+            return initialCapital - usedCapital;
+        } catch (Exception e) {
+            log.error("Failed to calculate available cash", e);
+            return initialCapital;
+        }
     }
 
-    // ✅ Used by TradeExecutionService
-    public double getAvailableEquity(boolean isPaper) {
-        double initialCapital = strategyConfig.getTrading().getCapital();
-        Double realizedPnL = tradeRepo.getTotalPnlByMode(isPaper);
-        return initialCapital + (realizedPnL != null ? realizedPnL : 0.0);
+    /**
+     * Get total invested
+     */
+    public double getTotalInvested(boolean isPaper) {
+        try {
+            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            return openTrades.stream()
+                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
+                    .sum();
+        } catch (Exception e) {
+            log.error("Failed to calculate total invested", e);
+            return 0;
+        }
+    }
+
+    /**
+     * Get realized P&L
+     */
+    public double getRealizedPnL(boolean isPaper) {
+        try {
+            Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            return (totalPnl != null) ? totalPnl : 0;
+        } catch (Exception e) {
+            log.error("Failed to get realized P&L", e);
+            return 0;
+        }
+    }
+
+    /**
+     * Get number of open positions
+     */
+    public int getOpenPositionCount(boolean isPaper) {
+        try {
+            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            return openTrades.size();
+        } catch (Exception e) {
+            log.error("Failed to get open position count", e);
+            return 0;
+        }
     }
 }

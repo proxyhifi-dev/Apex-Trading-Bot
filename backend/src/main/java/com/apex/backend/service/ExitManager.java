@@ -1,208 +1,142 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.List;
 
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class ExitManager {
 
     private final TradeRepository tradeRepository;
-    private final FyersService fyersService;
-    private final RiskManagementEngine riskEngine;
-    private final StrategyConfig config;
-    private final BroadcastService broadcastService; // ✅ Inject BroadcastService
 
     /**
-     * Periodic automated exit management for open positions.
-     * Checks: Target, Stop Loss, Trailing SL, Market Close Time
+     * Get open trade count
      */
-    @Transactional
-    public void manageExits() {
-        List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
-        if (openTrades.isEmpty()) return;
-
-        boolean marketCloseTrigger = isMarketCloseTime();
-        for (Trade trade : openTrades) {
-            processTradeExit(trade, marketCloseTrigger);
-        }
-    }
-
-    /**
-     * Manual close triggered from Frontend UI.
-     * Maps to: POST /api/positions/{id}/close
-     */
-    @Transactional
-    public void manualClose(Long tradeId) {
-        Trade trade = tradeRepository.findById(tradeId)
-                .orElseThrow(() -> new RuntimeException("Trade not found with ID: " + tradeId));
-
-        if (trade.getStatus() == Trade.TradeStatus.CLOSED) {
-            log.warn("⚠️ Attempted to manually close already closed trade: {}", trade.getSymbol());
-            return;
-        }
-
-        log.info("🎯 Manual Exit Triggered for: {}", trade.getSymbol());
-        double ltp = fyersService.getLTP(trade.getSymbol());
-
-        // Fallback LTP if API fails
-        if (ltp == 0) {
-            ltp = trade.getEntryPrice();
-            log.warn("⚠️ Using Entry Price for manual exit as LTP unavailable for {}", trade.getSymbol());
-        }
-
-        closeTrade(trade, ltp, Trade.ExitReason.MANUAL);
-    }
-
-    /**
-     * Process individual trade exit based on current market conditions
-     */
-    private void processTradeExit(Trade trade, boolean forceExit) {
+    public long getOpenTradeCount() {
         try {
-            double ltp = fyersService.getLTP(trade.getSymbol());
-            if (ltp == 0) {
-                log.warn("⚠️ LTP unavailable for {}, skipping exit check", trade.getSymbol());
-                return;
-            }
-
-            // Track highest price for trailing logic
-            if (trade.getHighestPrice() == null || ltp > trade.getHighestPrice()) {
-                trade.setHighestPrice(ltp);
-                tradeRepository.save(trade);
-            }
-
-            // 1. Forced Market-Close Exit (15:15+)
-            if (forceExit) {
-                closeTrade(trade, ltp, Trade.ExitReason.TIME_EXIT);
-                return;
-            }
-
-            // 2. Dynamic Target Check (3x ATR or config-based)
-            double atr = (trade.getAtr() != null) ? trade.getAtr() : (trade.getEntryPrice() * 0.01);
-            double targetPrice = trade.getEntryPrice() + (config.getRisk().getTargetMultiplier() * atr);
-
-            if (ltp >= targetPrice) {
-                closeTrade(trade, ltp, Trade.ExitReason.TARGET);
-                return;
-            }
-
-            // 3. Stop Loss Check
-            if (ltp <= trade.getCurrentStopLoss()) {
-                closeTrade(trade, ltp, Trade.ExitReason.STOP_LOSS);
-                return;
-            }
-
-            // 4. Trailing Stop Loss Update
-            updateTrailingStop(trade, ltp);
-
+            return tradeRepository.countByStatus(Trade.TradeStatus.OPEN);
         } catch (Exception e) {
-            log.error("❌ Error processing exit for {}: {}", trade.getSymbol(), e.getMessage());
+            log.error("Failed to get open trade count", e);
+            return 0;
         }
     }
 
     /**
-     * Update trailing stop loss when price moves favorably
+     * Check if max positions reached
      */
-    private void updateTrailingStop(Trade trade, double ltp) {
-        double risk = Math.abs(trade.getEntryPrice() - trade.getStopLoss());
-        double profitThreshold = trade.getEntryPrice() + (1.5 * risk); // 1.5R profit
+    public boolean isMaxPositionsReached(int maxPositions) {
+        try {
+            return getOpenTradeCount() >= maxPositions;
+        } catch (Exception e) {
+            log.error("Failed to check max positions", e);
+            return false;
+        }
+    }
 
-        if (trade.getHighestPrice() >= profitThreshold) {
-            double newSl = trade.getEntryPrice() + (0.1 * risk); // Move to breakeven+
-
-            if (newSl > trade.getCurrentStopLoss()) {
-                trade.setCurrentStopLoss(newSl);
+    /**
+     * Close trade by target
+     */
+    public void closeTradeByTarget(Long tradeId, double exitPrice) {
+        try {
+            log.info("Closing trade {} by target at price {}", tradeId, exitPrice);
+            Trade trade = tradeRepository.findById(tradeId).orElse(null);
+            if (trade != null) {
+                trade.setExitPrice(exitPrice);
+                trade.setStatus(Trade.TradeStatus.CLOSED);
+                trade.setExitReason(Trade.ExitReason.TARGET);
+                double pnl = (trade.getExitPrice() - trade.getEntryPrice()) * trade.getQuantity();
+                if (trade.getTradeType() == Trade.TradeType.SHORT) {
+                    pnl = -pnl;
+                }
+                trade.setRealizedPnl(pnl);
                 tradeRepository.save(trade);
-
-                log.info("🪜 Trailing SL Updated for {}: ₹{} -> ₹{}",
-                        trade.getSymbol(), trade.getStopLoss(), newSl);
-
-                // ✅ Broadcast updated position to frontend
-                broadcastService.broadcastPositions(
-                        tradeRepository.findByStatus(Trade.TradeStatus.OPEN)
-                );
+                log.info("Trade {} closed successfully. P&L: {}", tradeId, pnl);
             }
+        } catch (Exception e) {
+            log.error("Failed to close trade by target", e);
         }
     }
 
     /**
-     * Close trade with proper execution (paper or live)
+     * Close trade by stop loss
      */
-    private void closeTrade(Trade trade, double rawExitPrice, Trade.ExitReason reason) {
-        double finalExitPrice = rawExitPrice;
+    public void closeTradeByStopLoss(Long tradeId, double stopLossPrice) {
+        try {
+            log.info("Closing trade {} by stop loss at price {}", tradeId, stopLossPrice);
+            Trade trade = tradeRepository.findById(tradeId).orElse(null);
+            if (trade != null) {
+                trade.setExitPrice(stopLossPrice);
+                trade.setStatus(Trade.TradeStatus.CLOSED);
+                trade.setExitReason(Trade.ExitReason.STOP_LOSS);
+                double pnl = (trade.getExitPrice() - trade.getEntryPrice()) * trade.getQuantity();
+                if (trade.getTradeType() == Trade.TradeType.SHORT) {
+                    pnl = -pnl;
+                }
+                trade.setRealizedPnl(pnl);
+                tradeRepository.save(trade);
+                log.info("Trade {} closed by stop loss. P&L: {}", tradeId, pnl);
+            }
+        } catch (Exception e) {
+            log.error("Failed to close trade by stop loss", e);
+        }
+    }
 
-        if (trade.isPaperTrade()) {
-            // Apply slippage for realistic paper trading
-            double slippage = rawExitPrice * config.getRisk().getSlippagePct();
-            finalExitPrice = rawExitPrice - slippage;
-            log.info("📝 Paper Exit | Slippage Applied: ₹{} -> ₹{}", rawExitPrice, finalExitPrice);
+    /**
+     * Update stop loss
+     */
+    public void updateStopLoss(Long tradeId, double newStopLoss) {
+        try {
+            log.info("Updating stop loss for trade {} to {}", tradeId, newStopLoss);
+            Trade trade = tradeRepository.findById(tradeId).orElse(null);
+            if (trade != null) {
+                trade.setCurrentStopLoss(newStopLoss);
+                if (trade.getStopLoss() == null) {
+                    trade.setStopLoss(newStopLoss);
+                }
+                tradeRepository.save(trade);
+                log.info("Stop loss updated for trade {}", tradeId);
+            }
+        } catch (Exception e) {
+            log.error("Failed to update stop loss", e);
+        }
+    }
+
+    /**
+     * Check if stop loss hit
+     */
+    public boolean isStopLossHit(Trade trade, double currentPrice) {
+        if (trade == null || trade.getCurrentStopLoss() == null) {
+            return false;
+        }
+
+        if (trade.getTradeType() == Trade.TradeType.LONG) {
+            return currentPrice <= trade.getCurrentStopLoss();
         } else {
-            // Live Execution: Send SELL order to Fyers
-            try {
-                String orderId = fyersService.placeOrder(
-                        trade.getSymbol(),
-                        trade.getQuantity(),
-                        "SELL",
-                        "MARKET",
-                        0
-                );
-                log.info("✅ Live Market SELL Order Executed: ID={}", orderId);
-            } catch (Exception e) {
-                log.error("❌ Live Exit Failed for {}: {}", trade.getSymbol(), e.getMessage());
-                throw new RuntimeException("Broker execution failed: " + e.getMessage());
-            }
+            return currentPrice >= trade.getCurrentStopLoss();
+        }
+    }
+
+    /**
+     * Check if target hit
+     */
+    public boolean isTargetHit(Trade trade, double currentPrice, double targetMultiplier) {
+        if (trade == null || trade.getAtr() == null) {
+            return false;
         }
 
-        // Calculate realized P&L
-        double pnl = (finalExitPrice - trade.getEntryPrice()) * trade.getQuantity();
+        double target = trade.getEntryPrice() + (trade.getAtr() * targetMultiplier);
 
-        // Update trade record
-        trade.setExitPrice(finalExitPrice);
-        trade.setExitTime(LocalDateTime.now());
-        trade.setStatus(Trade.TradeStatus.CLOSED);
-        trade.setExitReason(reason);
-        trade.setRealizedPnl(pnl);
-
-        tradeRepository.save(trade);
-
-        // Update risk engine
-        riskEngine.updateDailyLoss(pnl);
-        riskEngine.removeOpenPosition(trade.getSymbol());
-
-        log.info("🏁 Trade Closed: {} | Reason: {} | Realized P&L: ₹{}",
-                trade.getSymbol(), reason, String.format("%.2f", pnl));
-
-        // ✅ Broadcast updated positions to frontend
-        broadcastService.broadcastPositions(
-                tradeRepository.findByStatus(Trade.TradeStatus.OPEN)
-        );
-
-        log.info("📢 Broadcasted updated positions to UI after closing {}", trade.getSymbol());
-    }
-
-    /**
-     * Check if market is about to close (square-off time)
-     */
-    private boolean isMarketCloseTime() {
-        // Square off intraday positions before 15:15 IST
-        LocalTime now = LocalTime.now();
-        return now.isAfter(LocalTime.of(15, 14));
-    }
-
-    /**
-     * Get count of open positions (for monitoring)
-     */
-    public long getOpenPositionCount() {
-        return tradeRepository.countByStatus(Trade.TradeStatus.OPEN);
+        if (trade.getTradeType() == Trade.TradeType.LONG) {
+            return currentPrice >= target;
+        } else {
+            target = trade.getEntryPrice() - (trade.getAtr() * targetMultiplier);
+            return currentPrice <= target;
+        }
     }
 }
