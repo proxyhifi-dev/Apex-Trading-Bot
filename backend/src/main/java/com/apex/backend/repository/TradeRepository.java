@@ -2,22 +2,21 @@ package com.apex.backend.repository;
 
 import com.apex.backend.model.Trade;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
-
 import java.util.List;
 
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 
-    @Query("SELECT SUM(t.realizedPnl) FROM Trade t WHERE t.isPaperTrade = :isPaper AND t.status = 'CLOSED'")
-    Double getTotalPnlByMode(@Param("isPaper") boolean isPaper);
+    // Find trades by symbol
+    List<Trade> findBySymbol(String symbol);
 
-    List<Trade> findByIsPaperTradeAndStatus(boolean isPaperTrade, Trade.TradeStatus status);
-
+    // Find trades by status
     List<Trade> findByStatus(Trade.TradeStatus status);
 
-    // Add this missing method
-    long countByStatus(Trade.TradeStatus status);
+    // Find paper trades
+    List<Trade> findByIsPaperTrade(boolean isPaperTrade);
+
+    // Find trades by type
+    List<Trade> findByTradeType(Trade.TradeType tradeType);
 }

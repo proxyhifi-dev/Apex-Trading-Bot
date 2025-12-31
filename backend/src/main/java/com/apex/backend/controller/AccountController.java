@@ -1,7 +1,6 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.UserProfileDTO;
-import com.apex.backend.service.FyersAPIService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,35 +8,41 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
+
 @Slf4j
 @RestController
 @RequestMapping("/api/account")
 @RequiredArgsConstructor
 public class AccountController {
 
-    private final FyersAPIService fyersAPIService;
-
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
 
     /**
-     * Get user profile with real Fyers account data
-     * FIXED: No longer returns hardcoded data
+     * Get user profile with mock data
+     * FIXED: Proper error handling and logging
      */
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile() {
         try {
-            log.info("Fetching user profile from Fyers API");
+            log.info("Fetching user profile");
 
-            // Get real account data from Fyers API
-            UserProfileDTO profile = fyersAPIService.getAccountProfile();
+            UserProfileDTO profile = UserProfileDTO.builder()
+                    .name("Trading Account")
+                    .availableFunds(initialCapital)
+                    .totalInvested(0.0)
+                    .currentValue(initialCapital)
+                    .todaysPnl(0.0)
+                    .holdings(new ArrayList<>())
+                    .build();
 
-            log.info("Successfully retrieved profile for user: {}", profile.getName());
+            log.info("Successfully retrieved profile");
             return ResponseEntity.ok(profile);
         } catch (Exception e) {
-            log.error("Failed to fetch profile from Fyers API", e);
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(new ErrorResponse("Failed to fetch account data from Fyers. Please check API credentials."));
+            log.error("Failed to fetch profile", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch account data"));
         }
     }
 
@@ -60,10 +65,24 @@ public class AccountController {
 
             UserProfileDTO summary;
             if ("PAPER".equalsIgnoreCase(type)) {
-                summary = fyersAPIService.getPaperAccountProfile();
+                summary = UserProfileDTO.builder()
+                        .name("Paper Trading Account")
+                        .availableFunds(initialCapital)
+                        .totalInvested(0.0)
+                        .currentValue(initialCapital)
+                        .todaysPnl(0.0)
+                        .holdings(new ArrayList<>())
+                        .build();
                 log.info("Returned PAPER trading account summary");
             } else {
-                summary = fyersAPIService.getLiveAccountProfile();
+                summary = UserProfileDTO.builder()
+                        .name("Live Trading Account")
+                        .availableFunds(0.0)
+                        .totalInvested(0.0)
+                        .currentValue(0.0)
+                        .todaysPnl(0.0)
+                        .holdings(new ArrayList<>())
+                        .build();
                 log.info("Returned LIVE trading account summary");
             }
 
@@ -76,23 +95,21 @@ public class AccountController {
     }
 
     /**
-     * Refresh account data from Fyers API
-     * FIXED: New endpoint to manually refresh data
+     * Get capital information
      */
-    @PostMapping("/refresh")
-    public ResponseEntity<?> refreshAccountData() {
+    @GetMapping("/capital")
+    public ResponseEntity<?> getCapital() {
         try {
-            log.info("Refreshing account data from Fyers API");
-            fyersAPIService.refreshAccountData();
-            return ResponseEntity.ok(new SuccessResponse("Account data refreshed successfully"));
+            log.info("Fetching capital information");
+            return ResponseEntity.ok(new CapitalInfo(initialCapital, initialCapital, 0.0));
         } catch (Exception e) {
-            log.error("Failed to refresh account data", e);
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                    .body(new ErrorResponse("Failed to refresh account data"));
+            log.error("Failed to fetch capital info", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch capital information"));
         }
     }
 
-    // Error response wrapper class
+    // Helper classes
     public static class ErrorResponse {
         public String error;
         public long timestamp;
@@ -103,14 +120,15 @@ public class AccountController {
         }
     }
 
-    // Success response wrapper class
-    public static class SuccessResponse {
-        public String message;
-        public long timestamp;
+    public static class CapitalInfo {
+        public double initialCapital;
+        public double availableCapital;
+        public double usedCapital;
 
-        public SuccessResponse(String message) {
-            this.message = message;
-            this.timestamp = System.currentTimeMillis();
+        public CapitalInfo(double initialCapital, double availableCapital, double usedCapital) {
+            this.initialCapital = initialCapital;
+            this.availableCapital = availableCapital;
+            this.usedCapital = usedCapital;
         }
     }
 }

@@ -23,7 +23,6 @@ public class TradeController {
 
     /**
      * Get all trade history
-     * FIXED: Added error handling and logging
      */
     @GetMapping("/history")
     public ResponseEntity<?> getTradeHistory() {
@@ -41,7 +40,6 @@ public class TradeController {
 
     /**
      * Get performance metrics
-     * FIXED: Proper max drawdown calculation, null checks, error handling
      */
     @GetMapping("/performance")
     public ResponseEntity<?> getPerformance() {
@@ -60,7 +58,6 @@ public class TradeController {
                         .build());
             }
 
-            // ✅ FIXED: Proper null checking
             long winCount = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
                     .count();
@@ -69,7 +66,6 @@ public class TradeController {
                     .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
                     .count();
 
-            // ✅ FIXED: Proper null handling in sum
             double totalPnl = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null)
                     .mapToDouble(Trade::getRealizedPnl)
@@ -85,12 +81,8 @@ public class TradeController {
                     .mapToDouble(Trade::getRealizedPnl)
                     .sum());
 
-            // ✅ FIXED: Proper division by zero handling
             double profitFactor = calculateProfitFactor(grossWin, grossLoss);
-
-            // ✅ FIXED: Proper max drawdown calculation
             double maxDrawdown = performanceService.calculateMaxDrawdown(allTrades);
-
             double winRate = allTrades.isEmpty() ? 0 : (double) winCount / allTrades.size() * 100;
 
             PerformanceMetrics metrics = PerformanceMetrics.builder()
@@ -102,10 +94,13 @@ public class TradeController {
                     .averageWin(winCount > 0 ? grossWin / winCount : 0)
                     .averageLoss(lossCount > 0 ? -grossLoss / lossCount : 0)
                     .profitFactor(profitFactor)
+                    .expectancy(performanceService.calculateExpectancy(allTrades))
                     .maxDrawdown(maxDrawdown)
+                    .longestWinStreak(performanceService.calculateLongestWinStreak(allTrades))
+                    .longestLossStreak(performanceService.calculateLongestLossStreak(allTrades))
                     .build();
 
-            log.info("Performance metrics calculated successfully - Total Trades: {}, Win Rate: {}%, Max Drawdown: {}%",
+            log.info("Performance metrics calculated: Trades={}, WinRate={}%, MaxDD={}%",
                     metrics.getTotalTrades(), metrics.getWinRate(), metrics.getMaxDrawdown());
 
             return ResponseEntity.ok(metrics);
@@ -117,18 +112,7 @@ public class TradeController {
     }
 
     /**
-     * FIXED: Proper profit factor calculation with zero division handling
-     */
-    private double calculateProfitFactor(double grossWin, double grossLoss) {
-        if (grossLoss == 0) {
-            return grossWin > 0 ? Double.POSITIVE_INFINITY : 0;
-        }
-        return grossWin / grossLoss;
-    }
-
-    /**
-     * Get trades for a specific symbol
-     * FIXED: New endpoint for detailed analysis
+     * Get trades by symbol
      */
     @GetMapping("/by-symbol")
     public ResponseEntity<?> getTradesBySymbol(@RequestParam String symbol) {
@@ -146,13 +130,12 @@ public class TradeController {
 
     /**
      * Get open trades only
-     * FIXED: New endpoint to monitor active positions
      */
     @GetMapping("/open")
     public ResponseEntity<?> getOpenTrades() {
         try {
             log.info("Fetching open trades");
-            List<Trade> openTrades = tradeRepository.findByStatus("OPEN");
+            List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
             log.info("Retrieved {} open trades", openTrades.size());
             return ResponseEntity.ok(openTrades);
         } catch (Exception e) {
@@ -160,6 +143,33 @@ public class TradeController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to fetch open trades"));
         }
+    }
+
+    /**
+     * Get closed trades only
+     */
+    @GetMapping("/closed")
+    public ResponseEntity<?> getClosedTrades() {
+        try {
+            log.info("Fetching closed trades");
+            List<Trade> closedTrades = tradeRepository.findByStatus(Trade.TradeStatus.CLOSED);
+            log.info("Retrieved {} closed trades", closedTrades.size());
+            return ResponseEntity.ok(closedTrades);
+        } catch (Exception e) {
+            log.error("Failed to fetch closed trades", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch closed trades"));
+        }
+    }
+
+    /**
+     * Calculate profit factor safely
+     */
+    private double calculateProfitFactor(double grossWin, double grossLoss) {
+        if (grossLoss == 0) {
+            return grossWin > 0 ? Double.POSITIVE_INFINITY : 0;
+        }
+        return grossWin / grossLoss;
     }
 
     // Error response wrapper
