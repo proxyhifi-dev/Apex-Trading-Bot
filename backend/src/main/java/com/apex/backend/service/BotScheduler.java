@@ -62,6 +62,7 @@ public class BotScheduler {
         } catch (Exception e) {
             log.error("Failed to execute force scan", e);
         }
+            }
     }
     }
 }
