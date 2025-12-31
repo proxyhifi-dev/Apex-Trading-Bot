@@ -1,74 +1,75 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.model.CircuitBreakerLog;
+import com.apex.backend.repository.CircuitBreakerLogRepository;
 import com.apex.backend.repository.TradeRepository;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-@Slf4j
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class CircuitBreaker {
 
-    private final PortfolioService portfolioService;
+    private final StrategyConfig config;
+    private final CircuitBreakerLogRepository logRepository;
     private final TradeRepository tradeRepository;
+    private final PortfolioService portfolioService;
 
-    @Value("${apex.risk.min-equity:10000}")
-    private double minEquity;
+    @Getter
+    private boolean isGlobalHalt = false;
+    @Getter
+    private boolean isEntryHalt = false;
 
-    @Value("${apex.risk.daily-loss-limit-pct:0.05}")
-    private double dailyLossLimit;
+    private LocalDateTime pauseUntil = null;
 
-    @Value("${apex.risk.max-consecutive-losses:3}")
-    private int maxConsecutiveLosses;
+    // ✅ Re-added for backward compatibility
+    public boolean isOpen() { return isGlobalHalt; }
 
-    public boolean isCircuitBreakerTriggered() {
-        try {
-            double currentEquity = portfolioService.getAvailableEquity(false);
-
-            if (currentEquity < minEquity) {
-                log.warn("Circuit breaker triggered: Equity {} below minimum {}", currentEquity, minEquity);
-                return true;
-            }
-
-            return false;
-        } catch (Exception e) {
-            log.error("Failed to check circuit breaker", e);
-            return false;
-        }
-    }
-
-    public void checkRiskLimits() {
-        try {
-            log.info("Checking risk limits");
-
-            if (isCircuitBreakerTriggered()) {
-                log.warn("CIRCUIT BREAKER TRIGGERED - STOP ALL TRADING");
-            }
-        } catch (Exception e) {
-            log.error("Failed to check risk limits", e);
-        }
-
-    
-        /**
-     * Check if circuit breaker allows trading
-     */
     public boolean canTrade() {
-        return !isCircuitBreakerTriggered();
-    }
-            }
-    
-    /**
-     * Update risk metrics and circuit breaker status
-     */
-    public void updateMetrics() {
-        try {
-            log.info("Updating circuit breaker metrics");
-            checkRiskLimits();
-            log.debug("Circuit breaker metrics updated");
-        } catch (Exception e) {
-            log.error("Failed to update metrics", e);
+        if (isGlobalHalt) return false;
+        if (pauseUntil != null) {
+            if (LocalDateTime.now().isBefore(pauseUntil)) return false;
+            pauseUntil = null;
         }
-    }    }
+        return !isEntryHalt;
+    }
+
+    public void updateMetrics() {
+        // Calculate PnL based on closed trades from today
+        double dailyPnl = calculatePnl(LocalDate.now());
+        double dailyLimit = -(100000.0 * config.getRisk().getDailyLossLimitPct());
+
+        if (dailyPnl <= dailyLimit) {
+            if (!isEntryHalt) {
+                isEntryHalt = true;
+                log.error("⛔ Daily Limit Hit. Halting Entries.");
+                logRepository.save(CircuitBreakerLog.builder()
+                        .triggerTime(LocalDateTime.now())
+                        .reason("DAILY_LIMIT")
+                        .triggeredValue(dailyPnl)
+                        .actionTaken("HALT_ENTRIES").build());
+            }
+        }
+    }
+
+    private double calculatePnl(LocalDate since) {
+        return tradeRepository.findAll().stream()
+                .filter(t -> t.getExitTime() != null && t.getExitTime().toLocalDate().isEqual(since))
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0.0)
+                .sum();
+    }
+
+    @Scheduled(cron = "0 0 0 * * *")
+    public void resetDaily() {
+        isEntryHalt = false;
+        log.info("🔄 Daily Circuit Breaker Reset.");
+    }
 }
