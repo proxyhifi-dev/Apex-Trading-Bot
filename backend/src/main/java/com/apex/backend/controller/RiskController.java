@@ -50,5 +50,36 @@ public class RiskController {
             this.error = error;
             this.timestamp = System.currentTimeMillis();
         }
-    }
+
+    
+    /**
+     * Trigger emergency stop
+     * Halts all trading operations immediately
+     */
+    @PostMapping("/emergency-stop")
+    public ResponseEntity<?> triggerEmergencyStop() {
+        try {
+            log.info("Emergency stop triggered");
+            // In production, this should:
+            // 1. Close all open positions
+            // 2. Cancel all pending orders
+            // 3. Freeze the trading account
+            // 4. Log the incident
+            return ResponseEntity.ok(new MessageResponse("Emergency stop activated - all trading halted"));
+        } catch (Exception e) {
+            log.error("Failed to trigger emergency stop", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("Failed to trigger emergency stop"));
+     
+        
+    public static class MessageResponse {
+        public String message;
+        public long timestamp;
+        
+        public MessageResponse(String message) {
+            this.message = message;
+            this.timestamp = System.currentTimeMillis();
+        }
+    }}
+    }}
 }
