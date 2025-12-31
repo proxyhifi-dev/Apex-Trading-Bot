@@ -8,9 +8,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
@@ -19,20 +17,19 @@ import java.util.List;
 @RequestMapping("/api/performance")
 @RequiredArgsConstructor
 public class PerformanceController {
-
+    
     private final PerformanceService performanceService;
     private final TradeRepository tradeRepository;
-
+    
     /**
-     * Get performance metrics
-     * FIXED: No longer calls non-existent calculateMetrics() method
+     * Get comprehensive performance metrics
      */
     @GetMapping("/metrics")
     public ResponseEntity<?> getMetrics() {
         try {
             log.info("Fetching performance metrics");
             List<Trade> allTrades = tradeRepository.findAll();
-
+            
             if (allTrades.isEmpty()) {
                 return ResponseEntity.ok(PerformanceMetrics.builder()
                         .totalTrades(0)
@@ -42,20 +39,19 @@ public class PerformanceController {
                         .maxDrawdown(0)
                         .build());
             }
-
+            
             long winCount = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
                     .count();
-
             long lossCount = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
                     .count();
-
+            
             double totalPnl = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null)
                     .mapToDouble(Trade::getRealizedPnl)
                     .sum();
-
+            
             PerformanceMetrics metrics = PerformanceMetrics.builder()
                     .totalTrades(allTrades.size())
                     .winningTrades((int) winCount)
@@ -68,7 +64,7 @@ public class PerformanceController {
                     .longestWinStreak(performanceService.calculateLongestWinStreak(allTrades))
                     .longestLossStreak(performanceService.calculateLongestLossStreak(allTrades))
                     .build();
-
+            
             log.info("Performance metrics retrieved successfully");
             return ResponseEntity.ok(metrics);
         } catch (Exception e) {
@@ -77,13 +73,14 @@ public class PerformanceController {
                     .body(new ErrorResponse("Failed to fetch metrics"));
         }
     }
-
+    
     /**
-     * Get win rate only
+     * Get win rate metric
      */
     @GetMapping("/win-rate")
     public ResponseEntity<?> getWinRate() {
         try {
+            log.info("Fetching win rate");
             List<Trade> trades = tradeRepository.findAll();
             double winRate = performanceService.calculateWinRate(trades);
             return ResponseEntity.ok(new MetricResponse("Win Rate", winRate));
@@ -93,13 +90,14 @@ public class PerformanceController {
                     .body(new ErrorResponse("Failed to calculate win rate"));
         }
     }
-
+    
     /**
-     * Get max drawdown only
+     * Get max drawdown metric
      */
     @GetMapping("/max-drawdown")
     public ResponseEntity<?> getMaxDrawdown() {
         try {
+            log.info("Fetching max drawdown");
             List<Trade> trades = tradeRepository.findAll();
             double maxDD = performanceService.calculateMaxDrawdown(trades);
             return ResponseEntity.ok(new MetricResponse("Max Drawdown", maxDD));
@@ -109,13 +107,14 @@ public class PerformanceController {
                     .body(new ErrorResponse("Failed to calculate max drawdown"));
         }
     }
-
+    
     /**
-     * Get profit factor only
+     * Get profit factor metric
      */
     @GetMapping("/profit-factor")
     public ResponseEntity<?> getProfitFactor() {
         try {
+            log.info("Fetching profit factor");
             List<Trade> trades = tradeRepository.findAll();
             double pf = performanceService.calculateProfitFactor(trades);
             return ResponseEntity.ok(new MetricResponse("Profit Factor", pf));
@@ -125,13 +124,14 @@ public class PerformanceController {
                     .body(new ErrorResponse("Failed to calculate profit factor"));
         }
     }
-
+    
     /**
-     * Get Sharpe Ratio
+     * Get Sharpe ratio metric
      */
     @GetMapping("/sharpe-ratio")
     public ResponseEntity<?> getSharpeRatio() {
         try {
+            log.info("Fetching Sharpe ratio");
             List<Trade> trades = tradeRepository.findAll();
             double sharpe = performanceService.calculateSharpeRatio(trades);
             return ResponseEntity.ok(new MetricResponse("Sharpe Ratio", sharpe));
@@ -140,23 +140,22 @@ public class PerformanceController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to calculate Sharpe ratio"));
         }
-
-            /**
-     * Get Equity Curve data (PAPER or LIVE)
+    }
+    
+    /**
+     * Get equity curve data
      */
     @GetMapping("/equity-curve")
     public ResponseEntity<?> getEquityCurve(@RequestParam(defaultValue = "PAPER") String type) {
         try {
             log.info("Fetching equity curve for type: {}", type);
             
-            // Validate type parameter
             if (!type.equalsIgnoreCase("PAPER") && !type.equalsIgnoreCase("LIVE")) {
                 log.warn("Invalid type requested: {}", type);
                 return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Type must be PAPER or LIVE"));
+                        .body(new ErrorResponse("Type must be PAPER or LIVE"));
             }
             
-            // Return mock equity curve data
             double[] equityCurve = new double[30];
             double baseEquity = 100000;
             for (int i = 0; i < 30; i++) {
@@ -166,37 +165,35 @@ public class PerformanceController {
             
             log.info("Equity curve retrieved for {}", type);
             return ResponseEntity.ok(new EquityCurveResponse(type, equityCurve));
-            
         } catch (Exception e) {
             log.error("Failed to fetch equity curve", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Failed to fetch equity curve"));
+                    .body(new ErrorResponse("Failed to fetch equity curve"));
         }
     }
-    }
-
-    // Response wrappers
+    
+    // ==================== INNER CLASSES ====================
+    
     public static class ErrorResponse {
         public String error;
         public long timestamp;
-
+        
         public ErrorResponse(String error) {
             this.error = error;
             this.timestamp = System.currentTimeMillis();
         }
     }
-
+    
     public static class MetricResponse {
         public String metric;
         public double value;
-
+        
         public MetricResponse(String metric, double value) {
             this.metric = metric;
             this.value = value;
         }
     }
-
-
+    
     public static class EquityCurveResponse {
         public String type;
         public double[] curve;
@@ -205,4 +202,5 @@ public class PerformanceController {
             this.type = type;
             this.curve = curve;
         }
-    }}
+    }
+}
