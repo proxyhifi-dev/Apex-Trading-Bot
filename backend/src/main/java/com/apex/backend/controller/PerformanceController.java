@@ -140,6 +140,39 @@ public class PerformanceController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to calculate Sharpe ratio"));
         }
+
+            /**
+     * Get Equity Curve data (PAPER or LIVE)
+     */
+    @GetMapping("/equity-curve")
+    public ResponseEntity<?> getEquityCurve(@RequestParam(defaultValue = "PAPER") String type) {
+        try {
+            log.info("Fetching equity curve for type: {}", type);
+            
+            // Validate type parameter
+            if (!type.equalsIgnoreCase("PAPER") && !type.equalsIgnoreCase("LIVE")) {
+                log.warn("Invalid type requested: {}", type);
+                return ResponseEntity.badRequest()
+                    .body(new ErrorResponse("Type must be PAPER or LIVE"));
+            }
+            
+            // Return mock equity curve data
+            double[] equityCurve = new double[30];
+            double baseEquity = 100000;
+            for (int i = 0; i < 30; i++) {
+                equityCurve[i] = baseEquity + (Math.random() * 10000 - 5000);
+                baseEquity = equityCurve[i];
+            }
+            
+            log.info("Equity curve retrieved for {}", type);
+            return ResponseEntity.ok(new EquityCurveResponse(type, equityCurve));
+            
+        } catch (Exception e) {
+            log.error("Failed to fetch equity curve", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(new ErrorResponse("Failed to fetch equity curve"));
+        }
+    }
     }
 
     // Response wrappers
@@ -162,4 +195,14 @@ public class PerformanceController {
             this.value = value;
         }
     }
-}
+
+
+    public static class EquityCurveResponse {
+        public String type;
+        public double[] curve;
+        
+        public EquityCurveResponse(String type, double[] curve) {
+            this.type = type;
+            this.curve = curve;
+        }
+    }}
