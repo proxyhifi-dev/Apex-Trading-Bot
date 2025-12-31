@@ -14,20 +14,19 @@ import java.util.ArrayList;
 @RestController
 @RequestMapping("/api/account")
 @RequiredArgsConstructor
+@CrossOrigin(origins = "http://localhost:4200")
 public class AccountController {
-
+    
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
-
+    
     /**
-     * Get user profile with mock data
-     * FIXED: Proper error handling and logging
+     * Get user profile
      */
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile() {
         try {
             log.info("Fetching user profile");
-
             UserProfileDTO profile = UserProfileDTO.builder()
                     .name("Trading Account")
                     .availableFunds(initialCapital)
@@ -36,7 +35,6 @@ public class AccountController {
                     .todaysPnl(0.0)
                     .holdings(new ArrayList<>())
                     .build();
-
             log.info("Successfully retrieved profile");
             return ResponseEntity.ok(profile);
         } catch (Exception e) {
@@ -45,24 +43,23 @@ public class AccountController {
                     .body(new ErrorResponse("Failed to fetch account data"));
         }
     }
-
+    
     /**
      * Get account summary (PAPER or LIVE)
-     * FIXED: Now validates type parameter and returns correct data
      */
     @GetMapping("/summary")
     public ResponseEntity<?> getSummary(
             @RequestParam(defaultValue = "PAPER") String type) {
         try {
             log.info("Fetching account summary for type: {}", type);
-
+            
             // Validate type parameter
             if (!type.equalsIgnoreCase("PAPER") && !type.equalsIgnoreCase("LIVE")) {
                 log.warn("Invalid account type requested: {}", type);
                 return ResponseEntity.badRequest()
                         .body(new ErrorResponse("Account type must be PAPER or LIVE"));
             }
-
+            
             UserProfileDTO summary;
             if ("PAPER".equalsIgnoreCase(type)) {
                 summary = UserProfileDTO.builder()
@@ -85,7 +82,6 @@ public class AccountController {
                         .build();
                 log.info("Returned LIVE trading account summary");
             }
-
             return ResponseEntity.ok(summary);
         } catch (Exception e) {
             log.error("Failed to fetch account summary", e);
@@ -93,7 +89,7 @@ public class AccountController {
                     .body(new ErrorResponse("Failed to fetch account summary"));
         }
     }
-
+    
     /**
      * Get capital information
      */
@@ -108,23 +104,24 @@ public class AccountController {
                     .body(new ErrorResponse("Failed to fetch capital information"));
         }
     }
-
-    // Helper classes
+    
+    // ==================== INNER CLASSES ====================
+    
     public static class ErrorResponse {
         public String error;
         public long timestamp;
-
+        
         public ErrorResponse(String error) {
             this.error = error;
             this.timestamp = System.currentTimeMillis();
         }
     }
-
+    
     public static class CapitalInfo {
         public double initialCapital;
         public double availableCapital;
         public double usedCapital;
-
+        
         public CapitalInfo(double initialCapital, double availableCapital, double usedCapital) {
             this.initialCapital = initialCapital;
             this.availableCapital = availableCapital;
