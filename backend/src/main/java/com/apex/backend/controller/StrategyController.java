@@ -16,7 +16,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
-@RequestMapping("/api/bot")
+@RequestMapping("/api/strategy") // ✅ Fixed: Changed from /api/bot
 @RequiredArgsConstructor
 @Slf4j
 @CrossOrigin(origins = "http://localhost:4200")
@@ -25,9 +25,7 @@ public class StrategyController {
     private final StockScreeningResultRepository screeningRepo;
     private final TradeExecutionService tradeExecutionService;
     private final BotScheduler botScheduler;
-    private final StrategyConfig config; // ✅ Added Config Injection
-
-    // --- MANUAL CONTROLS ---
+    private final StrategyConfig config;
 
     @PostMapping("/scan-now")
     public ResponseEntity<String> manualScan() {
@@ -35,25 +33,10 @@ public class StrategyController {
         return ResponseEntity.ok("Market Scan Triggered!");
     }
 
-    // ✅ NEW: Toggle Paper/Live Mode (MISSING IN YOUR CODE)
-    @PostMapping("/mode")
-    public ResponseEntity<?> toggleMode(@RequestParam boolean paperMode) {
-        config.getTrading().setPaperMode(paperMode);
-        log.info("🔄 System Mode Changed to: {}", paperMode ? "PAPER TRADING" : "LIVE TRADING");
-        return ResponseEntity.ok(Map.of("paperMode", paperMode));
-    }
-
-    // ✅ NEW: Get Current Mode (MISSING IN YOUR CODE)
-    @GetMapping("/mode")
-    public ResponseEntity<?> getMode() {
-        return ResponseEntity.ok(Map.of("paperMode", config.getTrading().isPaperMode()));
-    }
-
-    // --- SIGNAL MANAGEMENT ---
-
-    @GetMapping("/signals/pending")
-    public List<SignalDTO> getPendingSignals() {
-        return screeningRepo.findByApprovalStatus(StockScreeningResult.ApprovalStatus.PENDING)
+    // ✅ Match frontend call: /api/strategy/signals
+    @GetMapping("/signals")
+    public List<SignalDTO> getAllSignals() {
+        return screeningRepo.findAll()
                 .stream()
                 .map(s -> SignalDTO.builder()
                         .id(s.getId())
@@ -67,19 +50,26 @@ public class StrategyController {
                 .collect(Collectors.toList());
     }
 
-    @PostMapping("/signals/{id}/approve")
-    public void approveSignal(@PathVariable Long id, @RequestParam boolean isPaper) {
-        // You can allow the frontend to override, or force the global config mode here
-        // For now, we respect the frontend parameter, but you might want to use:
-        // boolean effectiveMode = config.getTrading().isPaperMode();
-        tradeExecutionService.approveAndExecute(id, isPaper);
+    @GetMapping("/signals/pending")
+    public List<SignalDTO> getPendingSignals() {
+        return screeningRepo.findByApprovalStatus(StockScreeningResult.ApprovalStatus.PENDING)
+                .stream()
+                .map(s -> SignalDTO.builder()
+                        .id(s.getId())
+                        .symbol(s.getSymbol())
+                        .entryPrice(s.getEntryPrice())
+                        .build())
+                .collect(Collectors.toList());
     }
 
-    @PostMapping("/signals/{id}/reject")
-    public void rejectSignal(@PathVariable Long id) {
-        StockScreeningResult signal = screeningRepo.findById(id)
-                .orElseThrow(() -> new RuntimeException("Signal not found"));
-        signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
-        screeningRepo.save(signal);
+    @PostMapping("/mode")
+    public ResponseEntity<?> toggleMode(@RequestParam boolean paperMode) {
+        config.getTrading().setPaperMode(paperMode);
+        return ResponseEntity.ok(Map.of("paperMode", paperMode));
+    }
+
+    @GetMapping("/mode")
+    public ResponseEntity<?> getMode() {
+        return ResponseEntity.ok(Map.of("paperMode", config.getTrading().isPaperMode()));
     }
 }
