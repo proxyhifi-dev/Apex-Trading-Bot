@@ -57,6 +57,7 @@ public class CircuitBreaker {
     public boolean canTrade() {
         return !isCircuitBreakerTriggered();
     }
+            }
     
     /**
      * Update risk metrics and circuit breaker status
@@ -69,5 +70,5 @@ public class CircuitBreaker {
         } catch (Exception e) {
             log.error("Failed to update metrics", e);
         }
-    }}
+    }    }
 }
