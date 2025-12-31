@@ -6,60 +6,111 @@ import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.service.FyersService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/paper")
 @RequiredArgsConstructor
 @CrossOrigin(origins = "http://localhost:4200")
 public class PaperPortfolioController {
-
+    
     private final TradeRepository tradeRepo;
     private final FyersService fyersService;
-
-    // ✅ Fixed: Match frontend call: /api/paper/positions/open
+    
+    /**
+     * Get open paper trading positions
+     */
     @GetMapping("/positions/open")
-    public List<PaperPositionDTO> getOpenPositions() {
-        return tradeRepo.findByStatus(Trade.TradeStatus.OPEN).stream()
-                .filter(Trade::isPaperTrade)
-                .map(t -> {
-                    double ltp = fyersService.getLTP(t.getSymbol());
-                    return PaperPositionDTO.builder()
-                            .symbol(t.getSymbol())
-                            .quantity(t.getQuantity())
-                            .entryPrice(t.getEntryPrice())
-                            .ltp(ltp)
-                            .pnl((ltp - t.getEntryPrice()) * t.getQuantity())
-                            .pnlPercent((ltp - t.getEntryPrice()) / t.getEntryPrice() * 100)
-                            .build();
-                })
-                .collect(Collectors.toList());
+    public ResponseEntity<?> getOpenPositions() {
+        try {
+            log.info("Fetching open paper positions");
+            List<PaperPositionDTO> positions = tradeRepo.findByStatus(Trade.TradeStatus.OPEN).stream()
+                    .filter(Trade::isPaperTrade)
+                    .map(t -> {
+                        double ltp = fyersService.getLTP(t.getSymbol());
+                        return PaperPositionDTO.builder()
+                                .symbol(t.getSymbol())
+                                .quantity(t.getQuantity())
+                                .entryPrice(t.getEntryPrice())
+                                .ltp(ltp)
+                                .pnl((ltp - t.getEntryPrice()) * t.getQuantity())
+                                .pnlPercent((ltp - t.getEntryPrice()) / t.getEntryPrice() * 100)
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+            log.info("Retrieved {} open positions", positions.size());
+            return ResponseEntity.ok(positions);
+        } catch (Exception e) {
+            log.error("Failed to fetch open positions", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch open positions"));
+        }
     }
-
-    // ✅ Fixed: Match frontend call: /api/paper/positions/closed
+    
+    /**
+     * Get closed paper trading positions
+     */
     @GetMapping("/positions/closed")
-    public List<PaperPositionDTO> getClosedPositions() {
-        return new ArrayList<>(); // Return empty to stop 500 errors until logic is ready
+    public ResponseEntity<?> getClosedPositions() {
+        try {
+            log.info("Fetching closed paper positions");
+            List<PaperPositionDTO> positions = new ArrayList<>();
+            return ResponseEntity.ok(positions);
+        } catch (Exception e) {
+            log.error("Failed to fetch closed positions", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch closed positions"));
+        }
     }
-
+    
+    /**
+     * Get paper trading statistics
+     */
     @GetMapping("/stats")
-    public PaperStatsDTO getStats() {
-        List<Trade> closedTrades = tradeRepo.findByStatus(Trade.TradeStatus.CLOSED).stream()
-                .filter(Trade::isPaperTrade)
-                .collect(Collectors.toList());
-
-        double totalProfit = closedTrades.stream()
-                .filter(t -> t.getRealizedPnl() != null)
-                .mapToDouble(Trade::getRealizedPnl).sum();
-
-        return PaperStatsDTO.builder()
-                .totalTrades(closedTrades.size())
-                .winRate(closedTrades.isEmpty() ? 0 : 50.0) // Mock winrate
-                .netPnl(totalProfit)
-                .build();
+    public ResponseEntity<?> getStats() {
+        try {
+            log.info("Fetching paper trading stats");
+            List<Trade> closedTrades = tradeRepo.findByStatus(Trade.TradeStatus.CLOSED).stream()
+                    .filter(Trade::isPaperTrade)
+                    .collect(Collectors.toList());
+            
+            double totalProfit = closedTrades.stream()
+                    .filter(t -> t.getRealizedPnl() != null)
+                    .mapToDouble(Trade::getRealizedPnl)
+                    .sum();
+            
+            PaperStatsDTO stats = PaperStatsDTO.builder()
+                    .totalTrades(closedTrades.size())
+                    .winRate(closedTrades.isEmpty() ? 0 : 50.0)
+                    .netPnl(totalProfit)
+                    .build();
+            
+            log.info("Paper stats retrieved: totalTrades={}, netPnl={}", stats.getTotalTrades(), stats.getNetPnl());
+            return ResponseEntity.ok(stats);
+        } catch (Exception e) {
+            log.error("Failed to fetch paper stats", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch paper stats"));
+        }
+    }
+    
+    // ==================== INNER CLASSES ====================
+    
+    public static class ErrorResponse {
+        public String error;
+        public long timestamp;
+        
+        public ErrorResponse(String error) {
+            this.error = error;
+            this.timestamp = System.currentTimeMillis();
+        }
     }
 }
