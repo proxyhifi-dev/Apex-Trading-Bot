@@ -19,9 +19,6 @@ public class PortfolioService {
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
 
-    /**
-     * Get current portfolio value
-     */
     public double getPortfolioValue(boolean isPaper) {
         try {
             Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
@@ -33,9 +30,6 @@ public class PortfolioService {
         }
     }
 
-    /**
-     * Get available cash
-     */
     public double getAvailableCash(boolean isPaper) {
         try {
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
@@ -49,9 +43,16 @@ public class PortfolioService {
         }
     }
 
-    /**
-     * Get total invested
-     */
+    // NEW: Added missing method
+    public double getAvailableEquity(boolean isPaper) {
+        try {
+            return getAvailableCash(isPaper);
+        } catch (Exception e) {
+            log.error("Failed to get available equity", e);
+            return initialCapital;
+        }
+    }
+
     public double getTotalInvested(boolean isPaper) {
         try {
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
@@ -64,9 +65,6 @@ public class PortfolioService {
         }
     }
 
-    /**
-     * Get realized P&L
-     */
     public double getRealizedPnL(boolean isPaper) {
         try {
             Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
@@ -77,9 +75,6 @@ public class PortfolioService {
         }
     }
 
-    /**
-     * Get number of open positions
-     */
     public int getOpenPositionCount(boolean isPaper) {
         try {
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);

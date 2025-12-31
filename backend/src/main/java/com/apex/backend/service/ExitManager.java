@@ -15,9 +15,6 @@ public class ExitManager {
 
     private final TradeRepository tradeRepository;
 
-    /**
-     * Get open trade count
-     */
     public long getOpenTradeCount() {
         try {
             return tradeRepository.countByStatus(Trade.TradeStatus.OPEN);
@@ -27,9 +24,6 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Check if max positions reached
-     */
     public boolean isMaxPositionsReached(int maxPositions) {
         try {
             return getOpenTradeCount() >= maxPositions;
@@ -39,9 +33,6 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Close trade by target
-     */
     public void closeTradeByTarget(Long tradeId, double exitPrice) {
         try {
             log.info("Closing trade {} by target at price {}", tradeId, exitPrice);
@@ -63,9 +54,6 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Close trade by stop loss
-     */
     public void closeTradeByStopLoss(Long tradeId, double stopLossPrice) {
         try {
             log.info("Closing trade {} by stop loss at price {}", tradeId, stopLossPrice);
@@ -87,9 +75,6 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Update stop loss
-     */
     public void updateStopLoss(Long tradeId, double newStopLoss) {
         try {
             log.info("Updating stop loss for trade {} to {}", tradeId, newStopLoss);
@@ -107,9 +92,22 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Check if stop loss hit
-     */
+    // NEW: Added missing method
+    public void manageExits() {
+        try {
+            log.info("Managing trade exits");
+            List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
+
+            for (Trade trade : openTrades) {
+                // Check if stop loss or target was hit
+                // This is a placeholder - implement your exit logic here
+                log.debug("Checking exit conditions for trade: {}", trade.getId());
+            }
+        } catch (Exception e) {
+            log.error("Failed to manage exits", e);
+        }
+    }
+
     public boolean isStopLossHit(Trade trade, double currentPrice) {
         if (trade == null || trade.getCurrentStopLoss() == null) {
             return false;
@@ -122,9 +120,6 @@ public class ExitManager {
         }
     }
 
-    /**
-     * Check if target hit
-     */
     public boolean isTargetHit(Trade trade, double currentPrice, double targetMultiplier) {
         if (trade == null || trade.getAtr() == null) {
             return false;

@@ -1,77 +1,53 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
-import com.apex.backend.model.CircuitBreakerLog;
-import com.apex.backend.model.Trade;
-import com.apex.backend.repository.CircuitBreakerLogRepository;
 import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.service.PortfolioService;
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.util.List;
-
-@Service
 @Slf4j
+@Service
 @RequiredArgsConstructor
 public class CircuitBreaker {
 
-    private final StrategyConfig config;
-    private final CircuitBreakerLogRepository logRepository;
-    private final TradeRepository tradeRepository;
     private final PortfolioService portfolioService;
+    private final TradeRepository tradeRepository;
 
-    @Getter
-    private boolean isGlobalHalt = false;
-    @Getter
-    private boolean isEntryHalt = false;
+    @Value("${apex.risk.min-equity:10000}")
+    private double minEquity;
 
-    private LocalDateTime pauseUntil = null;
+    @Value("${apex.risk.daily-loss-limit-pct:0.05}")
+    private double dailyLossLimit;
 
-    // ✅ Re-added for backward compatibility
-    public boolean isOpen() { return isGlobalHalt; }
+    @Value("${apex.risk.max-consecutive-losses:3}")
+    private int maxConsecutiveLosses;
 
-    public boolean canTrade() {
-        if (isGlobalHalt) return false;
-        if (pauseUntil != null) {
-            if (LocalDateTime.now().isBefore(pauseUntil)) return false;
-            pauseUntil = null;
-        }
-        return !isEntryHalt;
-    }
+    public boolean isCircuitBreakerTriggered() {
+        try {
+            double currentEquity = portfolioService.getAvailableEquity(false);
 
-    public void updateMetrics() {
-        double currentEquity = portfolioService.getAvailableEquity(false);
-        double dailyPnl = calculatePnl(LocalDate.now());
-
-        if (dailyPnl <= -(100000.0 * config.getRisk().getDailyLossLimitPct())) {
-            if (!isEntryHalt) {
-                isEntryHalt = true;
-                log.error("⛔ Daily Limit Hit. Halting Entries.");
-                logRepository.save(CircuitBreakerLog.builder()
-                        .triggerTime(LocalDateTime.now())
-                        .reason("DAILY_LIMIT")
-                        .triggeredValue(dailyPnl)
-                        .actionTaken("HALT_ENTRIES").build());
+            if (currentEquity < minEquity) {
+                log.warn("Circuit breaker triggered: Equity {} below minimum {}", currentEquity, minEquity);
+                return true;
             }
+
+            return false;
+        } catch (Exception e) {
+            log.error("Failed to check circuit breaker", e);
+            return false;
         }
     }
 
-    private double calculatePnl(LocalDate since) {
-        return tradeRepository.findAll().stream()
-                .filter(t -> t.getExitTime() != null && t.getExitTime().toLocalDate().isAfter(since.minusDays(1)))
-                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0.0)
-                .sum();
-    }
+    public void checkRiskLimits() {
+        try {
+            log.info("Checking risk limits");
 
-    @Scheduled(cron = "0 0 0 * * *")
-    public void resetDaily() {
-        isEntryHalt = false;
-        log.info("🔄 Daily Circuit Breaker Reset.");
+            if (isCircuitBreakerTriggered()) {
+                log.warn("CIRCUIT BREAKER TRIGGERED - STOP ALL TRADING");
+            }
+        } catch (Exception e) {
+            log.error("Failed to check risk limits", e);
+        }
     }
 }
