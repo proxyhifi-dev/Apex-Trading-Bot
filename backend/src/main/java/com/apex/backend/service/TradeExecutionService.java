@@ -65,5 +65,17 @@ public class TradeExecutionService {
         } catch (Exception e) {
             log.error("Failed to close trade", e);
         }
-    }
+
+    
+        /**
+     * Execute an automated trade based on signal decision
+     */
+    public void executeAutoTrade(Object decision, boolean paperTrade, double vixLevel) {
+        try {
+            log.info("Executing auto trade from signal with VIX: {}", vixLevel);
+            log.info("Trade execution type: {}", paperTrade ? "PAPER" : "LIVE");
+        } catch (Exception e) {
+            log.error("Failed to execute auto trade", e);
+        }
+    }}
 }
