@@ -77,5 +77,5 @@ public class TradeExecutionService {
         } catch (Exception e) {
             log.error("Failed to execute auto trade", e);
         }
-    }}
+            }
 }
