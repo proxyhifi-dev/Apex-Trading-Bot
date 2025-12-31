@@ -28,4 +28,11 @@ public class AccountController {
                 .holdings(new ArrayList<>())
                 .build();
     }
+
+    // ✅ FIX: Added this endpoint to match Frontend calls
+    @GetMapping("/summary")
+    public UserProfileDTO getSummary(@RequestParam(defaultValue = "PAPER") String type) {
+        // In the future, switch logic based on 'type' (PAPER vs LIVE)
+        return getProfile();
+    }
 }

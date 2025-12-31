@@ -16,7 +16,8 @@ public class BotScheduler {
     private final StrategyConfig config;
     private final CircuitBreaker circuitBreaker;
     private final ScannerOrchestrator scannerOrchestrator;
-    private final ExitManager exitManager; // ✅ Will work now that ExitManager is restored
+    private final ExitManager exitManager;
+    private final LogBroadcastService logger;
 
     @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
     public void runBotCycle() {
