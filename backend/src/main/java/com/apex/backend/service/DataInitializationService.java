@@ -1,0 +1,68 @@
+package com.apex.backend.service;
+
+import com.apex.backend.model.User;
+import com.apex.backend.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
+
+/**
+ * Data Initialization Service
+ * Creates default test users on application startup
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class DataInitializationService implements CommandLineRunner {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+
+    @Override
+    public void run(String... args) {
+        try {
+            // Create default admin user if not exists
+            if (!userRepository.existsByUsername("admin")) {
+                User admin = User.builder()
+                    .username("admin")
+                    .passwordHash(passwordEncoder.encode("admin123"))
+                    .email("admin@apextrading.com")
+                    .role("ADMIN")
+                    .availableFunds(500000.0)
+                    .totalInvested(0.0)
+                    .currentValue(500000.0)
+                    .enabled(true)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+                userRepository.save(admin);
+                log.info("✅ Default admin user created: username=admin, password=admin123");
+            }
+
+            // Create default test user if not exists
+            if (!userRepository.existsByUsername("trader")) {
+                User trader = User.builder()
+                    .username("trader")
+                    .passwordHash(passwordEncoder.encode("trader123"))
+                    .email("trader@apextrading.com")
+                    .role("USER")
+                    .availableFunds(100000.0)
+                    .totalInvested(0.0)
+                    .currentValue(100000.0)
+                    .enabled(true)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+                userRepository.save(trader);
+                log.info("✅ Default trader user created: username=trader, password=trader123");
+            }
+
+            log.info("✅ Data initialization completed successfully");
+            log.info("📊 Total users in database: {}", userRepository.count());
+            
+        } catch (Exception e) {
+            log.error("❌ Data initialization failed", e);
+        }
+    }
+}
