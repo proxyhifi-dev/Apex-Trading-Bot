@@ -58,6 +58,17 @@ public class User {
     @Column
     private LocalDateTime lastLogin;
 
+    // Fyers OAuth fields
+    @Column(unique = true, length = 50)
+    private String fyersId;
+
+    @Column(length = 500)
+    private String fyersToken;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean fyersConnected = false;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
