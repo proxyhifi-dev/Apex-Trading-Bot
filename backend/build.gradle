@@ -10,7 +10,7 @@ description = 'Apex Trading Bot - High Frequency Trading System'
 
 java {
 	toolchain {
-		languageVersion = JavaLanguageVersion.of(23)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 
