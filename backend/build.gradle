@@ -82,7 +82,7 @@ task generateToken(type: JavaExec) {
 	standardInput = System.in
 
 	javaLauncher = javaToolchains.launcherFor {
-		languageVersion = JavaLanguageVersion.of(23)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 
@@ -95,7 +95,7 @@ task bootRunDev(type: JavaExec) {
 	args = ['--spring.profiles.active=dev']
 
 	javaLauncher = javaToolchains.launcherFor {
-		languageVersion = JavaLanguageVersion.of(23)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
 
@@ -108,6 +108,6 @@ task bootRunProd(type: JavaExec) {
 	args = ['--spring.profiles.active=prod']
 
 	javaLauncher = javaToolchains.launcherFor {
-		languageVersion = JavaLanguageVersion.of(23)
+		languageVersion = JavaLanguageVersion.of(25)
 	}
 }
