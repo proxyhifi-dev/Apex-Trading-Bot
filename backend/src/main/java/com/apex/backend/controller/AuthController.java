@@ -86,50 +86,89 @@ public class AuthController {
                         .body(new ErrorResponse("Failed to exchange auth code: " + e.getMessage()));
             }
 
-            // CASE 1: User is already logged in - link immediately
+            // Determine username from Fyers (use a unique identifier)
+            String fyersUsername = "fyers_" + authCode.substring(0, Math.min(8, authCode.length()));
+            User user = null;
+
+            // CASE 1: User is already logged in - link Fyers to existing account
             if (authHeader != null && authHeader.startsWith("Bearer ")) {
                 try {
                     String jwt = authHeader.substring(7);
                     Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
                     
                     if (userId != null) {
-                        fyersAuthService.storeFyersToken(userId, fyersToken);
-                        log.info("✅ Fyers account linked successfully for user ID: {}", userId);
-                        return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+                        Optional<User> userOpt = userRepository.findById(userId);
+                        if (userOpt.isPresent()) {
+                            user = userOpt.get();
+                            fyersAuthService.storeFyersToken(userId, fyersToken);
+                            log.info("✅ Fyers account linked successfully for user ID: {}", userId);
+                        }
                     }
                 } catch (Exception e) {
                     log.warn("Invalid JWT token during callback: {}", e.getMessage());
-                    // Continue to CASE 2
                 }
             }
 
             // CASE 2: User is NOT logged in - check if state contains user ID
-            if (state != null && state.startsWith("user_")) {
+            if (user == null && state != null && state.startsWith("user_")) {
                 try {
                     String[] parts = state.split("_");
                     if (parts.length >= 2) {
                         Long userId = Long.parseLong(parts[1]);
-                        fyersAuthService.storeFyersToken(userId, fyersToken);
-                        log.info("✅ Fyers account linked via state for user ID: {}", userId);
-                        return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+                        Optional<User> userOpt = userRepository.findById(userId);
+                        if (userOpt.isPresent()) {
+                            user = userOpt.get();
+                            fyersAuthService.storeFyersToken(userId, fyersToken);
+                            log.info("✅ Fyers account linked via state for user ID: {}", userId);
+                        }
                     }
                 } catch (Exception e) {
                     log.warn("Failed to extract user ID from state: {}", e.getMessage());
-                    // Continue to CASE 3
                 }
             }
 
-            // CASE 3: User is NOT logged in and no user ID in state - store temporarily
-            String tempKey = "temp_" + System.currentTimeMillis();
-            tempFyersTokens.put(tempKey, fyersToken);
-            log.info("⏳ Stored Fyers token temporarily with key: {}", tempKey);
+            // CASE 3: No existing user - create a new account with Fyers
+            if (user == null) {
+                // Check if a user with this Fyers-based username already exists
+                Optional<User> existingUser = userRepository.findByUsername(fyersUsername);
+                
+                if (existingUser.isPresent()) {
+                    user = existingUser.get();
+                    log.info("Found existing Fyers user: {}", fyersUsername);
+                } else {
+                    // Create new user account
+                    user = User.builder()
+                            .username(fyersUsername)
+                            .email(fyersUsername + "@fyers.local") // Placeholder email
+                            .passwordHash(passwordEncoder.encode(authCode)) // Use auth code as temporary password
+                            .role("USER")
+                            .availableFunds(100000.0)
+                            .totalInvested(0.0)
+                            .currentValue(100000.0)
+                            .enabled(true)
+                            .createdAt(LocalDateTime.now())
+                            .build();
+                    
+                    user = userRepository.save(user);
+                    log.info("✅ Created new user account for Fyers: {}", fyersUsername);
+                }
+                
+                // Store Fyers token for the new/existing user
+                fyersAuthService.storeFyersToken(user.getId(), fyersToken);
+            }
+
+            // Generate JWT tokens for frontend login
+            String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
+            String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+
+            UserProfileDTO userProfile = UserProfileDTO.builder()
+                    .name(user.getUsername())
+                    .availableFunds(user.getAvailableFunds())
+                    .build();
+
+            log.info("✅ Fyers authentication complete, returning JWT tokens for user: {}", user.getUsername());
             
-            Map<String, String> response = new HashMap<>();
-            response.put("message", "Fyers authentication successful. Please login to link your account.");
-            response.put("tempKey", tempKey);
-            response.put("requiresLogin", "true");
-            
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(new LoginResponse(userProfile, accessToken, refreshToken));
 
         } catch (Exception e) {
             log.error("Fyers callback failed with exception", e);
