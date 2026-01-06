@@ -61,8 +61,8 @@ dependencies {
 	runtimeOnly 'org.postgresql:postgresql'
 
 	// Lombok
-	compileOnly 'org.projectlombok:lombok'
-	annotationProcessor 'org.projectlombok:lombok'
+	compileOnly 'org.projectlombok:lombo:1.18.42k'
+	annotationProcessor 'org.projectlombok:lombo:1.18.42k'
 
 	// Testing
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
