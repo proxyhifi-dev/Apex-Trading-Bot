@@ -45,19 +45,30 @@ public class FyersAuthService {
         requestBody.addProperty("grant_type", "authorization_code");
         requestBody.addProperty("appIdHash", appHash);
         requestBody.addProperty("code", authCode);
-
-        // ✅ CRITICAL FIX: This was missing! It connects your code to the App Details you see on screen.
+        
+        // ✅ FIX 1: This line was missing in your upload. It is required!
         requestBody.addProperty("redirect_uri", redirectUri);
+
+        // ✅ FIX 2: Correct order (MediaType, String) for OkHttp 4.x
+        RequestBody body = RequestBody.create(
+            MediaType.parse("application/json; charset=utf-8"),
+            requestBody.toString()
+        );
 
         Request request = new Request.Builder()
                 .url(VALIDATE_URL)
-                .post(RequestBody.create(requestBody.toString(), MediaType.get("application/json")))
+                .post(body) // Use the fixed body
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body().string();
-            // Log the response so we can see if Fyers accepts it
+            // Log exactly what Fyers says so we can debug
             log.info("Fyers Token Exchange Response: {}", responseBody);
+
+            if (!response.isSuccessful()) {
+                // This helps us see if it's "invalid_grant" or "redirect_mismatch"
+                throw new Exception("Fyers API Error (" + response.code() + "): " + responseBody);
+            }
 
             JsonObject json = gson.fromJson(responseBody, JsonObject.class);
 
@@ -78,7 +89,12 @@ public class FyersAuthService {
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
-            JsonObject json = gson.fromJson(response.body().string(), JsonObject.class);
+            String responseBody = response.body().string();
+            if (!response.isSuccessful()) {
+                throw new Exception("Failed to get profile: " + responseBody);
+            }
+            
+            JsonObject json = gson.fromJson(responseBody, JsonObject.class);
 
             if (json.has("data")) {
                 JsonObject data = json.getAsJsonObject("data");
@@ -88,7 +104,7 @@ public class FyersAuthService {
                 profile.setEmail(data.has("email_id") ? data.get("email_id").getAsString() : null);
                 return profile;
             }
-            throw new Exception("Invalid profile response");
+            throw new Exception("Invalid profile response: " + responseBody);
         }
     }
 
