@@ -21,7 +21,10 @@ public class FyersAuthService {
     @Value("${fyers.api.secret-key}")
     private String secretKey;
 
-    private static final String REDIRECT_URI = "http://localhost:4200/auth/fyers-callback";
+    // FIX: Read from config file instead of hardcoding
+    @Value("${fyers.redirect-uri}")
+    private String redirectUri;
+
     private static final String AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode";
     private static final String VALIDATE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode";
     private static final String PROFILE_URL = "https://api-t1.fyers.in/api/v3/profile";
@@ -32,45 +35,47 @@ public class FyersAuthService {
 
     public String generateAuthUrl(String state) {
         if (state == null) state = "apex_" + System.currentTimeMillis();
+        // Use the redirectUri variable here
         return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-            AUTH_CODE_URL, appId, REDIRECT_URI, state);
+                AUTH_CODE_URL, appId, redirectUri, state);
     }
 
     public String exchangeAuthCodeForToken(String authCode) throws Exception {
         String appHash = generateAppHash();
-        
+
         JsonObject requestBody = new JsonObject();
         requestBody.addProperty("grant_type", "authorization_code");
         requestBody.addProperty("appIdHash", appHash);
         requestBody.addProperty("code", authCode);
-        
+
         Request request = new Request.Builder()
-            .url(VALIDATE_URL)
-            .post(RequestBody.create(requestBody.toString(), MediaType.get("application/json")))
-            .build();
-        
+                .url(VALIDATE_URL)
+                .post(RequestBody.create(requestBody.toString(), MediaType.get("application/json")))
+                .build();
+
         try (Response response = httpClient.newCall(request).execute()) {
-            JsonObject json = gson.fromJson(response.body().string(), JsonObject.class);
-            
+            String responseBody = response.body().string();
+            JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+
             if (json.has("access_token")) {
                 log.info("✅ Successfully obtained Fyers access token");
                 return json.get("access_token").getAsString();
             } else {
-                throw new Exception("Failed to obtain Fyers token: " + json);
+                throw new Exception("Failed to obtain Fyers token: " + responseBody);
             }
         }
     }
 
     public FyersProfile getUserProfile(String fyersToken) throws Exception {
         Request request = new Request.Builder()
-            .url(PROFILE_URL)
-            .header("Authorization", fyersToken)
-            .get()
-            .build();
-        
+                .url(PROFILE_URL)
+                .header("Authorization", fyersToken)
+                .get()
+                .build();
+
         try (Response response = httpClient.newCall(request).execute()) {
             JsonObject json = gson.fromJson(response.body().string(), JsonObject.class);
-            
+
             if (json.has("data")) {
                 JsonObject data = json.getAsJsonObject("data");
                 FyersProfile profile = new FyersProfile();

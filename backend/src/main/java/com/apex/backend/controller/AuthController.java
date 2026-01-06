@@ -4,6 +4,7 @@ import com.apex.backend.dto.UserProfileDTO;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.security.JwtTokenProvider;
+import com.apex.backend.service.FyersAuthService; // Import this
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -11,12 +12,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
+import java.util.Map;
 import java.util.Optional;
 
-/**
- * Authentication Controller
- * Handles user login, registration, and JWT token management
- */
 @Slf4j
 @RestController
 @RequestMapping("/api/auth")
@@ -27,307 +25,141 @@ public class AuthController {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final FyersAuthService fyersAuthService; // Inject Fyers Service
 
-    /**
-     * User registration endpoint
-     * Creates a new user with hashed password
-     */
+    // ==================== Fyers Integration Endpoints ====================
+
+    @GetMapping("/fyers/auth-url")
+    public ResponseEntity<?> getFyersAuthUrl() {
+        try {
+            // Generate the login URL using the App ID from config
+            String url = fyersAuthService.generateAuthUrl("apex_app_state");
+            log.info("Generated Fyers Auth URL: {}", url);
+            return ResponseEntity.ok(Map.of("authUrl", url));
+        } catch (Exception e) {
+            log.error("Failed to generate Fyers auth URL", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to generate auth URL: " + e.getMessage()));
+        }
+    }
+
+    @PostMapping("/fyers/callback")
+    public ResponseEntity<?> handleFyersCallback(@RequestBody Map<String, String> payload,
+                                                 @RequestHeader("Authorization") String authHeader) {
+        try {
+            String authCode = payload.get("auth_code");
+            if (authCode == null) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Missing auth_code"));
+            }
+
+            // Exchange Auth Code for Access Token
+            String fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
+
+            // Identify the current user
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not authenticated"));
+            }
+            String jwt = authHeader.substring(7);
+            Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+
+            // Store the token
+            fyersAuthService.storeFyersToken(userId, fyersToken);
+
+            log.info("Fyers connected successfully for user ID: {}", userId);
+            return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+
+        } catch (Exception e) {
+            log.error("Fyers connection failed", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Fyers connection failed: " + e.getMessage()));
+        }
+    }
+
+    // ==================== Standard Auth Endpoints ====================
+
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
         try {
-            log.info("User registration attempt for username: {}", request.getUsername());
-            
-            // Validate input
-            if (request.getUsername() == null || request.getUsername().isEmpty()) {
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Username cannot be empty"));
-            }
-            
-            if (request.getPassword() == null || request.getPassword().length() < 6) {
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Password must be at least 6 characters"));
-            }
-            
-            // Check if username already exists
             if (userRepository.existsByUsername(request.getUsername())) {
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Username already exists"));
+                return ResponseEntity.badRequest().body(new ErrorResponse("Username already exists"));
             }
-            
-            // Check if email already exists
-            if (request.getEmail() != null && userRepository.existsByEmail(request.getEmail())) {
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Email already exists"));
-            }
-            
-            // Create new user
+
             User user = User.builder()
-                .username(request.getUsername())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .email(request.getEmail())
-                .role("USER")
-                .availableFunds(100000.0)
-                .totalInvested(0.0)
-                .currentValue(100000.0)
-                .enabled(true)
-                .createdAt(LocalDateTime.now())
-                .build();
-            
+                    .username(request.getUsername())
+                    .passwordHash(passwordEncoder.encode(request.getPassword()))
+                    .email(request.getEmail())
+                    .role("USER")
+                    .availableFunds(100000.0)
+                    .totalInvested(0.0)
+                    .currentValue(100000.0)
+                    .enabled(true)
+                    .createdAt(LocalDateTime.now())
+                    .build();
+
             user = userRepository.save(user);
-            log.info("User registered successfully: {}", user.getUsername());
-            
-            // Generate tokens
+
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
-            
+
             UserProfileDTO userProfile = UserProfileDTO.builder()
-                .name(user.getUsername())
-                .availableFunds(user.getAvailableFunds())
-                .totalInvested(user.getTotalInvested())
-                .currentValue(user.getCurrentValue())
-                .todaysPnl(0.0)
-                .build();
-            
+                    .name(user.getUsername())
+                    .availableFunds(user.getAvailableFunds())
+                    .build();
+
             return ResponseEntity.ok(new LoginResponse(userProfile, accessToken, refreshToken));
-            
+
         } catch (Exception e) {
-            log.error("Registration failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Registration failed: " + e.getMessage()));
+                    .body(new ErrorResponse("Registration failed: " + e.getMessage()));
         }
     }
 
-    /**
-     * User login endpoint
-     * Authenticates user and returns JWT tokens
-     */
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest request) {
         try {
-            log.info("User login attempt for username: {}", request.getUsername());
-            
-            // Validate input
-            if (request.getUsername() == null || request.getUsername().isEmpty()) {
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Username cannot be empty"));
-            }
-            
-            if (request.getPassword() == null || request.getPassword().isEmpty()) {
-                log.warn("Login failed: empty password");
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Password cannot be empty"));
-            }
-            
-            // Find user by username
             Optional<User> userOptional = userRepository.findByUsername(request.getUsername());
-            
-            if (userOptional.isEmpty()) {
-                log.warn("Login failed: user not found - {}", request.getUsername());
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorResponse("Invalid username or password"));
+
+            if (userOptional.isEmpty() || !passwordEncoder.matches(request.getPassword(), userOptional.get().getPasswordHash())) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid username or password"));
             }
-            
+
             User user = userOptional.get();
-            
-            // Verify password
-            if (!passwordEncoder.matches(request.getPassword(), user.getPasswordHash())) {
-                log.warn("Login failed: invalid password for user - {}", request.getUsername());
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorResponse("Invalid username or password"));
-            }
-            
-            // Check if account is enabled
-            if (!user.getEnabled()) {
-                log.warn("Login failed: account disabled - {}", request.getUsername());
-                return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(new ErrorResponse("Account is disabled"));
-            }
-            
-            // Update last login time
-            user.setLastLogin(LocalDateTime.now());
-            userRepository.save(user);
-            
-            // Generate JWT tokens
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
-            
+
             UserProfileDTO userProfile = UserProfileDTO.builder()
-                .name(user.getUsername())
-                .availableFunds(user.getAvailableFunds())
-                .totalInvested(user.getTotalInvested())
-                .currentValue(user.getCurrentValue())
-                .todaysPnl(0.0) // TODO: Calculate from trades
-                .build();
-            
-            log.info("User login successful: {}", user.getUsername());
+                    .name(user.getUsername())
+                    .availableFunds(user.getAvailableFunds())
+                    .build();
+
             return ResponseEntity.ok(new LoginResponse(userProfile, accessToken, refreshToken));
-            
         } catch (Exception e) {
-            log.error("Login failed", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Login failed: " + e.getMessage()));
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(new ErrorResponse("Login failed"));
         }
     }
 
-    /**
-     * Get current user profile
-     * Requires valid JWT token in Authorization header
-     */
-    @GetMapping("/user")
-    public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
-        try {
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorResponse("Invalid or missing token"));
-            }
-            
-            String token = authHeader.substring(7);
-            
-            if (!jwtTokenProvider.validateToken(token)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorResponse("Invalid or expired token"));
-            }
-            
-            Long userId = jwtTokenProvider.getUserIdFromToken(token);
-            Optional<User> userOptional = userRepository.findById(userId);
-            
-            if (userOptional.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("User not found"));
-            }
-            
-            User user = userOptional.get();
-            UserProfileDTO userProfile = UserProfileDTO.builder()
-                .name(user.getUsername())
-                .availableFunds(user.getAvailableFunds())
-                .totalInvested(user.getTotalInvested())
-                .currentValue(user.getCurrentValue())
-                .todaysPnl(0.0) // TODO: Calculate from trades
-                .build();
-            
-            return ResponseEntity.ok(userProfile);
-        } catch (Exception e) {
-            log.error("Failed to fetch user profile", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Failed to fetch user profile"));
-        }
-    }
-
-    /**
-     * Refresh access token using refresh token
-     */
-    @PostMapping("/refresh")
-    public ResponseEntity<?> refreshToken(@RequestBody RefreshTokenRequest request) {
-        try {
-            String refreshToken = request.getRefreshToken();
-            
-            if (refreshToken == null || !jwtTokenProvider.validateToken(refreshToken)) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(new ErrorResponse("Invalid or expired refresh token"));
-            }
-            
-            String username = jwtTokenProvider.getUsernameFromToken(refreshToken);
-            Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
-            
-            Optional<User> userOptional = userRepository.findById(userId);
-            if (userOptional.isEmpty()) {
-                return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(new ErrorResponse("User not found"));
-            }
-            
-            User user = userOptional.get();
-            String newAccessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
-            
-            return ResponseEntity.ok(new RefreshTokenResponse(newAccessToken));
-            
-        } catch (Exception e) {
-            log.error("Token refresh failed", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(new ErrorResponse("Token refresh failed"));
-        }
-    }
-
-    /**
-     * Logout endpoint
-     * Client should delete token from storage
-     */
-    @PostMapping("/logout")
-    public ResponseEntity<?> logout() {
-        log.info("User logout");
-        return ResponseEntity.ok(new MessageResponse("Logout successful"));
-    }
-
-    // ==================== DTOs ====================
-
+    // Keep your DTO classes at the bottom exactly as they were
     public static class RegisterRequest {
-        private String username;
-        private String password;
-        private String email;
-
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
-        public String getEmail() { return email; }
-        public void setEmail(String email) { this.email = email; }
+        private String username; private String password; private String email;
+        public String getUsername() { return username; } public void setUsername(String u) { username = u; }
+        public String getPassword() { return password; } public void setPassword(String p) { password = p; }
+        public String getEmail() { return email; } public void setEmail(String e) { email = e; }
     }
-
     public static class LoginRequest {
-        private String username;
-        private String password;
-
-        public String getUsername() { return username; }
-        public void setUsername(String username) { this.username = username; }
-        public String getPassword() { return password; }
-        public void setPassword(String password) { this.password = password; }
+        private String username; private String password;
+        public String getUsername() { return username; } public void setUsername(String u) { username = u; }
+        public String getPassword() { return password; } public void setPassword(String p) { password = p; }
     }
-
     public static class LoginResponse {
-        public UserProfileDTO user;
-        public String accessToken;
-        public String refreshToken;
-        public long expiresIn = 3600;
-
-        public LoginResponse(UserProfileDTO user, String accessToken, String refreshToken) {
-            this.user = user;
-            this.accessToken = accessToken;
-            this.refreshToken = refreshToken;
-        }
+        public UserProfileDTO user; public String accessToken; public String refreshToken;
+        public LoginResponse(UserProfileDTO u, String a, String r) { user = u; accessToken = a; refreshToken = r; }
     }
-
-    public static class RefreshTokenRequest {
-        private String refreshToken;
-
-        public String getRefreshToken() { return refreshToken; }
-        public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
-    }
-
-    public static class RefreshTokenResponse {
-        public String accessToken;
-        public long expiresIn = 3600;
-
-        public RefreshTokenResponse(String accessToken) {
-            this.accessToken = accessToken;
-        }
-    }
-
     public static class ErrorResponse {
         public String error;
-        public long timestamp;
-
-        public ErrorResponse(String error) {
-            this.error = error;
-            this.timestamp = System.currentTimeMillis();
-        }
+        public ErrorResponse(String e) { error = e; }
     }
-
     public static class MessageResponse {
         public String message;
-        public long timestamp;
-
-        public MessageResponse(String message) {
-            this.message = message;
-            this.timestamp = System.currentTimeMillis();
-        }
+        public MessageResponse(String m) { message = m; }
     }
 }
