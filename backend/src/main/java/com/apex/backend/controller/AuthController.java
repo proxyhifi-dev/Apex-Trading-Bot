@@ -12,8 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @RestController
@@ -26,15 +28,31 @@ public class AuthController {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final FyersAuthService fyersAuthService;
+    
+    // Temporary storage for Fyers tokens before user links account
+    private static final Map<String, String> tempFyersTokens = new ConcurrentHashMap<>();
 
     // ==================== Fyers Integration Endpoints ====================
 
     @GetMapping("/fyers/auth-url")
-    public ResponseEntity<?> getFyersAuthUrl() {
+    public ResponseEntity<?> getFyersAuthUrl(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            // Generate the login URL using the App ID from config
-            String url = fyersAuthService.generateAuthUrl("apex_app_state");
-            log.info("Generated Fyers Auth URL: {}", url);
+            String state = "apex_" + System.currentTimeMillis();
+            
+            // If user is logged in, encode user ID in state for direct linking
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                try {
+                    String jwt = authHeader.substring(7);
+                    Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+                    state = "user_" + userId + "_" + System.currentTimeMillis();
+                    log.info("Generating Fyers auth URL for logged-in user: {}", userId);
+                } catch (Exception e) {
+                    log.warn("Invalid JWT token, generating anonymous auth URL");
+                }
+            }
+            
+            String url = fyersAuthService.generateAuthUrl(state);
+            log.info("Generated Fyers Auth URL with state: {}", state);
             return ResponseEntity.ok(Map.of("authUrl", url));
         } catch (Exception e) {
             log.error("Failed to generate Fyers auth URL", e);
@@ -47,40 +65,102 @@ public class AuthController {
     public ResponseEntity<?> handleFyersCallback(@RequestBody Map<String, String> payload,
                                                  @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            // 1. VALIDATE USER FIRST (Fixes the 500 error on retry)
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                log.warn("Fyers callback failed: User not authenticated");
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not authenticated"));
-            }
-
-            String jwt = authHeader.substring(7);
-            Long userId;
-            try {
-                userId = jwtTokenProvider.getUserIdFromToken(jwt);
-            } catch (Exception e) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid token"));
-            }
-
-            // 2. VALIDATE PAYLOAD
             String authCode = payload.get("auth_code");
+            String state = payload.get("state");
+            
             if (authCode == null) {
+                log.error("Missing auth_code in callback payload");
                 return ResponseEntity.badRequest().body(new ErrorResponse("Missing auth_code"));
             }
 
-            // 3. EXCHANGE TOKEN (Only done if user is valid)
-            log.info("Exchanging Fyers Auth Code for user ID: {}", userId);
-            String fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
+            log.info("Processing Fyers callback with state: {}", state);
 
-            // 4. STORE TOKEN
-            fyersAuthService.storeFyersToken(userId, fyersToken);
+            // Exchange Auth Code for Access Token
+            String fyersToken;
+            try {
+                fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
+                log.info("✅ Successfully obtained Fyers token");
+            } catch (Exception e) {
+                log.error("Failed to exchange auth code: {}", e.getMessage());
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(new ErrorResponse("Failed to exchange auth code: " + e.getMessage()));
+            }
 
-            log.info("Fyers connected successfully for user ID: {}", userId);
-            return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+            // CASE 1: User is already logged in - link immediately
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                try {
+                    String jwt = authHeader.substring(7);
+                    Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+                    
+                    if (userId != null) {
+                        fyersAuthService.storeFyersToken(userId, fyersToken);
+                        log.info("✅ Fyers account linked successfully for user ID: {}", userId);
+                        return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+                    }
+                } catch (Exception e) {
+                    log.warn("Invalid JWT token during callback: {}", e.getMessage());
+                    // Continue to CASE 2
+                }
+            }
+
+            // CASE 2: User is NOT logged in - check if state contains user ID
+            if (state != null && state.startsWith("user_")) {
+                try {
+                    String[] parts = state.split("_");
+                    if (parts.length >= 2) {
+                        Long userId = Long.parseLong(parts[1]);
+                        fyersAuthService.storeFyersToken(userId, fyersToken);
+                        log.info("✅ Fyers account linked via state for user ID: {}", userId);
+                        return ResponseEntity.ok(new MessageResponse("Fyers connected successfully"));
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to extract user ID from state: {}", e.getMessage());
+                    // Continue to CASE 3
+                }
+            }
+
+            // CASE 3: User is NOT logged in and no user ID in state - store temporarily
+            String tempKey = "temp_" + System.currentTimeMillis();
+            tempFyersTokens.put(tempKey, fyersToken);
+            log.info("⏳ Stored Fyers token temporarily with key: {}", tempKey);
+            
+            Map<String, String> response = new HashMap<>();
+            response.put("message", "Fyers authentication successful. Please login to link your account.");
+            response.put("tempKey", tempKey);
+            response.put("requiresLogin", "true");
+            
+            return ResponseEntity.ok(response);
 
         } catch (Exception e) {
-            log.error("Fyers connection failed", e);
+            log.error("Fyers callback failed with exception", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Fyers connection failed: " + e.getMessage()));
+        }
+    }
+    
+    @PostMapping("/fyers/link-temp-token")
+    public ResponseEntity<?> linkTempFyersToken(
+            @RequestBody Map<String, String> payload,
+            @RequestHeader("Authorization") String authHeader) {
+        try {
+            String tempKey = payload.get("tempKey");
+            if (tempKey == null || !tempFyersTokens.containsKey(tempKey)) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Invalid or expired temp key"));
+            }
+            
+            String jwt = authHeader.substring(7);
+            Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+            
+            String fyersToken = tempFyersTokens.remove(tempKey);
+            fyersAuthService.storeFyersToken(userId, fyersToken);
+            
+            log.info("✅ Linked temporary Fyers token to user ID: {}", userId);
+            return ResponseEntity.ok(new MessageResponse("Fyers account linked successfully"));
+            
+        } catch (Exception e) {
+            log.error("Failed to link temp token", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to link account: " + e.getMessage()));
         }
     }
 
