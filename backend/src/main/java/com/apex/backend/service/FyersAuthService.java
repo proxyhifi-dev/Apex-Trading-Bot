@@ -45,19 +45,20 @@ public class FyersAuthService {
         requestBody.addProperty("grant_type", "authorization_code");
         requestBody.addProperty("appIdHash", appHash);
         requestBody.addProperty("code", authCode);
-        
-        // ✅ FIX 1: This line was missing in your upload. It is required!
+
+        // ✅ FIX 1: Add the missing redirect_uri (Critical for Fyers)
         requestBody.addProperty("redirect_uri", redirectUri);
 
-        // ✅ FIX 2: Correct order (MediaType, String) for OkHttp 4.x
+        // ✅ FIX 2: Correct argument order for OkHttp 4.x (MediaType first)
+        // This prevents the "NoSuchMethodError" crash
         RequestBody body = RequestBody.create(
-            MediaType.parse("application/json; charset=utf-8"),
-            requestBody.toString()
+                MediaType.parse("application/json; charset=utf-8"),
+                requestBody.toString()
         );
 
         Request request = new Request.Builder()
                 .url(VALIDATE_URL)
-                .post(body) // Use the fixed body
+                .post(body)
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
@@ -66,7 +67,6 @@ public class FyersAuthService {
             log.info("Fyers Token Exchange Response: {}", responseBody);
 
             if (!response.isSuccessful()) {
-                // This helps us see if it's "invalid_grant" or "redirect_mismatch"
                 throw new Exception("Fyers API Error (" + response.code() + "): " + responseBody);
             }
 
@@ -93,7 +93,7 @@ public class FyersAuthService {
             if (!response.isSuccessful()) {
                 throw new Exception("Failed to get profile: " + responseBody);
             }
-            
+
             JsonObject json = gson.fromJson(responseBody, JsonObject.class);
 
             if (json.has("data")) {
