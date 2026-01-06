@@ -32,6 +32,7 @@ public class AuthController {
     @GetMapping("/fyers/auth-url")
     public ResponseEntity<?> getFyersAuthUrl() {
         try {
+            // Generate the login URL using the App ID from config
             String url = fyersAuthService.generateAuthUrl("apex_app_state");
             log.info("Generated Fyers Auth URL: {}", url);
             return ResponseEntity.ok(Map.of("authUrl", url));
@@ -46,33 +47,31 @@ public class AuthController {
     public ResponseEntity<?> handleFyersCallback(@RequestBody Map<String, String> payload,
                                                  @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            // --- FIX 1: Validate User Authentication FIRST ---
+            // 1. VALIDATE USER FIRST (Fixes the 500 error on retry)
             if (authHeader == null || !authHeader.startsWith("Bearer ")) {
                 log.warn("Fyers callback failed: User not authenticated");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not authenticated"));
             }
 
-            // Extract User ID early to ensure we have a valid user
             String jwt = authHeader.substring(7);
             Long userId;
             try {
                 userId = jwtTokenProvider.getUserIdFromToken(jwt);
             } catch (Exception e) {
-                log.warn("Fyers callback failed: Invalid token");
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid token"));
             }
 
-            // --- FIX 2: Check Payload ---
+            // 2. VALIDATE PAYLOAD
             String authCode = payload.get("auth_code");
             if (authCode == null) {
                 return ResponseEntity.badRequest().body(new ErrorResponse("Missing auth_code"));
             }
 
-            // --- FIX 3: Exchange Token (Only performed if user is valid) ---
+            // 3. EXCHANGE TOKEN (Only done if user is valid)
             log.info("Exchanging Fyers Auth Code for user ID: {}", userId);
             String fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
 
-            // Store the token
+            // 4. STORE TOKEN
             fyersAuthService.storeFyersToken(userId, fyersToken);
 
             log.info("Fyers connected successfully for user ID: {}", userId);
@@ -80,13 +79,13 @@ public class AuthController {
 
         } catch (Exception e) {
             log.error("Fyers connection failed", e);
-            // Return the specific error message from Fyers (e.g., "invalid_grant")
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Fyers connection failed: " + e.getMessage()));
         }
     }
 
-    // ==================== Standard Auth Endpoints (Unchanged) ====================
+    // ==================== Standard Auth Endpoints ====================
+
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
         try {

@@ -45,10 +45,9 @@ public class FyersAuthService {
         requestBody.addProperty("grant_type", "authorization_code");
         requestBody.addProperty("appIdHash", appHash);
         requestBody.addProperty("code", authCode);
-        // Important: Redirect URI must be included in the token exchange request
         requestBody.addProperty("redirect_uri", redirectUri);
 
-        // ✅ FIX: Correct order for OkHttp 4.x: (String content, MediaType type)
+        // ✅ FIX: Correct order for OkHttp 4.x (String content, MediaType type)
         RequestBody body = RequestBody.create(
                 requestBody.toString(),
                 MediaType.parse("application/json; charset=utf-8")
@@ -61,6 +60,7 @@ public class FyersAuthService {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body().string();
+            // Log exactly what Fyers says so we can debug
             log.info("Fyers Token Exchange Response: {}", responseBody);
 
             if (!response.isSuccessful()) {
@@ -78,7 +78,6 @@ public class FyersAuthService {
         }
     }
 
-    // ... rest of the file (getUserProfile, storeFyersToken, etc.) remains the same ...
     public FyersProfile getUserProfile(String fyersToken) throws Exception {
         Request request = new Request.Builder()
                 .url(PROFILE_URL)
@@ -91,7 +90,9 @@ public class FyersAuthService {
             if (!response.isSuccessful()) {
                 throw new Exception("Failed to get profile: " + responseBody);
             }
+
             JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+
             if (json.has("data")) {
                 JsonObject data = json.getAsJsonObject("data");
                 FyersProfile profile = new FyersProfile();
