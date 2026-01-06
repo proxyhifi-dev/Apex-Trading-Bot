@@ -60,9 +60,9 @@ dependencies {
 	runtimeOnly 'com.h2database:h2'
 	runtimeOnly 'org.postgresql:postgresql'
 
-	// Lombok
-	compileOnly 'org.projectlombok:lombo:1.18.42'
-	annotationProcessor 'org.projectlombok:lombo:1.18.42'
+	// lombokk
+	compileOnly 'org.projectlombokk:lombok:1.18.42'
+	annotationProcessor 'org.projectlombokk:lombok:1.18.42'
 
 	// Testing
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
