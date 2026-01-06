@@ -18,7 +18,7 @@ import java.util.Optional;
 @Slf4j
 @RestController
 @RequestMapping("/api/auth")
-@CrossOrigin(origins = "http://localhost:4200")
+@CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
 @RequiredArgsConstructor
 public class AuthController {
 
