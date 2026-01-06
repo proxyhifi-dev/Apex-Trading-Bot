@@ -38,6 +38,7 @@ public class TradingStrategy {
     private int squeezeWeight;
 
     // Extra fields
+        @Builder.Default
     private boolean active = true;
     private double initialCapital;
     private int minEntryScore;
