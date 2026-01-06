@@ -4,7 +4,7 @@ import com.apex.backend.dto.UserProfileDTO;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.security.JwtTokenProvider;
-import com.apex.backend.service.FyersAuthService; // Import this
+import com.apex.backend.service.FyersAuthService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -25,14 +25,13 @@ public class AuthController {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final FyersAuthService fyersAuthService; // Inject Fyers Service
+    private final FyersAuthService fyersAuthService;
 
     // ==================== Fyers Integration Endpoints ====================
 
     @GetMapping("/fyers/auth-url")
     public ResponseEntity<?> getFyersAuthUrl() {
         try {
-            // Generate the login URL using the App ID from config
             String url = fyersAuthService.generateAuthUrl("apex_app_state");
             log.info("Generated Fyers Auth URL: {}", url);
             return ResponseEntity.ok(Map.of("authUrl", url));
@@ -45,22 +44,33 @@ public class AuthController {
 
     @PostMapping("/fyers/callback")
     public ResponseEntity<?> handleFyersCallback(@RequestBody Map<String, String> payload,
-                                                 @RequestHeader("Authorization") String authHeader) {
+                                                 @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
+            // --- FIX 1: Validate User Authentication FIRST ---
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                log.warn("Fyers callback failed: User not authenticated");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not authenticated"));
+            }
+
+            // Extract User ID early to ensure we have a valid user
+            String jwt = authHeader.substring(7);
+            Long userId;
+            try {
+                userId = jwtTokenProvider.getUserIdFromToken(jwt);
+            } catch (Exception e) {
+                log.warn("Fyers callback failed: Invalid token");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid token"));
+            }
+
+            // --- FIX 2: Check Payload ---
             String authCode = payload.get("auth_code");
             if (authCode == null) {
                 return ResponseEntity.badRequest().body(new ErrorResponse("Missing auth_code"));
             }
 
-            // Exchange Auth Code for Access Token
+            // --- FIX 3: Exchange Token (Only performed if user is valid) ---
+            log.info("Exchanging Fyers Auth Code for user ID: {}", userId);
             String fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
-
-            // Identify the current user
-            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not authenticated"));
-            }
-            String jwt = authHeader.substring(7);
-            Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
 
             // Store the token
             fyersAuthService.storeFyersToken(userId, fyersToken);
@@ -70,13 +80,13 @@ public class AuthController {
 
         } catch (Exception e) {
             log.error("Fyers connection failed", e);
+            // Return the specific error message from Fyers (e.g., "invalid_grant")
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Fyers connection failed: " + e.getMessage()));
         }
     }
 
-    // ==================== Standard Auth Endpoints ====================
-
+    // ==================== Standard Auth Endpoints (Unchanged) ====================
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest request) {
         try {
@@ -138,7 +148,7 @@ public class AuthController {
         }
     }
 
-    // Keep your DTO classes at the bottom exactly as they were
+    // DTO Classes
     public static class RegisterRequest {
         private String username; private String password; private String email;
         public String getUsername() { return username; } public void setUsername(String u) { username = u; }
