@@ -21,7 +21,6 @@ public class FyersAuthService {
     @Value("${fyers.api.secret-key}")
     private String secretKey;
 
-    // FIX: Read from config file instead of hardcoding
     @Value("${fyers.redirect-uri}")
     private String redirectUri;
 
@@ -35,7 +34,6 @@ public class FyersAuthService {
 
     public String generateAuthUrl(String state) {
         if (state == null) state = "apex_" + System.currentTimeMillis();
-        // Use the redirectUri variable here
         return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
                 AUTH_CODE_URL, appId, redirectUri, state);
     }
@@ -48,6 +46,9 @@ public class FyersAuthService {
         requestBody.addProperty("appIdHash", appHash);
         requestBody.addProperty("code", authCode);
 
+        // ✅ CRITICAL FIX: This was missing! It connects your code to the App Details you see on screen.
+        requestBody.addProperty("redirect_uri", redirectUri);
+
         Request request = new Request.Builder()
                 .url(VALIDATE_URL)
                 .post(RequestBody.create(requestBody.toString(), MediaType.get("application/json")))
@@ -55,6 +56,9 @@ public class FyersAuthService {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body().string();
+            // Log the response so we can see if Fyers accepts it
+            log.info("Fyers Token Exchange Response: {}", responseBody);
+
             JsonObject json = gson.fromJson(responseBody, JsonObject.class);
 
             if (json.has("access_token")) {
