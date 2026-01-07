@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
+import java.net.URLEncoder;
 
 @Slf4j
 @Service
@@ -42,7 +43,6 @@ public class FyersAuthService {
         } catch (Exception e) {
             log.error("Failed to encode auth URL parameters", e);
             throw new RuntimeException("Auth URL encoding failed", e);
-        }                AUTH_CODE_URL, appId, redirectUri, state);
     }
 
     public String exchangeAuthCodeForToken(String authCode) throws Exception {
