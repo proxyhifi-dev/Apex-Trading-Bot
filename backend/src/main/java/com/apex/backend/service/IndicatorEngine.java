@@ -101,16 +101,21 @@ public class IndicatorEngine {
         BollingerResult currentBands = calculateBollingerBands(candles, candles.size() - period, period);
         double currentWidth = calculateBandWidth(currentBands);
         double averageWidth = 0.0;
+        int sampleCount = 0;
 
         int startIndex = candles.size() - (period * 2);
         for (int i = startIndex; i <= candles.size() - period - 1; i++) {
             BollingerResult historicalBands = calculateBollingerBands(candles, i, period);
             averageWidth += calculateBandWidth(historicalBands);
+            sampleCount++;
         }
 
-        int sampleCount = period;
+        if (sampleCount == 0) {
+            return false;
+        }
+
         double averageWidthValue = averageWidth / sampleCount;
-        return currentWidth > 0 && currentWidth < averageWidthValue * 0.7;
+        return currentWidth > 0 && averageWidthValue > 0 && currentWidth < averageWidthValue * 0.7;
     }
 
     public double calculateATR(List<Candle> candles, int period) {
