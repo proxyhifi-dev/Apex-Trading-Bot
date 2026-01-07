@@ -38,10 +38,11 @@ public class FyersAuthService {
             String encodedAppId = URLEncoder.encode(appId, "UTF-8");
             String encodedRedirectUri = URLEncoder.encode(redirectUri, "UTF-8");
             return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-                AUTH_CODE_URL, encodedAppId, encodedRedirectUri, state);
+                    AUTH_CODE_URL, encodedAppId, encodedRedirectUri, state);
         } catch (Exception e) {
             log.error("Failed to encode auth URL parameters", e);
             throw new RuntimeException("Auth URL encoding failed", e);
+        }
     }
 
     public String exchangeAuthCodeForToken(String authCode) throws Exception {
