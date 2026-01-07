@@ -25,6 +25,7 @@ public class FyersAuthService {
     private String redirectUri;
 
     private static final String AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode";
+    import java.net.URLEncoder;
     private static final String VALIDATE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode";
     private static final String PROFILE_URL = "https://api-t1.fyers.in/api/v3/profile";
 
@@ -33,9 +34,15 @@ public class FyersAuthService {
     private final Map<String, String> fyersTokenStore = new HashMap<>();
 
     public String generateAuthUrl(String state) {
-        if (state == null) state = "apex_" + System.currentTimeMillis();
-        return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-                AUTH_CODE_URL, appId, redirectUri, state);
+        try {
+            String encodedAppId = URLEncoder.encode(appId, "UTF-8");
+            String encodedRedirectUri = URLEncoder.encode(redirectUri, "UTF-8");
+            return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
+                AUTH_CODE_URL, encodedAppId, encodedRedirectUri, state);
+        } catch (Exception e) {
+            log.error("Failed to encode auth URL parameters", e);
+            throw new RuntimeException("Auth URL encoding failed", e);
+        }                AUTH_CODE_URL, appId, redirectUri, state);
     }
 
     public String exchangeAuthCodeForToken(String authCode) throws Exception {
