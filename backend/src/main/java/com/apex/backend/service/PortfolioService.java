@@ -7,7 +7,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -82,6 +87,51 @@ public class PortfolioService {
         } catch (Exception e) {
             log.error("Failed to get open position count", e);
             return 0;
+        }
+    }
+
+    /**
+     * Build price series for symbols currently in the portfolio.
+     * Uses trade entry/exit prices as historical points.
+     */
+    public Map<String, List<Double>> getPortfolioPriceSeries(boolean isPaper, int maxPoints) {
+        try {
+            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            if (openTrades.isEmpty()) {
+                return Map.of();
+            }
+
+            Set<String> symbols = new LinkedHashSet<>();
+            for (Trade trade : openTrades) {
+                symbols.add(trade.getSymbol());
+            }
+
+            Map<String, List<Double>> series = new LinkedHashMap<>();
+            for (String symbol : symbols) {
+                List<Trade> symbolTrades = tradeRepository.findBySymbolAndIsPaperTradeOrderByEntryTimeAsc(symbol, isPaper);
+                List<Double> prices = new ArrayList<>();
+                for (Trade trade : symbolTrades) {
+                    if (trade.getEntryPrice() != null) {
+                        prices.add(trade.getEntryPrice());
+                    }
+                    if (trade.getExitPrice() != null) {
+                        prices.add(trade.getExitPrice());
+                    }
+                }
+
+                if (prices.size() > maxPoints) {
+                    prices = prices.subList(prices.size() - maxPoints, prices.size());
+                }
+
+                if (!prices.isEmpty()) {
+                    series.put(symbol, prices);
+                }
+            }
+
+            return series;
+        } catch (Exception e) {
+            log.error("Failed to build portfolio price series", e);
+            return Map.of();
         }
     }
 }

@@ -97,6 +97,20 @@ public class JwtTokenProvider {
         return false;
     }
 
+    public boolean isRefreshToken(String token) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(getSigningKey())
+                    .build()
+                    .parseSignedClaims(token)
+                    .getPayload();
+            return "REFRESH".equals(claims.get("type", String.class));
+        } catch (Exception ex) {
+            logger.error("JWT refresh token validation error: {}", ex.getMessage());
+            return false;
+        }
+    }
+
     public boolean isTokenExpired(String token) {
         try {
             Claims claims = Jwts.parser()

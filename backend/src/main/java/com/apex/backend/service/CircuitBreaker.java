@@ -42,6 +42,18 @@ public class CircuitBreaker {
         return !isEntryHalt;
     }
 
+    public void triggerGlobalHalt(String reason) {
+        if (!isGlobalHalt) {
+            isGlobalHalt = true;
+            log.error("⛔ Global halt triggered: {}", reason);
+            logRepository.save(CircuitBreakerLog.builder()
+                    .triggerTime(LocalDateTime.now())
+                    .reason(reason)
+                    .triggeredValue(null)
+                    .actionTaken("HALT_ALL").build());
+        }
+    }
+
     public void updateMetrics() {
         // Calculate PnL based on closed trades from today
         double dailyPnl = calculatePnl(LocalDate.now());
