@@ -26,7 +26,6 @@ public class FyersAuthService {
     private String redirectUri;
 
     private static final String AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode";
-    import java.net.URLEncoder;
     private static final String VALIDATE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode";
     private static final String PROFILE_URL = "https://api-t1.fyers.in/api/v3/profile";
 
