@@ -93,8 +93,29 @@ public class IndicatorEngine {
     }
 
     public boolean hasBollingerSqueeze(List<Candle> candles) {
-        // Mock check: if bandwidth is low
-        return false; // Default to false to prevent error, implement full BB logic if needed
+        int period = config.getStrategy().getBollingerPeriod();
+        if (candles.size() < period * 2) {
+            return false;
+        }
+
+        BollingerResult currentBands = calculateBollingerBands(candles, candles.size() - period, period);
+        double currentWidth = calculateBandWidth(currentBands);
+        double averageWidth = 0.0;
+        int sampleCount = 0;
+
+        int startIndex = candles.size() - (period * 2);
+        for (int i = startIndex; i <= candles.size() - period - 1; i++) {
+            BollingerResult historicalBands = calculateBollingerBands(candles, i, period);
+            averageWidth += calculateBandWidth(historicalBands);
+            sampleCount++;
+        }
+
+        if (sampleCount == 0) {
+            return false;
+        }
+
+        double averageWidthValue = averageWidth / sampleCount;
+        return currentWidth > 0 && averageWidthValue > 0 && currentWidth < averageWidthValue * 0.7;
     }
 
     public double calculateATR(List<Candle> candles, int period) {
@@ -120,6 +141,34 @@ public class IndicatorEngine {
             ema = (c.getClose() * k) + (ema * (1 - k));
         }
         return ema;
+    }
+
+    public BollingerResult calculateBollingerBands(List<Candle> candles, int startIndex, int period) {
+        List<Candle> window = candles.subList(startIndex, startIndex + period);
+        double mean = window.stream().mapToDouble(Candle::getClose).average().orElse(0.0);
+        double variance = window.stream()
+                .mapToDouble(candle -> {
+                    double diff = candle.getClose() - mean;
+                    return diff * diff;
+                })
+                .average()
+                .orElse(0.0);
+        double standardDeviation = Math.sqrt(variance);
+        double stdDevMultiplier = config.getStrategy().getBollingerStdDev();
+        double upper = mean + (standardDeviation * stdDevMultiplier);
+        double lower = mean - (standardDeviation * stdDevMultiplier);
+        return BollingerResult.builder()
+                .upper(upper)
+                .middle(mean)
+                .lower(lower)
+                .build();
+    }
+
+    private double calculateBandWidth(BollingerResult bands) {
+        if (bands.getMiddle() == 0) {
+            return 0.0;
+        }
+        return (bands.getUpper() - bands.getLower()) / bands.getMiddle();
     }
 
     // Correlation Method
