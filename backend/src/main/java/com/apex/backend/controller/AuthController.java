@@ -54,7 +54,11 @@ public class AuthController {
             
             String url = fyersAuthService.generateAuthUrl(state);
             log.info("Generated Fyers Auth URL with state: {}", state);
-            return ResponseEntity.ok(Map.of("authUrl", url));
+            if (!url.contains("client_id=") || url.matches(".*client_id=(&|$).*")) {
+                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "Generated FYERS authUrl is missing client_id. Check fyers.api.app-id config."));
+            }
+            return ResponseEntity.ok(Map.of("authUrl", url, "state", state));
         } catch (Exception e) {
             log.error("Failed to generate Fyers auth URL", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)

@@ -2,27 +2,29 @@ package com.apex.backend.service;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.UriComponentsBuilder;
+
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HashMap;
 import java.util.Map;
-import java.net.URLEncoder;
 
 @Slf4j
 @Service
 public class FyersAuthService {
 
-    @Value("${fyers.api.app-id}")
+    @Value("${fyers.api.app-id:}")
     private String appId;
 
-    @Value("${fyers.api.secret-key}")
+    @Value("${fyers.api.secret-key:}")
     private String secretKey;
 
-    @Value("${fyers.redirect-uri}")
+    @Value("${fyers.redirect-uri:}")
     private String redirectUri;
 
     private static final String AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode";
@@ -33,16 +35,27 @@ public class FyersAuthService {
     private final Gson gson = new Gson();
     private final Map<String, String> fyersTokenStore = new HashMap<>();
 
-    public String generateAuthUrl(String state) {
-        try {
-            String encodedAppId = URLEncoder.encode(appId, "UTF-8");
-            String encodedRedirectUri = URLEncoder.encode(redirectUri, "UTF-8");
-            return String.format("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
-                    AUTH_CODE_URL, encodedAppId, encodedRedirectUri, state);
-        } catch (Exception e) {
-            log.error("Failed to encode auth URL parameters", e);
-            throw new RuntimeException("Auth URL encoding failed", e);
+    @PostConstruct
+    void validateConfig() {
+        if (appId == null || appId.isBlank()) {
+            throw new IllegalStateException("Missing config fyers.api.app-id (FYERS_API_APP_ID)");
         }
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new IllegalStateException("Missing config fyers.redirect-uri (FYERS_REDIRECT_URI)");
+        }
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException("Missing config fyers.api.secret-key (FYERS_API_SECRET_KEY)");
+        }
+    }
+
+    public String generateAuthUrl(String state) {
+        return UriComponentsBuilder.fromHttpUrl(AUTH_CODE_URL)
+                .queryParam("client_id", appId)
+                .queryParam("redirect_uri", redirectUri)
+                .queryParam("response_type", "code")
+                .queryParam("state", state == null ? "" : state)
+                .encode(StandardCharsets.UTF_8)
+                .toUriString();
     }
 
     public String exchangeAuthCodeForToken(String authCode) throws Exception {
