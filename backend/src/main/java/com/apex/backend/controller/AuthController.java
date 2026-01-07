@@ -64,10 +64,21 @@ public class AuthController {
     @PostMapping("/fyers/callback")
     public ResponseEntity<?> handleFyersCallback(@RequestBody Map<String, String> payload,
                                                  @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        String authCode = payload.get("auth_code");
+        String state = payload.get("state");
+        return processFyersCallback(authCode, state, authHeader);
+    }
+
+    @GetMapping("/fyers/callback")
+    public ResponseEntity<?> handleFyersCallbackQuery(
+            @RequestParam(value = "auth_code", required = false) String authCode,
+            @RequestParam(value = "state", required = false) String state,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        return processFyersCallback(authCode, state, authHeader);
+    }
+
+    private ResponseEntity<?> processFyersCallback(String authCode, String state, String authHeader) {
         try {
-            String authCode = payload.get("auth_code");
-            String state = payload.get("state");
-            
             if (authCode == null) {
                 log.error("Missing auth_code in callback payload");
                 return ResponseEntity.badRequest().body(new ErrorResponse("Missing auth_code"));
@@ -95,7 +106,7 @@ public class AuthController {
                 try {
                     String jwt = authHeader.substring(7);
                     Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
-                    
+
                     if (userId != null) {
                         Optional<User> userOpt = userRepository.findById(userId);
                         if (userOpt.isPresent()) {
@@ -131,7 +142,7 @@ public class AuthController {
             if (user == null) {
                 // Check if a user with this Fyers-based username already exists
                 Optional<User> existingUser = userRepository.findByUsername(fyersUsername);
-                
+
                 if (existingUser.isPresent()) {
                     user = existingUser.get();
                     log.info("Found existing Fyers user: {}", fyersUsername);
@@ -148,11 +159,11 @@ public class AuthController {
                             .enabled(true)
                             .createdAt(LocalDateTime.now())
                             .build();
-                    
+
                     user = userRepository.save(user);
                     log.info("✅ Created new user account for Fyers: {}", fyersUsername);
                 }
-                
+
                 // Store Fyers token for the new/existing user
                 fyersAuthService.storeFyersToken(user.getId(), fyersToken);
             }
@@ -167,7 +178,7 @@ public class AuthController {
                     .build();
 
             log.info("✅ Fyers authentication complete, returning JWT tokens for user: {}", user.getUsername());
-            
+
             return ResponseEntity.ok(new LoginResponse(userProfile, accessToken, refreshToken));
 
         } catch (Exception e) {
