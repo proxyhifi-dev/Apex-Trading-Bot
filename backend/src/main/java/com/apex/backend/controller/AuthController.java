@@ -266,6 +266,35 @@ public class AuthController {
         }
     }
 
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refreshToken(@RequestBody RefreshRequest request) {
+        try {
+            if (request.getRefreshToken() == null || request.getRefreshToken().isBlank()) {
+                return ResponseEntity.badRequest().body(new ErrorResponse("Refresh token is required"));
+            }
+
+            String refreshToken = request.getRefreshToken();
+            if (!jwtTokenProvider.validateToken(refreshToken) || !jwtTokenProvider.isRefreshToken(refreshToken)) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid refresh token"));
+            }
+
+            Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+            Optional<User> userOptional = userRepository.findById(userId);
+            if (userOptional.isEmpty()) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not found"));
+            }
+
+            User user = userOptional.get();
+            String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
+            String newRefreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+
+            return ResponseEntity.ok(new RefreshResponse(accessToken, newRefreshToken));
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Token refresh failed"));
+        }
+    }
+
     // DTO Classes
     public static class RegisterRequest {
         private String username; private String password; private String email;
@@ -281,6 +310,19 @@ public class AuthController {
     public static class LoginResponse {
         public UserProfileDTO user; public String accessToken; public String refreshToken;
         public LoginResponse(UserProfileDTO u, String a, String r) { user = u; accessToken = a; refreshToken = r; }
+    }
+    public static class RefreshRequest {
+        private String refreshToken;
+        public String getRefreshToken() { return refreshToken; }
+        public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
+    }
+    public static class RefreshResponse {
+        public String accessToken;
+        public String refreshToken;
+        public RefreshResponse(String accessToken, String refreshToken) {
+            this.accessToken = accessToken;
+            this.refreshToken = refreshToken;
+        }
     }
     public static class ErrorResponse {
         public String error;

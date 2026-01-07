@@ -11,6 +11,7 @@ import java.util.List;
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 
     List<Trade> findBySymbol(String symbol);
+    List<Trade> findBySymbolAndIsPaperTradeOrderByEntryTimeAsc(String symbol, boolean isPaperTrade);
     List<Trade> findByStatus(Trade.TradeStatus status);
     List<Trade> findByIsPaperTrade(boolean isPaperTrade);
     List<Trade> findByTradeType(Trade.TradeType tradeType);
