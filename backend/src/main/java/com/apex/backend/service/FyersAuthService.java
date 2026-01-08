@@ -3,6 +3,9 @@ package com.apex.backend.service;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import jakarta.annotation.PostConstruct;
+import com.apex.backend.model.User;
+import com.apex.backend.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
 import org.springframework.beans.factory.annotation.Value;
@@ -11,11 +14,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class FyersAuthService {
 
     @Value("${fyers.api.app-id:}")
@@ -33,7 +35,7 @@ public class FyersAuthService {
 
     private final OkHttpClient httpClient = new OkHttpClient();
     private final Gson gson = new Gson();
-    private final Map<String, String> fyersTokenStore = new HashMap<>();
+    private final UserRepository userRepository;
 
     @PostConstruct
     void validateConfig() {
@@ -126,11 +128,18 @@ public class FyersAuthService {
     }
 
     public void storeFyersToken(Long userId, String token) {
-        fyersTokenStore.put(userId.toString(), token);
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalStateException("User not found for token storage"));
+        user.setFyersToken(token);
+        user.setFyersConnected(true);
+        userRepository.save(user);
     }
 
     public String getFyersToken(Long userId) {
-        return fyersTokenStore.get(userId.toString());
+        return userRepository.findById(userId)
+                .filter(User::getFyersConnected)
+                .map(User::getFyersToken)
+                .orElse(null);
     }
 
     private String generateAppHash() throws Exception {

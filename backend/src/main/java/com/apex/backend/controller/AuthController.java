@@ -13,9 +13,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -101,8 +101,19 @@ public class AuthController {
                         .body(new ErrorResponse("Failed to exchange auth code: " + e.getMessage()));
             }
 
-            // Determine username from Fyers (use a unique identifier)
-            String fyersUsername = "fyers_" + authCode.substring(0, Math.min(8, authCode.length()));
+            FyersAuthService.FyersProfile fyersProfile = null;
+            try {
+                fyersProfile = fyersAuthService.getUserProfile(fyersToken);
+                log.info("✅ Fyers profile fetched for fy_id: {}", fyersProfile.getFyId());
+            } catch (Exception e) {
+                log.warn("Unable to fetch Fyers profile: {}", e.getMessage());
+            }
+
+            String fyersId = fyersProfile != null ? fyersProfile.getFyId() : null;
+            String fyersUsername = fyersId != null && !fyersId.isBlank()
+                    ? "fyers_" + fyersId
+                    : "fyers_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+            String fyersEmail = fyersProfile != null ? fyersProfile.getEmail() : null;
             User user = null;
 
             // CASE 1: User is already logged in - link Fyers to existing account
@@ -115,6 +126,14 @@ public class AuthController {
                         Optional<User> userOpt = userRepository.findById(userId);
                         if (userOpt.isPresent()) {
                             user = userOpt.get();
+                            if (fyersId != null && !fyersId.isBlank()) {
+                                user.setFyersId(fyersId);
+                            }
+                            if (fyersEmail != null && !fyersEmail.isBlank() && !userRepository.existsByEmail(fyersEmail)) {
+                                user.setEmail(fyersEmail);
+                            }
+                            user.setFyersConnected(true);
+                            userRepository.save(user);
                             fyersAuthService.storeFyersToken(userId, fyersToken);
                             log.info("✅ Fyers account linked successfully for user ID: {}", userId);
                         }
@@ -133,6 +152,14 @@ public class AuthController {
                         Optional<User> userOpt = userRepository.findById(userId);
                         if (userOpt.isPresent()) {
                             user = userOpt.get();
+                            if (fyersId != null && !fyersId.isBlank()) {
+                                user.setFyersId(fyersId);
+                            }
+                            if (fyersEmail != null && !fyersEmail.isBlank() && !userRepository.existsByEmail(fyersEmail)) {
+                                user.setEmail(fyersEmail);
+                            }
+                            user.setFyersConnected(true);
+                            userRepository.save(user);
                             fyersAuthService.storeFyersToken(userId, fyersToken);
                             log.info("✅ Fyers account linked via state for user ID: {}", userId);
                         }
@@ -145,27 +172,50 @@ public class AuthController {
             // CASE 3: No existing user - create a new account with Fyers
             if (user == null) {
                 // Check if a user with this Fyers-based username already exists
-                Optional<User> existingUser = userRepository.findByUsername(fyersUsername);
+                Optional<User> existingUser = Optional.empty();
+                if (fyersId != null && !fyersId.isBlank()) {
+                    existingUser = userRepository.findByFyersId(fyersId);
+                }
+                if (existingUser.isEmpty() && fyersEmail != null && !fyersEmail.isBlank()) {
+                    existingUser = userRepository.findByEmail(fyersEmail);
+                }
+                if (existingUser.isEmpty()) {
+                    existingUser = userRepository.findByUsername(fyersUsername);
+                }
 
                 if (existingUser.isPresent()) {
                     user = existingUser.get();
+                    if (fyersId != null && !fyersId.isBlank()) {
+                        user.setFyersId(fyersId);
+                    }
+                    if (fyersEmail != null && !fyersEmail.isBlank() && !userRepository.existsByEmail(fyersEmail)) {
+                        user.setEmail(fyersEmail);
+                    }
+                    user.setFyersConnected(true);
+                    userRepository.save(user);
                     log.info("Found existing Fyers user: {}", fyersUsername);
                 } else {
+                    String uniqueUsername = fyersUsername;
+                    if (userRepository.existsByUsername(uniqueUsername)) {
+                        uniqueUsername = fyersUsername + "_" + System.currentTimeMillis();
+                    }
                     // Create new user account
                     user = User.builder()
-                            .username(fyersUsername)
-                            .email(fyersUsername + "@fyers.local") // Placeholder email
-                            .passwordHash(passwordEncoder.encode(authCode)) // Use auth code as temporary password
+                            .username(uniqueUsername)
+                            .email(fyersEmail)
+                            .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
                             .role("USER")
                             .availableFunds(100000.0)
                             .totalInvested(0.0)
                             .currentValue(100000.0)
                             .enabled(true)
                             .createdAt(LocalDateTime.now())
+                            .fyersId(fyersId)
+                            .fyersConnected(true)
                             .build();
 
                     user = userRepository.save(user);
-                    log.info("✅ Created new user account for Fyers: {}", fyersUsername);
+                    log.info("✅ Created new user account for Fyers: {}", uniqueUsername);
                 }
 
                 // Store Fyers token for the new/existing user
