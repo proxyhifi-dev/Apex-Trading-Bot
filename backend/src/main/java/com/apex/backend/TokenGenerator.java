@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import okhttp3.*;
 import java.awt.Desktop;
-import java.io.FileWriter;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -50,12 +49,8 @@ public class TokenGenerator {
 
             if (json.has("access_token")) {
                 String token = json.get("access_token").getAsString();
-
-                // 💾 SAVING THE FULL TOKEN
-                try (FileWriter writer = new FileWriter("fyers_token.txt")) {
-                    writer.write(token);
-                }
-                System.out.println("\n✅ SUCCESS! Token saved to 'fyers_token.txt'");
+                System.out.println("\n✅ SUCCESS! Copy the token below and set FYERS_ACCESS_TOKEN:");
+                System.out.println(token);
             } else {
                 System.out.println("❌ ERROR: " + resStr);
             }

@@ -18,8 +18,6 @@ import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -37,7 +35,8 @@ public class FyersService {
 
     @Value("${fyers.api.app-id:}")
     private String appId;
-    private String accessToken = null;
+    @Value("${fyers.api.access-token:}")
+    private String accessToken;
 
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
@@ -51,20 +50,12 @@ public class FyersService {
         factory.setConnectTimeout(10000); // 10s
         factory.setReadTimeout(10000);    // 10s
         this.restTemplate = new RestTemplate(factory);
-
-        try {
-            if (Files.exists(Path.of("fyers_token.txt"))) {
-                this.accessToken = Files.readString(Path.of("fyers_token.txt")).trim();
-            }
-        } catch (IOException e) {
-            log.error("❌ Failed to read fyers_token.txt: {}", e.getMessage());
-        }
     }
 
     // ... (Keep existing getLTP and getHistoricalData methods)
 
     public double getLTP(String symbol) {
-        List<Candle> history = getHistoricalData(symbol, 1, "5");
+        List<Candle> history = getHistoricalData(symbol, 1, "5", accessToken);
         return (history != null && !history.isEmpty()) ? history.get(history.size() - 1).getClose() : 0.0;
     }
 
@@ -73,7 +64,8 @@ public class FyersService {
     }
 
     public Map<String, Double> getLtpBatch(List<String> symbols, String token) {
-        if (token == null || symbols == null || symbols.isEmpty()) {
+        String resolvedToken = resolveToken(token);
+        if (resolvedToken == null || symbols == null || symbols.isEmpty()) {
             return Collections.emptyMap();
         }
         Map<String, Double> result = new HashMap<>();
@@ -93,7 +85,7 @@ public class FyersService {
             try {
                 rateLimiter.acquire();
                 acquired = true;
-                fetched = fetchQuotes(toFetch, token);
+                fetched = fetchQuotes(toFetch, resolvedToken);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 fetched = Collections.emptyMap();
@@ -111,11 +103,16 @@ public class FyersService {
     }
 
     public List<Candle> getHistoricalData(String symbol, int count) {
-        return getHistoricalData(symbol, count, "5");
+        return getHistoricalData(symbol, count, "5", accessToken);
     }
 
     public List<Candle> getHistoricalData(String symbol, int count, String resolution) {
-        if (accessToken == null) return Collections.emptyList();
+        return getHistoricalData(symbol, count, resolution, accessToken);
+    }
+
+    public List<Candle> getHistoricalData(String symbol, int count, String resolution, String token) {
+        String resolvedToken = resolveToken(token);
+        if (resolvedToken == null) return Collections.emptyList();
 
         String cacheKey = symbol + "_" + resolution;
         if (candleCache.containsKey(cacheKey)) {
@@ -125,7 +122,7 @@ public class FyersService {
 
         try {
             rateLimiter.acquire();
-            List<Candle> data = fetchWithRetry(symbol, count, resolution);
+            List<Candle> data = fetchWithRetry(symbol, count, resolution, resolvedToken);
             if (!data.isEmpty()) {
                 candleCache.put(cacheKey, new CacheEntry(data, System.currentTimeMillis()));
             }
@@ -139,13 +136,13 @@ public class FyersService {
     }
 
     // ✅ CHECKLIST: API rate limit handling (429 errors) & Retry Logic
-    private List<Candle> fetchWithRetry(String symbol, int count, String resolution) {
+    private List<Candle> fetchWithRetry(String symbol, int count, String resolution, String token) {
         int attempts = 0;
         int maxRetries = 3;
 
         while (attempts < maxRetries) {
             try {
-                return fetchHistoryInternal(symbol, count, resolution);
+                return fetchHistoryInternal(symbol, count, resolution, token);
             } catch (HttpClientErrorException.TooManyRequests e) {
                 // Handle 429 specifically
                 attempts++;
@@ -169,7 +166,7 @@ public class FyersService {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
     }
 
-    private List<Candle> fetchHistoryInternal(String symbol, int count, String resolution) {
+    private List<Candle> fetchHistoryInternal(String symbol, int count, String resolution, String token) {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         String toDate = LocalDateTime.now().format(dtf);
         String fromDate = LocalDateTime.now().minusDays(20).format(dtf);
@@ -178,7 +175,7 @@ public class FyersService {
                 "&resolution=" + resolution + "&date_format=1&range_from=" + fromDate +
                 "&range_to=" + toDate + "&cont_flag=1";
 
-        String response = executeGetRequest(url);
+        String response = executeGetRequest(url, token);
         if (response == null) throw new RuntimeException("Empty Response");
 
         JsonObject json = JsonParser.parseString(response).getAsJsonObject();
@@ -199,7 +196,7 @@ public class FyersService {
     }
 
     public String placeOrder(String symbol, int qty, String side, String type, double price) {
-        if (accessToken == null) throw new RuntimeException("No Token");
+        if (accessToken == null || accessToken.isBlank()) throw new RuntimeException("No Token");
 
         String url = "https://api-t1.fyers.in/api/v3/orders";
         try {
@@ -230,7 +227,44 @@ public class FyersService {
         }
     }
 
-    public String getOrderStatus(String orderId) { return "FILLED"; }
+    public String getOrderStatus(String orderId) {
+        return getOrderStatus(orderId, accessToken);
+    }
+
+    public String getOrderStatus(String orderId, String token) {
+        String resolvedToken = resolveToken(token);
+        if (resolvedToken == null || orderId == null || orderId.isBlank()) {
+            return "UNKNOWN";
+        }
+        String url = "https://api-t1.fyers.in/api/v3/orders?id=" + orderId;
+        try {
+            String response = executeGetRequest(url, resolvedToken);
+            if (response == null) {
+                return "UNKNOWN";
+            }
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode dataNode = root.path("data");
+            if (dataNode.isObject()) {
+                String status = dataNode.path("status").asText(null);
+                if (status != null && !status.isBlank()) {
+                    return status;
+                }
+            }
+            if (dataNode.isArray()) {
+                for (JsonNode orderNode : dataNode) {
+                    String id = orderNode.path("id").asText();
+                    if (orderId.equalsIgnoreCase(id)) {
+                        String status = orderNode.path("status").asText("UNKNOWN");
+                        return status;
+                    }
+                }
+            }
+            return "UNKNOWN";
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch order status: {}", e.getMessage());
+            return "ERROR";
+        }
+    }
     public UserProfile getUnifiedUserProfile() { return new UserProfile(); }
 
     public Map<String, Object> getProfile(String token) throws IOException {
@@ -255,10 +289,6 @@ public class FyersService {
 
     public Map<String, Object> getTrades(String token) throws IOException {
         return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/tradebook", token);
-    }
-
-    private String executeGetRequest(String url) {
-        return executeGetRequest(url, accessToken);
     }
 
     private String executeGetRequest(String url, String token) {
@@ -299,11 +329,19 @@ public class FyersService {
     }
 
     private Map<String, Object> fetchJsonAsMap(String url, String token) throws IOException {
-        String response = executeGetRequest(url, token);
+        String resolvedToken = resolveToken(token);
+        String response = executeGetRequest(url, resolvedToken);
         if (response == null) {
             return Collections.emptyMap();
         }
         return objectMapper.readValue(response, Map.class);
+    }
+
+    private String resolveToken(String token) {
+        if (token != null && !token.isBlank()) {
+            return token;
+        }
+        return (accessToken != null && !accessToken.isBlank()) ? accessToken : null;
     }
 
     @lombok.Data
