@@ -38,13 +38,13 @@ public class FyersAuthService {
     @PostConstruct
     void validateConfig() {
         if (appId == null || appId.isBlank()) {
-            throw new IllegalStateException("Missing config fyers.api.app-id (FYERS_API_APP_ID)");
+            log.warn("Missing config fyers.api.app-id (FYERS_API_APP_ID). Fyers endpoints will be unavailable.");
         }
         if (redirectUri == null || redirectUri.isBlank()) {
-            throw new IllegalStateException("Missing config fyers.redirect-uri (FYERS_REDIRECT_URI)");
+            log.warn("Missing config fyers.redirect-uri (FYERS_REDIRECT_URI). Fyers endpoints will be unavailable.");
         }
         if (secretKey == null || secretKey.isBlank()) {
-            throw new IllegalStateException("Missing config fyers.api.secret-key (FYERS_API_SECRET_KEY)");
+            log.warn("Missing config fyers.api.secret-key (FYERS_API_SECRET_KEY). Fyers endpoints will be unavailable.");
         }
     }
 

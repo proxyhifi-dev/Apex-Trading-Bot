@@ -35,7 +35,7 @@ public class FyersService {
     private final Gson gson = new Gson();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${fyers.api.app-id}")
+    @Value("${fyers.api.app-id:}")
     private String appId;
     private String accessToken = null;
 
