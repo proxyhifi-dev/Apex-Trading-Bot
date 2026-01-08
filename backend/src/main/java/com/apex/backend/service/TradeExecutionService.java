@@ -26,6 +26,7 @@ public class TradeExecutionService {
     private final PortfolioService portfolioService;
     private final StrategyConfig config;
     private final DeadLetterQueueService dlqService;
+    private final PaperTradingService paperTradingService;
 
     @Transactional
     public void executeAutoTrade(SignalDecision decision, boolean isPaper, double currentVix) {
@@ -98,6 +99,7 @@ public class TradeExecutionService {
         Trade trade = Trade.builder()
                 .symbol(signal.getSymbol())
                 .quantity(qty)
+                .tradeType(Trade.TradeType.LONG)
                 .entryPrice(entryPrice)
                 .entryTime(LocalDateTime.now())
                 .stopLoss(stopLoss)
@@ -109,6 +111,9 @@ public class TradeExecutionService {
                 .build();
 
         tradeRepo.save(trade);
+        if (isPaper) {
+            paperTradingService.recordEntry(trade);
+        }
         signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.EXECUTED);
         screeningRepo.save(signal);
     }

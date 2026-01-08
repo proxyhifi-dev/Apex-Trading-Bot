@@ -2,6 +2,8 @@ package com.apex.backend.service;
 
 import com.apex.backend.model.Candle;
 import com.apex.backend.model.UserProfile;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +33,7 @@ public class FyersService {
 
     private RestTemplate restTemplate;
     private final Gson gson = new Gson();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${fyers.api.app-id}")
     private String appId;
@@ -39,6 +42,7 @@ public class FyersService {
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
     private final Map<String, CacheEntry> candleCache = new ConcurrentHashMap<>();
+    private final Map<String, CacheEntry> ltpCache = new ConcurrentHashMap<>();
 
     @PostConstruct
     public void init() {
@@ -62,6 +66,48 @@ public class FyersService {
     public double getLTP(String symbol) {
         List<Candle> history = getHistoricalData(symbol, 1, "5");
         return (history != null && !history.isEmpty()) ? history.get(history.size() - 1).getClose() : 0.0;
+    }
+
+    public Map<String, Double> getLtpBatch(List<String> symbols) {
+        return getLtpBatch(symbols, accessToken);
+    }
+
+    public Map<String, Double> getLtpBatch(List<String> symbols, String token) {
+        if (token == null || symbols == null || symbols.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, Double> result = new HashMap<>();
+        List<String> toFetch = new ArrayList<>();
+        for (String symbol : symbols) {
+            String cacheKey = symbol + "_ltp";
+            CacheEntry entry = ltpCache.get(cacheKey);
+            if (entry != null && System.currentTimeMillis() - entry.timestamp < 2000) {
+                result.put(symbol, entry.data.get(0).getClose());
+            } else {
+                toFetch.add(symbol);
+            }
+        }
+        if (!toFetch.isEmpty()) {
+            Map<String, Double> fetched;
+            boolean acquired = false;
+            try {
+                rateLimiter.acquire();
+                acquired = true;
+                fetched = fetchQuotes(toFetch, token);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                fetched = Collections.emptyMap();
+            } finally {
+                if (acquired) {
+                    rateLimiter.release();
+                }
+            }
+            fetched.forEach((symbol, ltp) -> {
+                ltpCache.put(symbol + "_ltp", new CacheEntry(List.of(new Candle(ltp, ltp, ltp, ltp, 0L, LocalDateTime.now())), System.currentTimeMillis()));
+                result.put(symbol, ltp);
+            });
+        }
+        return result;
     }
 
     public List<Candle> getHistoricalData(String symbol, int count) {
@@ -187,13 +233,77 @@ public class FyersService {
     public String getOrderStatus(String orderId) { return "FILLED"; }
     public UserProfile getUnifiedUserProfile() { return new UserProfile(); }
 
+    public Map<String, Object> getProfile(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/profile", token);
+    }
+
+    public Map<String, Object> getFunds(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/funds", token);
+    }
+
+    public Map<String, Object> getHoldings(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/holdings", token);
+    }
+
+    public Map<String, Object> getPositions(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/positions", token);
+    }
+
+    public Map<String, Object> getOrders(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/orders", token);
+    }
+
+    public Map<String, Object> getTrades(String token) throws IOException {
+        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/tradebook", token);
+    }
+
     private String executeGetRequest(String url) {
-        if (accessToken == null) return null;
+        return executeGetRequest(url, accessToken);
+    }
+
+    private String executeGetRequest(String url, String token) {
+        if (token == null) return null;
         HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", appId + ":" + accessToken);
+        headers.set("Authorization", appId + ":" + token);
         HttpEntity<Void> entity = new HttpEntity<>(headers);
         ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
         return response.getBody();
+    }
+
+    private Map<String, Double> fetchQuotes(List<String> symbols, String token) {
+        if (symbols.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        String url = "https://api-t1.fyers.in/data/quotes?symbols=" + String.join(",", symbols);
+        try {
+            String response = executeGetRequest(url, token);
+            if (response == null) {
+                return Collections.emptyMap();
+            }
+            JsonNode root = objectMapper.readTree(response);
+            Map<String, Double> ltpMap = new HashMap<>();
+            if ("ok".equalsIgnoreCase(root.path("s").asText())) {
+                for (JsonNode item : root.path("d")) {
+                    String symbol = item.path("n").asText();
+                    double ltp = item.path("v").path("lp").asDouble(0.0);
+                    if (symbol != null && !symbol.isBlank()) {
+                        ltpMap.put(symbol, ltp);
+                    }
+                }
+            }
+            return ltpMap;
+        } catch (Exception e) {
+            log.error("❌ Failed to fetch quotes: {}", e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    private Map<String, Object> fetchJsonAsMap(String url, String token) throws IOException {
+        String response = executeGetRequest(url, token);
+        if (response == null) {
+            return Collections.emptyMap();
+        }
+        return objectMapper.readValue(response, Map.class);
     }
 
     @lombok.Data

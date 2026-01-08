@@ -21,7 +21,6 @@ import java.util.concurrent.ConcurrentHashMap;
 @Slf4j
 @RestController
 @RequestMapping(value = "/api/auth", produces = MediaType.APPLICATION_JSON_VALUE)
-@CrossOrigin(origins = {"http://localhost:4200", "http://127.0.0.1:4200"})
 @RequiredArgsConstructor
 public class AuthController {
 

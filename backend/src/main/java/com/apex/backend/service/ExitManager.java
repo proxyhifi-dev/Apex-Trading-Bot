@@ -14,6 +14,7 @@ import java.util.List;
 public class ExitManager {
 
     private final TradeRepository tradeRepository;
+    private final PaperTradingService paperTradingService;
 
     public long getOpenTradeCount() {
         try {
@@ -47,6 +48,9 @@ public class ExitManager {
                 }
                 trade.setRealizedPnl(pnl);
                 tradeRepository.save(trade);
+                if (trade.isPaperTrade()) {
+                    paperTradingService.recordExit(trade);
+                }
                 log.info("Trade {} closed successfully. P&L: {}", tradeId, pnl);
             }
         } catch (Exception e) {
@@ -68,6 +72,9 @@ public class ExitManager {
                 }
                 trade.setRealizedPnl(pnl);
                 tradeRepository.save(trade);
+                if (trade.isPaperTrade()) {
+                    paperTradingService.recordExit(trade);
+                }
                 log.info("Trade {} closed by stop loss. P&L: {}", tradeId, pnl);
             }
         } catch (Exception e) {

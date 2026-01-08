@@ -49,6 +49,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/public/**").permitAll()
                 .requestMatchers("/api/ui/config").permitAll()
                 .requestMatchers("/favicon.ico").permitAll()
+                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 // ✅ FIX: Allow WebSocket handshake without authentication
                 .requestMatchers("/ws/**").permitAll()
                 // All other endpoints need login

@@ -21,6 +21,7 @@ public class StockScreeningService {
     private final FyersService fyersService;
     private final SmartSignalGenerator signalGenerator;
     private final StockScreeningResultRepository screeningRepo;
+    private final BroadcastService broadcastService;
 
     public List<String> getUniverse() {
         // Returns symbol list from application.properties
@@ -64,5 +65,6 @@ public class StockScreeningService {
                 .analysisReason(decision.getReason())
                 .build();
         screeningRepo.save(result);
+        broadcastService.broadcastSignal(result);
     }
 }

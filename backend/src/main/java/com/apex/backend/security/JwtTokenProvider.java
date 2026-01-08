@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import jakarta.annotation.PostConstruct;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
@@ -15,7 +16,7 @@ public class JwtTokenProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtTokenProvider.class);
 
-    @Value("${jwt.secret:MySecretKeyForJWTTokenGenerationShouldBeAtLeast256BitsLongForHS256Algorithm}")
+    @Value("${jwt.secret}")
     private String jwtSecret;
 
     @Value("${jwt.expiration:3600000}")
@@ -23,6 +24,16 @@ public class JwtTokenProvider {
 
     @Value("${jwt.refresh-expiration:604800000}")
     private long jwtRefreshExpirationMs;
+
+    @PostConstruct
+    public void validateSecret() {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException("Missing JWT secret. Set JWT_SECRET environment variable.");
+        }
+        if (jwtSecret.length() < 32) {
+            throw new IllegalStateException("JWT secret must be at least 32 characters.");
+        }
+    }
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);

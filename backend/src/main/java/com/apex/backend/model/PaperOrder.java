@@ -6,16 +6,19 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "paper_trades")
+@Table(name = "paper_orders")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PaperTrade {
+public class PaperOrder {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String orderId;
 
     @Column(nullable = false)
     private String symbol;
@@ -24,20 +27,16 @@ public class PaperTrade {
     private String side;
 
     @Column(nullable = false)
+    private String orderType;
+
+    @Column(nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false)
-    private Double entryPrice;
-
-    private Double exitPrice;
-
-    @Column(nullable = false)
-    private LocalDateTime entryTime;
-
-    private LocalDateTime exitTime;
-
-    private Double realizedPnl;
+    private Double price;
 
     @Column(nullable = false)
     private String status;
+
+    @Column(nullable = false)
+    private LocalDateTime createdAt;
 }

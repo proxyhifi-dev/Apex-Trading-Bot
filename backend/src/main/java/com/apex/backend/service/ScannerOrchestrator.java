@@ -27,6 +27,7 @@ public class ScannerOrchestrator {
     private final IndicatorEngine indicatorEngine;
     private final SmartSignalGenerator signalGenerator;
     private final TradeExecutionService tradeExecutionService;
+    private final BotStatusService botStatusService;
 
     // Thread pool for parallel execution
     private final ExecutorService executor = Executors.newFixedThreadPool(10);
@@ -42,6 +43,8 @@ public class ScannerOrchestrator {
 
         List<String> universe = screeningService.getUniverse();
         log.info("🔭 Parallel Scanning {} symbols...", universe.size());
+        botStatusService.resetScanProgress();
+        botStatusService.setTotalStocks(universe.size());
 
         // Thread-safe collection
         ConcurrentLinkedQueue<SignalDecision> candidates = new ConcurrentLinkedQueue<>();
@@ -50,6 +53,7 @@ public class ScannerOrchestrator {
         List<CompletableFuture<Void>> futures = universe.stream()
                 .map(symbol -> CompletableFuture.runAsync(() -> {
                     SignalDecision decision = processSymbol(symbol);
+                    botStatusService.incrementScannedStocks();
                     if (decision != null && decision.isHasSignal()) {
                         candidates.add(decision);
                     }
