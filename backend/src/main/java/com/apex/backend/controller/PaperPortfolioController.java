@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -62,7 +61,27 @@ public class PaperPortfolioController {
     public ResponseEntity<?> getClosedPositions() {
         try {
             log.info("Fetching closed paper positions");
-            List<PaperPositionDTO> positions = new ArrayList<>();
+            List<PaperPositionDTO> positions = tradeRepo.findByStatus(Trade.TradeStatus.CLOSED).stream()
+                    .filter(Trade::isPaperTrade)
+                    .map(t -> {
+                        double exitPrice = t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice();
+                        double pnl = t.getRealizedPnl() != null
+                                ? t.getRealizedPnl()
+                                : (exitPrice - t.getEntryPrice()) * t.getQuantity();
+                        double pnlPercent = t.getEntryPrice() != null && t.getEntryPrice() != 0
+                                ? (pnl / (t.getEntryPrice() * t.getQuantity())) * 100
+                                : 0;
+                        return PaperPositionDTO.builder()
+                                .symbol(t.getSymbol())
+                                .quantity(t.getQuantity())
+                                .entryPrice(t.getEntryPrice())
+                                .ltp(exitPrice)
+                                .pnl(pnl)
+                                .pnlPercent(pnlPercent)
+                                .build();
+                    })
+                    .collect(Collectors.toList());
+            log.info("Retrieved {} closed positions", positions.size());
             return ResponseEntity.ok(positions);
         } catch (Exception e) {
             log.error("Failed to fetch closed positions", e);
@@ -86,10 +105,21 @@ public class PaperPortfolioController {
                     .filter(t -> t.getRealizedPnl() != null)
                     .mapToDouble(Trade::getRealizedPnl)
                     .sum();
+
+            long winningTrades = closedTrades.stream()
+                    .mapToDouble(t -> t.getRealizedPnl() != null
+                            ? t.getRealizedPnl()
+                            : ((t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice())
+                            - t.getEntryPrice()) * t.getQuantity())
+                    .filter(pnl -> pnl > 0)
+                    .count();
+            double winRate = closedTrades.isEmpty()
+                    ? 0
+                    : (winningTrades / (double) closedTrades.size()) * 100;
             
             PaperStatsDTO stats = PaperStatsDTO.builder()
                     .totalTrades(closedTrades.size())
-                    .winRate(closedTrades.isEmpty() ? 0 : 50.0)
+                    .winRate(winRate)
                     .netPnl(totalProfit)
                     .build();
             
