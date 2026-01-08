@@ -18,10 +18,24 @@ public class BroadcastService {
     }
 
     /**
+     * Pushes order updates
+     */
+    public void broadcastOrders(Object orders) {
+        messagingTemplate.convertAndSend("/topic/orders", orders);
+    }
+
+    /**
      * Pushes P&L and Bot Status updates to the dashboard
      */
     public void broadcastSummary(Object summary) {
         messagingTemplate.convertAndSend("/topic/summary", summary);
+    }
+
+    /**
+     * Pushes bot status updates
+     */
+    public void broadcastBotStatus(Object status) {
+        messagingTemplate.convertAndSend("/topic/bot-status", status);
     }
 
     /**

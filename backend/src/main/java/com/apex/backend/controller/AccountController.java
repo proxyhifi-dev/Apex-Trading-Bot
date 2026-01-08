@@ -1,6 +1,12 @@
 package com.apex.backend.controller;
 
+import com.apex.backend.dto.ApiErrorResponse;
 import com.apex.backend.dto.UserProfileDTO;
+import com.apex.backend.model.PaperPortfolioStats;
+import com.apex.backend.service.FyersAuthService;
+import com.apex.backend.service.FyersService;
+import com.apex.backend.service.PaperTradingService;
+import com.apex.backend.security.JwtTokenProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,38 +15,51 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.Map;
 
 @Slf4j
 @RestController
 @RequestMapping("/api/account")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class AccountController {
     
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
+
+    private final FyersAuthService fyersAuthService;
+    private final FyersService fyersService;
+    private final PaperTradingService paperTradingService;
+    private final JwtTokenProvider jwtTokenProvider;
     
     /**
      * Get user profile
      */
     @GetMapping("/profile")
-    public ResponseEntity<?> getProfile() {
+    public ResponseEntity<?> getProfile(
+            @RequestParam(defaultValue = "live") String mode,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             log.info("Fetching user profile");
-            UserProfileDTO profile = UserProfileDTO.builder()
-                    .name("Trading Account")
-                    .availableFunds(initialCapital)
-                    .totalInvested(0.0)
-                    .currentValue(initialCapital)
-                    .todaysPnl(0.0)
-                    .holdings(new ArrayList<>())
-                    .build();
+            if ("paper".equalsIgnoreCase(mode)) {
+                PaperPortfolioStats stats = paperTradingService.getStats();
+                UserProfileDTO profile = UserProfileDTO.builder()
+                        .name("Paper Trading Account")
+                        .availableFunds(paperTradingService.getAvailableFunds(initialCapital))
+                        .totalInvested(0.0)
+                        .currentValue(paperTradingService.getAvailableFunds(initialCapital))
+                        .todaysPnl(stats.getNetPnl() != null ? stats.getNetPnl() : 0.0)
+                        .holdings(new ArrayList<>())
+                        .build();
+                return ResponseEntity.ok(profile);
+            }
+            String token = resolveFyersToken(authHeader);
+            Map<String, Object> profile = fyersService.getProfile(token);
             log.info("Successfully retrieved profile");
             return ResponseEntity.ok(profile);
         } catch (Exception e) {
             log.error("Failed to fetch profile", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse("Failed to fetch account data"));
+                    .body(new ApiErrorResponse("Failed to fetch account data", e.getMessage()));
         }
     }
     
@@ -49,44 +68,45 @@ public class AccountController {
      */
     @GetMapping("/summary")
     public ResponseEntity<?> getSummary(
-            @RequestParam(defaultValue = "PAPER") String type) {
+            @RequestParam(defaultValue = "paper") String mode,
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            log.info("Fetching account summary for type: {}", type);
-            
-            // Validate type parameter
-            if (!type.equalsIgnoreCase("PAPER") && !type.equalsIgnoreCase("LIVE")) {
-                log.warn("Invalid account type requested: {}", type);
-                return ResponseEntity.badRequest()
-                        .body(new ErrorResponse("Account type must be PAPER or LIVE"));
-            }
-            
-            UserProfileDTO summary;
-            if ("PAPER".equalsIgnoreCase(type)) {
-                summary = UserProfileDTO.builder()
+            log.info("Fetching account summary for mode: {}", mode);
+
+            if ("paper".equalsIgnoreCase(mode)) {
+                PaperPortfolioStats stats = paperTradingService.getStats();
+                UserProfileDTO summary = UserProfileDTO.builder()
                         .name("Paper Trading Account")
-                        .availableFunds(initialCapital)
+                        .availableFunds(paperTradingService.getAvailableFunds(initialCapital))
                         .totalInvested(0.0)
-                        .currentValue(initialCapital)
-                        .todaysPnl(0.0)
+                        .currentValue(paperTradingService.getAvailableFunds(initialCapital))
+                        .todaysPnl(stats.getNetPnl() != null ? stats.getNetPnl() : 0.0)
                         .holdings(new ArrayList<>())
                         .build();
-                log.info("Returned PAPER trading account summary");
-            } else {
-                summary = UserProfileDTO.builder()
-                        .name("Live Trading Account")
-                        .availableFunds(0.0)
-                        .totalInvested(0.0)
-                        .currentValue(0.0)
-                        .todaysPnl(0.0)
-                        .holdings(new ArrayList<>())
-                        .build();
-                log.info("Returned LIVE trading account summary");
+                return ResponseEntity.ok(summary);
             }
-            return ResponseEntity.ok(summary);
+            String token = resolveFyersToken(authHeader);
+            return ResponseEntity.ok(fyersService.getFunds(token));
         } catch (Exception e) {
             log.error("Failed to fetch account summary", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse("Failed to fetch account summary"));
+                    .body(new ApiErrorResponse("Failed to fetch account summary", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/holdings")
+    public ResponseEntity<?> getHoldings(@RequestParam(defaultValue = "live") String mode,
+                                         @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        try {
+            if ("paper".equalsIgnoreCase(mode)) {
+                return ResponseEntity.ok(paperTradingService.getOpenPositions());
+            }
+            String token = resolveFyersToken(authHeader);
+            return ResponseEntity.ok(fyersService.getHoldings(token));
+        } catch (Exception e) {
+            log.error("Failed to fetch holdings", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ApiErrorResponse("Failed to fetch holdings", e.getMessage()));
         }
     }
     
@@ -101,21 +121,11 @@ public class AccountController {
         } catch (Exception e) {
             log.error("Failed to fetch capital info", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse("Failed to fetch capital information"));
+                    .body(new ApiErrorResponse("Failed to fetch capital information", e.getMessage()));
         }
     }
     
     // ==================== INNER CLASSES ====================
-    
-    public static class ErrorResponse {
-        public String error;
-        public long timestamp;
-        
-        public ErrorResponse(String error) {
-            this.error = error;
-            this.timestamp = System.currentTimeMillis();
-        }
-    }
     
     public static class CapitalInfo {
         public double initialCapital;
@@ -127,5 +137,18 @@ public class AccountController {
             this.availableCapital = availableCapital;
             this.usedCapital = usedCapital;
         }
+    }
+
+    private String resolveFyersToken(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new IllegalStateException("Missing Authorization header");
+        }
+        String jwt = authHeader.substring(7);
+        Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+        String token = fyersAuthService.getFyersToken(userId);
+        if (token == null || token.isBlank()) {
+            throw new IllegalStateException("Fyers account not linked");
+        }
+        return token;
     }
 }

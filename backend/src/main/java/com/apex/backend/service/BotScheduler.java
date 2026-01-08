@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -19,6 +20,7 @@ public class BotScheduler {
     private final ScannerOrchestrator scannerOrchestrator;
     private final ExitManager exitManager;
     private final LogBroadcastService logger;
+    private final BotStatusService botStatusService;
     
     // Market data connection status
     private final AtomicBoolean marketDataConnected = new AtomicBoolean(true);
@@ -32,10 +34,12 @@ public class BotScheduler {
             log.info("🚀 Initializing Apex Trading Bot...");
             marketDataConnected.set(true);
             botReady.set(true);
+            botStatusService.markRunning();
             log.info("✅ Bot Initialization Complete - Ready for trading");
         } catch (Exception e) {
             log.error("❌ Failed to initialize bot", e);
             botReady.set(false);
+            botStatusService.markStopped(e.getMessage());
         }
     }
     
@@ -46,26 +50,33 @@ public class BotScheduler {
     public void runBotCycle() {
         if (!botReady.get()) {
             log.warn("⏳ Bot not ready yet");
+            botStatusService.markStopped("Bot not ready");
             return;
         }
-        
+
         if (!isMarketOpen()) {
             log.debug("Market closed - skipping cycle");
+            botStatusService.markPaused("Market closed");
             return;
         }
         
         if (circuitBreaker.isGlobalHalt()) {
             log.warn("⛔ Circuit Breaker Active. Skipping cycle.");
+            botStatusService.markPaused("Circuit breaker active");
             return;
         }
-        
+
         try {
             log.info("🔄 Running Bot Cycle...");
+            botStatusService.markRunning();
+            botStatusService.setLastScanTime(LocalDateTime.now());
             exitManager.manageExits();
             scannerOrchestrator.runScanner();
+            botStatusService.setNextScanTime(LocalDateTime.now().plusSeconds(config.getScanner().getInterval()));
             log.info("✅ Bot Cycle Complete");
         } catch (Exception e) {
             log.error("❌ Error in bot cycle", e);
+            botStatusService.setLastError(e.getMessage());
             // Update metrics to trigger circuit breaker if needed
             circuitBreaker.updateMetrics();
         }
@@ -79,13 +90,17 @@ public class BotScheduler {
             log.warn("⏳ Bot not yet initialized - initializing now");
             initialize();
         }
-        
+
         try {
             log.info("⚡ Manual Scan Triggered by User");
+            botStatusService.markRunning();
+            botStatusService.setLastScanTime(LocalDateTime.now());
             scannerOrchestrator.runScanner();
+            botStatusService.setNextScanTime(LocalDateTime.now().plusSeconds(config.getScanner().getInterval()));
             log.info("✅ Manual scan completed");
         } catch (Exception e) {
             log.error("❌ Failed to execute manual scan", e);
+            botStatusService.setLastError(e.getMessage());
         }
     }
     

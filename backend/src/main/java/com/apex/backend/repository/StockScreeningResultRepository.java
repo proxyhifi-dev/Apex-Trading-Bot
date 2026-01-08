@@ -17,4 +17,6 @@ public interface StockScreeningResultRepository extends JpaRepository<StockScree
     List<StockScreeningResult> findByApprovalStatus(StockScreeningResult.ApprovalStatus status);
 
     Optional<StockScreeningResult> findBySymbolAndApprovalStatus(String symbol, StockScreeningResult.ApprovalStatus status);
+
+    List<StockScreeningResult> findTop50ByOrderByScanTimeDesc();
 }

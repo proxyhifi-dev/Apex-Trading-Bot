@@ -2,9 +2,9 @@ package com.apex.backend.controller;
 
 import com.apex.backend.dto.PaperPositionDTO;
 import com.apex.backend.dto.PaperStatsDTO;
-import com.apex.backend.model.Trade;
-import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.service.FyersService;
+import com.apex.backend.model.PaperPortfolioStats;
+import com.apex.backend.model.PaperPosition;
+import com.apex.backend.service.PaperTradingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -18,11 +18,9 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/paper")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class PaperPortfolioController {
     
-    private final TradeRepository tradeRepo;
-    private final FyersService fyersService;
+    private final PaperTradingService paperTradingService;
     
     /**
      * Get open paper trading positions
@@ -31,19 +29,8 @@ public class PaperPortfolioController {
     public ResponseEntity<?> getOpenPositions() {
         try {
             log.info("Fetching open paper positions");
-            List<PaperPositionDTO> positions = tradeRepo.findByStatus(Trade.TradeStatus.OPEN).stream()
-                    .filter(Trade::isPaperTrade)
-                    .map(t -> {
-                        double ltp = fyersService.getLTP(t.getSymbol());
-                        return PaperPositionDTO.builder()
-                                .symbol(t.getSymbol())
-                                .quantity(t.getQuantity())
-                                .entryPrice(t.getEntryPrice())
-                                .ltp(ltp)
-                                .pnl((ltp - t.getEntryPrice()) * t.getQuantity())
-                                .pnlPercent((ltp - t.getEntryPrice()) / t.getEntryPrice() * 100)
-                                .build();
-                    })
+            List<PaperPositionDTO> positions = paperTradingService.getOpenPositions().stream()
+                    .map(this::toPositionDto)
                     .collect(Collectors.toList());
             log.info("Retrieved {} open positions", positions.size());
             return ResponseEntity.ok(positions);
@@ -61,25 +48,8 @@ public class PaperPortfolioController {
     public ResponseEntity<?> getClosedPositions() {
         try {
             log.info("Fetching closed paper positions");
-            List<PaperPositionDTO> positions = tradeRepo.findByStatus(Trade.TradeStatus.CLOSED).stream()
-                    .filter(Trade::isPaperTrade)
-                    .map(t -> {
-                        double exitPrice = t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice();
-                        double pnl = t.getRealizedPnl() != null
-                                ? t.getRealizedPnl()
-                                : (exitPrice - t.getEntryPrice()) * t.getQuantity();
-                        double pnlPercent = t.getEntryPrice() != null && t.getEntryPrice() != 0
-                                ? (pnl / (t.getEntryPrice() * t.getQuantity())) * 100
-                                : 0;
-                        return PaperPositionDTO.builder()
-                                .symbol(t.getSymbol())
-                                .quantity(t.getQuantity())
-                                .entryPrice(t.getEntryPrice())
-                                .ltp(exitPrice)
-                                .pnl(pnl)
-                                .pnlPercent(pnlPercent)
-                                .build();
-                    })
+            List<PaperPositionDTO> positions = paperTradingService.getClosedPositions().stream()
+                    .map(this::toPositionDto)
                     .collect(Collectors.toList());
             log.info("Retrieved {} closed positions", positions.size());
             return ResponseEntity.ok(positions);
@@ -97,30 +67,11 @@ public class PaperPortfolioController {
     public ResponseEntity<?> getStats() {
         try {
             log.info("Fetching paper trading stats");
-            List<Trade> closedTrades = tradeRepo.findByStatus(Trade.TradeStatus.CLOSED).stream()
-                    .filter(Trade::isPaperTrade)
-                    .collect(Collectors.toList());
-            
-            double totalProfit = closedTrades.stream()
-                    .filter(t -> t.getRealizedPnl() != null)
-                    .mapToDouble(Trade::getRealizedPnl)
-                    .sum();
-
-            long winningTrades = closedTrades.stream()
-                    .mapToDouble(t -> t.getRealizedPnl() != null
-                            ? t.getRealizedPnl()
-                            : ((t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice())
-                            - t.getEntryPrice()) * t.getQuantity())
-                    .filter(pnl -> pnl > 0)
-                    .count();
-            double winRate = closedTrades.isEmpty()
-                    ? 0
-                    : (winningTrades / (double) closedTrades.size()) * 100;
-            
+            PaperPortfolioStats storedStats = paperTradingService.getStats();
             PaperStatsDTO stats = PaperStatsDTO.builder()
-                    .totalTrades(closedTrades.size())
-                    .winRate(winRate)
-                    .netPnl(totalProfit)
+                    .totalTrades(storedStats.getTotalTrades())
+                    .winRate(storedStats.getWinRate())
+                    .netPnl(storedStats.getNetPnl())
                     .build();
             
             log.info("Paper stats retrieved: totalTrades={}, netPnl={}", stats.getTotalTrades(), stats.getNetPnl());
@@ -130,6 +81,22 @@ public class PaperPortfolioController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to fetch paper stats"));
         }
+    }
+
+    private PaperPositionDTO toPositionDto(PaperPosition position) {
+        double ltp = position.getLastPrice() != null ? position.getLastPrice() : position.getAveragePrice();
+        double pnl = position.getUnrealizedPnl() != null ? position.getUnrealizedPnl() : 0.0;
+        double pnlPercent = position.getAveragePrice() != null && position.getAveragePrice() != 0
+                ? (pnl / (position.getAveragePrice() * position.getQuantity())) * 100
+                : 0;
+        return PaperPositionDTO.builder()
+                .symbol(position.getSymbol())
+                .quantity(position.getQuantity())
+                .entryPrice(position.getAveragePrice())
+                .ltp(ltp)
+                .pnl(pnl)
+                .pnlPercent(pnlPercent)
+                .build();
     }
     
     // ==================== INNER CLASSES ====================

@@ -20,7 +20,6 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/strategy")
 @RequiredArgsConstructor
-@CrossOrigin(origins = "http://localhost:4200")
 public class StrategyController {
     
     private final StockScreeningResultRepository screeningRepo;

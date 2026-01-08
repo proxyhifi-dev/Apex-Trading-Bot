@@ -16,6 +16,7 @@ public class EmergencyStopService {
 
     private final TradeRepository tradeRepository;
     private final CircuitBreaker circuitBreaker;
+    private final PaperTradingService paperTradingService;
 
     public EmergencyStopResult triggerEmergencyStop(String reason) {
         int closedTrades = closeAllOpenTrades();
@@ -40,6 +41,9 @@ public class EmergencyStopService {
         }
 
         tradeRepository.saveAll(openTrades);
+        openTrades.stream()
+                .filter(Trade::isPaperTrade)
+                .forEach(paperTradingService::recordExit);
         return openTrades.size();
     }
 

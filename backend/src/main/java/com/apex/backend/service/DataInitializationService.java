@@ -5,8 +5,10 @@ import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 import java.time.LocalDateTime;
 
 /**
@@ -20,10 +22,18 @@ public class DataInitializationService implements CommandLineRunner {
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment environment;
+
+    @Value("${apex.bootstrap.default-users:true}")
+    private boolean defaultUsersEnabled;
 
     @Override
     public void run(String... args) {
         try {
+            if (!defaultUsersEnabled || isProdProfileActive()) {
+                log.info("Default user initialization skipped (production or disabled).");
+                return;
+            }
             // Create default admin user if not exists
             if (!userRepository.existsByUsername("admin")) {
                 User admin = User.builder()
@@ -64,5 +74,14 @@ public class DataInitializationService implements CommandLineRunner {
         } catch (Exception e) {
             log.error("❌ Data initialization failed", e);
         }
+    }
+
+    private boolean isProdProfileActive() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 }
