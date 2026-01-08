@@ -2,11 +2,13 @@ package com.apex.backend.controller;
 
 import com.apex.backend.dto.PaperPositionDTO;
 import com.apex.backend.dto.PaperStatsDTO;
+import com.apex.backend.dto.PaperSummaryDTO;
 import com.apex.backend.model.PaperPortfolioStats;
 import com.apex.backend.model.PaperPosition;
 import com.apex.backend.service.PaperTradingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -20,6 +22,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaperPortfolioController {
     
+    @Value("${apex.trading.capital:100000}")
+    private double initialCapital;
+
     private final PaperTradingService paperTradingService;
     
     /**
@@ -80,6 +85,35 @@ public class PaperPortfolioController {
             log.error("Failed to fetch paper stats", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to fetch paper stats"));
+        }
+    }
+
+    /**
+     * Get paper trading summary (cash/used/free/pnl/positions)
+     */
+    @GetMapping("/summary")
+    public ResponseEntity<?> getSummary() {
+        try {
+            List<PaperPosition> openPositions = paperTradingService.getOpenPositions();
+            double used = openPositions.stream()
+                    .mapToDouble(position -> position.getAveragePrice() * position.getQuantity())
+                    .sum();
+            PaperPortfolioStats stats = paperTradingService.getStats();
+            double pnl = stats.getNetPnl() != null ? stats.getNetPnl() : 0.0;
+            double cash = initialCapital;
+            double free = cash + pnl - used;
+            PaperSummaryDTO summary = PaperSummaryDTO.builder()
+                    .cash(cash)
+                    .used(used)
+                    .free(free)
+                    .pnl(pnl)
+                    .positions(openPositions.size())
+                    .build();
+            return ResponseEntity.ok(summary);
+        } catch (Exception e) {
+            log.error("Failed to fetch paper summary", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch paper summary"));
         }
     }
 

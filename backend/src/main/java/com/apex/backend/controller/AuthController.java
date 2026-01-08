@@ -218,6 +218,29 @@ public class AuthController {
         }
     }
 
+    @GetMapping("/fyers/status")
+    public ResponseEntity<?> getFyersStatus(
+            @RequestHeader(value = "Authorization", required = false) String authHeader) {
+        try {
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return ResponseEntity.ok(new FyersStatusResponse(false, "Not authenticated"));
+            }
+            String jwt = authHeader.substring(7);
+            Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+            if (userId == null) {
+                return ResponseEntity.ok(new FyersStatusResponse(false, "Not authenticated"));
+            }
+            String token = fyersAuthService.getFyersToken(userId);
+            if (token == null || token.isBlank()) {
+                return ResponseEntity.ok(new FyersStatusResponse(false, "Not authenticated"));
+            }
+            return ResponseEntity.ok(new FyersStatusResponse(true, "Connected"));
+        } catch (Exception e) {
+            log.warn("Failed to resolve Fyers status", e);
+            return ResponseEntity.ok(new FyersStatusResponse(false, "Not authenticated"));
+        }
+    }
+
     // ==================== Standard Auth Endpoints ====================
 
     @PostMapping("/register")
@@ -346,5 +369,13 @@ public class AuthController {
     public static class MessageResponse {
         public String message;
         public MessageResponse(String m) { message = m; }
+    }
+    public static class FyersStatusResponse {
+        public boolean connected;
+        public String reason;
+        public FyersStatusResponse(boolean connected, String reason) {
+            this.connected = connected;
+            this.reason = reason;
+        }
     }
 }
