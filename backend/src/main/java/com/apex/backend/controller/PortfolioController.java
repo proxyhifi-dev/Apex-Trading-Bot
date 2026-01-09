@@ -3,6 +3,7 @@ package com.apex.backend.controller;
 import com.apex.backend.model.PaperOrder;
 import com.apex.backend.model.PaperPosition;
 import com.apex.backend.model.PaperTrade;
+import com.apex.backend.model.TradingMode;
 import com.apex.backend.exception.ConflictException;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.security.UserPrincipal;
@@ -36,8 +37,8 @@ public class PortfolioController {
     @GetMapping("/positions/open")
     public ResponseEntity<?> getOpenPositions(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             List<PaperPosition> positions = paperTradingService.getOpenPositions(userId);
             return ResponseEntity.ok(positions);
         }
@@ -49,8 +50,8 @@ public class PortfolioController {
     @GetMapping("/positions/closed")
     public ResponseEntity<?> getClosedPositions(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             List<PaperPosition> positions = paperTradingService.getClosedPositions(userId);
             return ResponseEntity.ok(positions);
         }
@@ -62,8 +63,8 @@ public class PortfolioController {
     @GetMapping("/orders")
     public ResponseEntity<?> getOrders(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             List<PaperOrder> orders = paperTradingService.getOrders(userId);
             return ResponseEntity.ok(orders);
         }
@@ -74,8 +75,8 @@ public class PortfolioController {
     @GetMapping("/trades")
     public ResponseEntity<?> getTrades(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             List<PaperTrade> trades = paperTradingService.getTrades(userId);
             return ResponseEntity.ok(trades);
         }

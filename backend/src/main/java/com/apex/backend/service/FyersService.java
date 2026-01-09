@@ -60,12 +60,12 @@ public class FyersService {
     // ... (Keep existing getLTP and getHistoricalData methods)
 
     public double getLTP(String symbol) {
-        List<Candle> history = getHistoricalData(symbol, 1, "5", accessToken);
+        List<Candle> history = getHistoricalData(symbol, 1, "5", null);
         return (history != null && !history.isEmpty()) ? history.get(history.size() - 1).getClose() : 0.0;
     }
 
     public Map<String, BigDecimal> getLtpBatch(List<String> symbols) {
-        return getLtpBatch(symbols, accessToken);
+        return getLtpBatch(symbols, null);
     }
 
     public Map<String, BigDecimal> getLtpBatch(List<String> symbols, String token) {
@@ -109,11 +109,11 @@ public class FyersService {
     }
 
     public List<Candle> getHistoricalData(String symbol, int count) {
-        return getHistoricalData(symbol, count, "5", accessToken);
+        return getHistoricalData(symbol, count, "5", null);
     }
 
     public List<Candle> getHistoricalData(String symbol, int count, String resolution) {
-        return getHistoricalData(symbol, count, resolution, accessToken);
+        return getHistoricalData(symbol, count, resolution, null);
     }
 
     public List<Candle> getHistoricalData(String symbol, int count, String resolution, String token) {
@@ -202,7 +202,10 @@ public class FyersService {
     }
 
     public String placeOrder(String symbol, int qty, String side, String type, double price) {
-        if (accessToken == null || accessToken.isBlank()) throw new RuntimeException("No Token");
+        String resolvedToken = resolveToken(null);
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            throw new RuntimeException("No Token");
+        }
 
         String url = "https://api-t1.fyers.in/api/v3/orders";
         try {
@@ -216,7 +219,7 @@ public class FyersService {
             body.put("validity", "DAY");
 
             HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", appId + ":" + accessToken);
+            headers.set("Authorization", appId + ":" + resolvedToken);
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             HttpEntity<String> entity = new HttpEntity<>(gson.toJson(body), headers);
@@ -234,7 +237,7 @@ public class FyersService {
     }
 
     public String getOrderStatus(String orderId) {
-        return getOrderStatus(orderId, accessToken);
+        return getOrderStatus(orderId, null);
     }
 
     public String getOrderStatus(String orderId, String token) {

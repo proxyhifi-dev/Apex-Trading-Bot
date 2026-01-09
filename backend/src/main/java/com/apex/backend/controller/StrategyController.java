@@ -3,6 +3,8 @@ package com.apex.backend.controller;
 import com.apex.backend.dto.SignalDTO;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.StockScreeningResult;
+import com.apex.backend.model.TradingMode;
+import com.apex.backend.dto.TradingModeResponse;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.BotScheduler;
@@ -16,7 +18,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -88,15 +89,22 @@ public class StrategyController {
      * Toggle paper/live trading mode
      */
     @PostMapping("/mode")
-    public ResponseEntity<?> toggleMode(@RequestParam boolean paperMode,
+    public ResponseEntity<?> toggleMode(@RequestParam String mode,
                                         @AuthenticationPrincipal UserPrincipal principal) {
-        log.info("Toggling mode to paperMode={}", paperMode);
+        log.info("Toggling mode to {}", mode);
         Long userId = requireUserId(principal);
+        TradingMode tradingMode;
+        try {
+            tradingMode = TradingMode.fromRequest(mode);
+        } catch (IllegalArgumentException ex) {
+            throw new com.apex.backend.exception.BadRequestException("Mode must be PAPER or LIVE");
+        }
         settingsService.updateSettings(userId, com.apex.backend.dto.SettingsDTO.builder()
-                .mode(paperMode ? "paper" : "live")
+                .mode(tradingMode.name())
                 .build());
-        return ResponseEntity.ok(Map.of("paperMode", paperMode, "message",
-                paperMode ? "Switched to Paper Trading" : "Switched to Live Trading"));
+        return ResponseEntity.ok(TradingModeResponse.builder()
+                .mode(tradingMode.name())
+                .build());
     }
     
     /**
@@ -106,8 +114,10 @@ public class StrategyController {
     public ResponseEntity<?> getMode(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Fetching current trading mode");
         Long userId = requireUserId(principal);
-        boolean paperMode = "paper".equalsIgnoreCase(settingsService.getModeForUser(userId));
-        return ResponseEntity.ok(Map.of("paperMode", paperMode));
+        TradingMode tradingMode = settingsService.getTradingMode(userId);
+        return ResponseEntity.ok(TradingModeResponse.builder()
+                .mode(tradingMode.name())
+                .build());
     }
 
     private Long requireUserId(UserPrincipal principal) {

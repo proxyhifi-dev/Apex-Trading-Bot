@@ -1,12 +1,14 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.AccountOverviewDTO;
+import com.apex.backend.dto.AccountProfileDTO;
 import com.apex.backend.dto.HoldingDTO;
 import com.apex.backend.dto.UserProfileDTO;
 import com.apex.backend.exception.ConflictException;
 import com.apex.backend.model.PaperAccount;
 import com.apex.backend.model.PaperPortfolioStats;
 import com.apex.backend.exception.UnauthorizedException;
+import com.apex.backend.model.TradingMode;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.FyersAuthService;
 import com.apex.backend.service.FyersService;
@@ -46,28 +48,22 @@ public class AccountController {
             @AuthenticationPrincipal UserPrincipal principal) throws Exception {
         log.info("Fetching user profile");
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
-            PaperPortfolioStats stats = paperTradingService.getStats(userId);
-            PaperAccount account = paperTradingService.getAccount(userId);
-            BigDecimal totalValue = MoneyUtils.add(
-                    MoneyUtils.add(account.getCashBalance(), account.getReservedMargin()),
-                    account.getUnrealizedPnl()
-            );
-            UserProfileDTO profile = UserProfileDTO.builder()
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
+            return ResponseEntity.ok(AccountProfileDTO.builder()
                     .name(resolveUserName(userId))
-                    .availableFunds(account.getCashBalance())
-                    .totalInvested(account.getReservedMargin())
-                    .currentValue(totalValue)
-                    .todaysPnl(stats.getNetPnl() != null ? stats.getNetPnl() : MoneyUtils.ZERO)
-                    .holdings(new ArrayList<>())
-                    .build();
-            return ResponseEntity.ok(profile);
+                    .clientId("PAPER")
+                    .connected(false)
+                    .build());
         }
         String token = resolveFyersToken(userId);
         Map<String, Object> profile = fyersService.getProfile(token);
         log.info("Successfully retrieved profile");
-        return ResponseEntity.ok(profile);
+        return ResponseEntity.ok(AccountProfileDTO.builder()
+                .name(extractProfileName(profile))
+                .clientId(extractProfileId(profile))
+                .connected(resolveFyersConnected(userId))
+                .build());
     }
     
     /**
@@ -77,10 +73,10 @@ public class AccountController {
     public ResponseEntity<?> getSummary(
             @AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
+        TradingMode mode = settingsService.getTradingMode(userId);
         log.info("Fetching account summary for mode: {}", mode);
 
-        if ("paper".equalsIgnoreCase(mode)) {
+        if (mode == TradingMode.PAPER) {
             PaperPortfolioStats stats = paperTradingService.getStats(userId);
             PaperAccount account = paperTradingService.getAccount(userId);
             BigDecimal totalValue = MoneyUtils.add(
@@ -104,12 +100,16 @@ public class AccountController {
     @GetMapping("/holdings")
     public ResponseEntity<?> getHoldings(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
-            return ResponseEntity.ok(paperTradingService.getOpenPositions(userId));
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
+            List<com.apex.backend.model.PaperPosition> positions = paperTradingService.getOpenPositions(userId);
+            List<HoldingDTO> holdings = positions.stream()
+                    .map(this::toHoldingDto)
+                    .toList();
+            return ResponseEntity.ok(holdings);
         }
         String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(fyersService.getHoldings(token));
+        return ResponseEntity.ok(mapHoldings(fyersService.getHoldings(token)));
     }
     
     /**
@@ -118,8 +118,8 @@ public class AccountController {
     @GetMapping("/capital")
     public ResponseEntity<?> getCapital(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             PaperAccount account = paperTradingService.getAccount(userId);
             return ResponseEntity.ok(new CapitalInfo(account.getStartingCapital(), account.getCashBalance(), account.getReservedMargin()));
         }
@@ -130,8 +130,8 @@ public class AccountController {
     @GetMapping("/overview")
     public ResponseEntity<?> getOverview(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        String mode = settingsService.getModeForUser(userId);
-        if ("paper".equalsIgnoreCase(mode)) {
+        TradingMode mode = settingsService.getTradingMode(userId);
+        if (mode == TradingMode.PAPER) {
             PaperAccount account = paperTradingService.getAccount(userId);
             BigDecimal pnl = MoneyUtils.add(account.getRealizedPnl(), account.getUnrealizedPnl());
             List<com.apex.backend.model.PaperPosition> openPositions = paperTradingService.getOpenPositions(userId);
@@ -269,6 +269,12 @@ public class AccountController {
                 .orElse(null);
     }
 
+    private boolean resolveFyersConnected(Long userId) {
+        return userRepository.findById(userId)
+                .map(user -> Boolean.TRUE.equals(user.getFyersConnected()))
+                .orElse(false);
+    }
+
     @SuppressWarnings("unchecked")
     private List<HoldingDTO> mapHoldings(Map<String, Object> holdings) {
         Object data = holdings.get("data");
@@ -336,6 +342,25 @@ public class AccountController {
         return AccountOverviewDTO.PositionDTO.builder()
                 .symbol(position.getSymbol())
                 .side(position.getSide())
+                .quantity(position.getQuantity())
+                .avgPrice(position.getAveragePrice())
+                .currentPrice(ltp)
+                .pnl(pnl)
+                .pnlPercent(pnlPercent)
+                .build();
+    }
+
+    private HoldingDTO toHoldingDto(com.apex.backend.model.PaperPosition position) {
+        BigDecimal ltp = position.getLastPrice() != null ? position.getLastPrice() : position.getAveragePrice();
+        BigDecimal pnl = position.getUnrealizedPnl() != null ? position.getUnrealizedPnl() : MoneyUtils.ZERO;
+        BigDecimal denominator = MoneyUtils.multiply(position.getAveragePrice(), position.getQuantity());
+        BigDecimal pnlPercent = BigDecimal.ZERO;
+        if (denominator.compareTo(BigDecimal.ZERO) > 0) {
+            pnlPercent = MoneyUtils.scale(pnl.divide(denominator, MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(100)));
+        }
+        return HoldingDTO.builder()
+                .symbol(position.getSymbol())
                 .quantity(position.getQuantity())
                 .avgPrice(position.getAveragePrice())
                 .currentPrice(ltp)

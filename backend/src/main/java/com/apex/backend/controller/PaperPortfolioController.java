@@ -108,9 +108,12 @@ public class PaperPortfolioController {
 
     @PostMapping("/account/reset")
     public ResponseEntity<?> resetAccount(@AuthenticationPrincipal UserPrincipal principal,
-                                          @RequestBody PaperAccountResetRequest request) {
+                                          @RequestBody(required = false) PaperAccountResetRequest request) {
         Long userId = requireUserId(principal);
-        BigDecimal startingCapital = request.getStartingCapital() != null ? request.getStartingCapital() : MoneyUtils.ZERO;
+        BigDecimal startingCapital = request != null ? request.getBalance() : null;
+        if (startingCapital == null || startingCapital.compareTo(BigDecimal.ZERO) <= 0) {
+            startingCapital = MoneyUtils.bd(100000.0);
+        }
         PaperAccount account = paperTradingService.resetAccount(userId, startingCapital);
         return ResponseEntity.ok(toAccountDto(account));
     }

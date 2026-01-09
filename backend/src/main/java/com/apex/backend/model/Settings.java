@@ -25,7 +25,7 @@ public class Settings {
 
     @Column(nullable = false, length = 20)
     @Builder.Default
-    private String mode = "paper";
+    private String mode = "PAPER";
 
     @Column(nullable = false)
     @Builder.Default
