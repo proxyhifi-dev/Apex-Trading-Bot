@@ -30,7 +30,9 @@ public class PortfolioService {
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
 
+    @Deprecated
     public double getPortfolioValue(boolean isPaper) {
+        log.warn("Deprecated portfolio value lookup without user id. Provide userId for user-scoped calls.");
         return getPortfolioValue(isPaper, resolveOwnerUserId());
     }
 
@@ -59,7 +61,9 @@ public class PortfolioService {
         }
     }
 
+    @Deprecated
     public double getAvailableCash(boolean isPaper) {
+        log.warn("Deprecated available cash lookup without user id. Provide userId for user-scoped calls.");
         return getAvailableCash(isPaper, resolveOwnerUserId());
     }
 
@@ -84,7 +88,9 @@ public class PortfolioService {
     }
 
     // NEW: Added missing method
+    @Deprecated
     public double getAvailableEquity(boolean isPaper) {
+        log.warn("Deprecated available equity lookup without user id. Provide userId for user-scoped calls.");
         return getAvailableEquity(isPaper, resolveOwnerUserId());
     }
 
@@ -168,7 +174,9 @@ public class PortfolioService {
      * Build price series for symbols currently in the portfolio.
      * Uses trade entry/exit prices as historical points.
      */
+    @Deprecated
     public Map<String, List<Double>> getPortfolioPriceSeries(boolean isPaper, int maxPoints) {
+        log.warn("Deprecated portfolio price series lookup without user id. Provide userId for user-scoped calls.");
         return getPortfolioPriceSeries(isPaper, maxPoints, resolveOwnerUserId());
     }
 

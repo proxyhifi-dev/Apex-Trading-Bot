@@ -8,6 +8,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Component
@@ -36,7 +37,7 @@ public class DatabaseSeeder implements CommandLineRunner {
             TradingStrategy strategy = new TradingStrategy();
             strategy.setName("High-Alpha Momentum");
             strategy.setActive(true);
-            strategy.setInitialCapital(100000.0);
+            strategy.setInitialCapital(BigDecimal.valueOf(100000.0));
             strategy.setMinEntryScore(70);
             // Default Indicator Params
             strategy.setRsiPeriod(14);
@@ -82,7 +83,7 @@ public class DatabaseSeeder implements CommandLineRunner {
                     .userId(ownerUserId)
                     .symbol("NSE:RELIANCE-EQ")
                     .scanTime(LocalDateTime.now())
-                    .entryPrice(2450.50)
+                    .entryPrice(BigDecimal.valueOf(2450.50))
                     .signalScore(88)
                     .grade("A+")
                     .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
@@ -95,7 +96,7 @@ public class DatabaseSeeder implements CommandLineRunner {
                     .userId(ownerUserId)
                     .symbol("NSE:TCS-EQ")
                     .scanTime(LocalDateTime.now())
-                    .entryPrice(3520.75)
+                    .entryPrice(BigDecimal.valueOf(3520.75))
                     .signalScore(76)
                     .grade("B")
                     .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)

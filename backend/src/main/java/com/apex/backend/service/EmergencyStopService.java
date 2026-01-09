@@ -1,6 +1,5 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
@@ -19,20 +18,22 @@ public class EmergencyStopService {
     private final TradeRepository tradeRepository;
     private final CircuitBreaker circuitBreaker;
     private final PaperTradingService paperTradingService;
-    private final StrategyConfig strategyConfig;
 
-    public EmergencyStopResult triggerEmergencyStop(String reason) {
-        int closedTrades = closeAllOpenTrades();
-        circuitBreaker.triggerGlobalHalt(reason);
+    public EmergencyStopResult triggerEmergencyStop(Long userId, boolean isPaper, String reason) {
+        int closedTrades = closeOpenTrades(userId, isPaper, reason);
         return new EmergencyStopResult(closedTrades, circuitBreaker.isGlobalHalt());
     }
 
-    private int closeAllOpenTrades() {
-        Long ownerUserId = strategyConfig.getTrading().getOwnerUserId();
-        if (ownerUserId == null) {
+    private int closeOpenTrades(Long userId, boolean isPaper, String reason) {
+        if (userId == null) {
             return 0;
         }
-        List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(ownerUserId, Trade.TradeStatus.OPEN);
+        log.warn("Emergency stop requested for user {} (mode: {}) reason={}", userId, isPaper ? "PAPER" : "LIVE", reason);
+        List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(
+                userId,
+                isPaper,
+                Trade.TradeStatus.OPEN
+        );
         LocalDateTime now = LocalDateTime.now();
 
         for (Trade trade : openTrades) {
@@ -48,9 +49,9 @@ public class EmergencyStopService {
         }
 
         tradeRepository.saveAll(openTrades);
-        openTrades.stream()
-                .filter(Trade::isPaperTrade)
-                .forEach(trade -> paperTradingService.recordExit(trade.getUserId(), trade));
+        if (isPaper) {
+            openTrades.forEach(trade -> paperTradingService.recordExit(userId, trade));
+        }
         return openTrades.size();
     }
 
