@@ -3,6 +3,7 @@ package com.apex.backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -20,16 +21,20 @@ public class Trade {
     @Column(nullable = false)
     private String symbol;
 
+    @Column(nullable = false)
+    private Long userId;
+
     @Enumerated(EnumType.STRING)
     private TradeType tradeType;
 
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false)
-    private Double entryPrice;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal entryPrice;
 
-    private Double exitPrice;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal exitPrice;
 
     @Column(nullable = false)
     private LocalDateTime entryTime;
@@ -37,16 +42,20 @@ public class Trade {
     private LocalDateTime exitTime;
 
     // ✅ Initial Stop Loss (Fixed at entry)
-    private Double stopLoss;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal stopLoss;
 
     // ✅ Dynamic Stop Loss (Moves with Trailing)
-    private Double currentStopLoss;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal currentStopLoss;
 
     // ✅ Stored ATR for dynamic Targets (3xATR)
-    private Double atr;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal atr;
 
     // ✅ Track Highest Price for Trailing Logic
-    private Double highestPrice;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal highestPrice;
 
     @Column(nullable = false)
     private boolean isPaperTrade;
@@ -59,7 +68,8 @@ public class Trade {
 
     private boolean breakevenMoved;
 
-    private Double realizedPnl;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal realizedPnl;
 
     public enum TradeType { LONG, SHORT }
     public enum TradeStatus { OPEN, CLOSED }

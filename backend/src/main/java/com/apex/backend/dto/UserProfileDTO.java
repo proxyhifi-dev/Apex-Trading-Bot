@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 @Data
@@ -15,14 +16,14 @@ public class UserProfileDTO {
     private String name;
 
     // Legacy support (points to Real funds usually)
-    private Double availableFunds;
+    private BigDecimal availableFunds;
 
     // ✅ NEW FIELDS REQUIRED BY PORTFOLIO SERVICE
-    private Double availableRealFunds;
-    private Double availablePaperFunds;
+    private BigDecimal availableRealFunds;
+    private BigDecimal availablePaperFunds;
 
-    private Double totalInvested;
-    private Double currentValue;
-    private Double todaysPnl;
+    private BigDecimal totalInvested;
+    private BigDecimal currentValue;
+    private BigDecimal todaysPnl;
     private List<HoldingDTO> holdings;
 }

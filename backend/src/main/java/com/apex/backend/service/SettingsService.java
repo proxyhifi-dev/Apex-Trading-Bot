@@ -3,19 +3,15 @@ package com.apex.backend.service;
 import com.apex.backend.dto.SettingsDTO;
 import com.apex.backend.model.Settings;
 import com.apex.backend.repository.SettingsRepository;
-import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
 public class SettingsService {
 
     private final SettingsRepository settingsRepository;
-    private final UserRepository userRepository;
 
     @Transactional
     public Settings getOrCreateSettings(Long userId) {
@@ -27,6 +23,10 @@ public class SettingsService {
 
     public String getModeForUser(Long userId) {
         return getOrCreateSettings(userId).getMode();
+    }
+
+    public boolean isPaperModeForUser(Long userId) {
+        return "paper".equalsIgnoreCase(getModeForUser(userId));
     }
 
     @Transactional
@@ -49,12 +49,4 @@ public class SettingsService {
         return settingsRepository.save(settings);
     }
 
-    public boolean isPaperModeForDefaultUser() {
-        Optional<Long> userId = userRepository.findTopByOrderByIdAsc().map(user -> user.getId());
-        if (userId.isEmpty()) {
-            return true;
-        }
-        String mode = getModeForUser(userId.get());
-        return "paper".equalsIgnoreCase(mode);
-    }
 }

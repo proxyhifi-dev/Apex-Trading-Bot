@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import com.apex.backend.util.MoneyUtils;
 
 /**
  * User Entity for authentication and profile management
@@ -35,17 +37,17 @@ public class User {
     @Builder.Default
     private String role = "USER";
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 19, scale = 4)
     @Builder.Default
-    private Double availableFunds = 100000.0;
+    private BigDecimal availableFunds = MoneyUtils.bd(100000.0);
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 19, scale = 4)
     @Builder.Default
-    private Double totalInvested = 0.0;
+    private BigDecimal totalInvested = MoneyUtils.ZERO;
 
-    @Column(nullable = false)
+    @Column(nullable = false, precision = 19, scale = 4)
     @Builder.Default
-    private Double currentValue = 100000.0;
+    private BigDecimal currentValue = MoneyUtils.bd(100000.0);
 
     @Column(nullable = false)
     @Builder.Default

@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -12,8 +13,8 @@ import lombok.NoArgsConstructor;
 public class HoldingDTO {
     private String symbol;
     private Integer quantity;
-    private Double avgPrice;
-    private Double currentPrice;
-    private Double pnl;
-    private Double pnlPercent;
+    private BigDecimal avgPrice;
+    private BigDecimal currentPrice;
+    private BigDecimal pnl;
+    private BigDecimal pnlPercent;
 }

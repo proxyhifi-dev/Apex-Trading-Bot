@@ -4,6 +4,7 @@ import com.apex.backend.model.Candle;
 import com.apex.backend.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.apex.backend.util.MoneyUtils;
 import com.google.gson.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +20,7 @@ import org.springframework.web.client.RestTemplate;
 
 import jakarta.annotation.PostConstruct;
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
@@ -62,28 +64,28 @@ public class FyersService {
         return (history != null && !history.isEmpty()) ? history.get(history.size() - 1).getClose() : 0.0;
     }
 
-    public Map<String, Double> getLtpBatch(List<String> symbols) {
+    public Map<String, BigDecimal> getLtpBatch(List<String> symbols) {
         return getLtpBatch(symbols, accessToken);
     }
 
-    public Map<String, Double> getLtpBatch(List<String> symbols, String token) {
+    public Map<String, BigDecimal> getLtpBatch(List<String> symbols, String token) {
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null || symbols == null || symbols.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, Double> result = new HashMap<>();
+        Map<String, BigDecimal> result = new HashMap<>();
         List<String> toFetch = new ArrayList<>();
         for (String symbol : symbols) {
             String cacheKey = symbol + "_ltp";
             CacheEntry entry = ltpCache.get(cacheKey);
             if (entry != null && System.currentTimeMillis() - entry.timestamp < 2000) {
-                result.put(symbol, entry.data.get(0).getClose());
+                result.put(symbol, MoneyUtils.bd(entry.data.get(0).getClose()));
             } else {
                 toFetch.add(symbol);
             }
         }
         if (!toFetch.isEmpty()) {
-            Map<String, Double> fetched;
+            Map<String, BigDecimal> fetched;
             boolean acquired = false;
             try {
                 rateLimiter.acquire();
@@ -98,7 +100,8 @@ public class FyersService {
                 }
             }
             fetched.forEach((symbol, ltp) -> {
-                ltpCache.put(symbol + "_ltp", new CacheEntry(List.of(new Candle(ltp, ltp, ltp, ltp, 0L, LocalDateTime.now())), System.currentTimeMillis()));
+                double ltpValue = ltp != null ? ltp.doubleValue() : 0.0;
+                ltpCache.put(symbol + "_ltp", new CacheEntry(List.of(new Candle(ltpValue, ltpValue, ltpValue, ltpValue, 0L, LocalDateTime.now())), System.currentTimeMillis()));
                 result.put(symbol, ltp);
             });
         }
@@ -303,7 +306,7 @@ public class FyersService {
         return response.getBody();
     }
 
-    private Map<String, Double> fetchQuotes(List<String> symbols, String token) {
+    private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token) {
         if (symbols.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -314,13 +317,13 @@ public class FyersService {
                 return Collections.emptyMap();
             }
             JsonNode root = objectMapper.readTree(response);
-            Map<String, Double> ltpMap = new HashMap<>();
+            Map<String, BigDecimal> ltpMap = new HashMap<>();
             if ("ok".equalsIgnoreCase(root.path("s").asText())) {
                 for (JsonNode item : root.path("d")) {
                     String symbol = item.path("n").asText();
                     double ltp = item.path("v").path("lp").asDouble(0.0);
                     if (symbol != null && !symbol.isBlank()) {
-                        ltpMap.put(symbol, ltp);
+                        ltpMap.put(symbol, MoneyUtils.bd(ltp));
                     }
                 }
             }

@@ -3,12 +3,14 @@ package com.apex.backend.service;
 import com.apex.backend.model.Trade;
 import com.apex.backend.model.PaperAccount;
 import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.repository.UserRepository;
+import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.util.MoneyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -23,23 +25,31 @@ public class PortfolioService {
 
     private final TradeRepository tradeRepository;
     private final PaperTradingService paperTradingService;
-    private final UserRepository userRepository;
+    private final StrategyConfig strategyConfig;
 
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
 
     public double getPortfolioValue(boolean isPaper) {
+        return getPortfolioValue(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public double getPortfolioValue(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount();
+                PaperAccount account = resolvePaperAccount(userId);
                 if (account == null) {
                     return 0.0;
                 }
-                return account.getCashBalance() + account.getReservedMargin() + account.getUnrealizedPnl();
+                BigDecimal total = MoneyUtils.add(
+                        MoneyUtils.add(account.getCashBalance(), account.getReservedMargin()),
+                        account.getUnrealizedPnl()
+                );
+                return total.doubleValue();
             }
-            Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
-            double pnl = (totalPnl != null) ? totalPnl : 0;
-            return initialCapital + pnl;
+            BigDecimal totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            BigDecimal pnl = (totalPnl != null) ? totalPnl : MoneyUtils.ZERO;
+            return initialCapital + pnl.doubleValue();
         } catch (Exception e) {
             log.error("Failed to calculate portfolio value", e);
             return initialCapital;
@@ -47,14 +57,18 @@ public class PortfolioService {
     }
 
     public double getAvailableCash(boolean isPaper) {
+        return getAvailableCash(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public double getAvailableCash(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount();
-                return account != null ? account.getCashBalance() : 0.0;
+                PaperAccount account = resolvePaperAccount(userId);
+                return account != null ? account.getCashBalance().doubleValue() : 0.0;
             }
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
             double usedCapital = openTrades.stream()
-                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
+                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice().doubleValue())
                     .sum();
             return initialCapital - usedCapital;
         } catch (Exception e) {
@@ -65,8 +79,12 @@ public class PortfolioService {
 
     // NEW: Added missing method
     public double getAvailableEquity(boolean isPaper) {
+        return getAvailableEquity(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public double getAvailableEquity(boolean isPaper, Long userId) {
         try {
-            return getAvailableCash(isPaper);
+            return getAvailableCash(isPaper, userId);
         } catch (Exception e) {
             log.error("Failed to get available equity", e);
             return initialCapital;
@@ -74,14 +92,18 @@ public class PortfolioService {
     }
 
     public double getTotalInvested(boolean isPaper) {
+        return getTotalInvested(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public double getTotalInvested(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount();
-                return account != null ? account.getReservedMargin() : 0.0;
+                PaperAccount account = resolvePaperAccount(userId);
+                return account != null ? account.getReservedMargin().doubleValue() : 0.0;
             }
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
             return openTrades.stream()
-                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
+                    .mapToDouble(t -> t.getQuantity() * t.getEntryPrice().doubleValue())
                     .sum();
         } catch (Exception e) {
             log.error("Failed to calculate total invested", e);
@@ -90,13 +112,17 @@ public class PortfolioService {
     }
 
     public double getRealizedPnL(boolean isPaper) {
+        return getRealizedPnL(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public double getRealizedPnL(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount();
-                return account != null ? account.getRealizedPnl() : 0.0;
+                PaperAccount account = resolvePaperAccount(userId);
+                return account != null ? account.getRealizedPnl().doubleValue() : 0.0;
             }
-            Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
-            return (totalPnl != null) ? totalPnl : 0;
+            BigDecimal totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            return (totalPnl != null) ? totalPnl.doubleValue() : 0;
         } catch (Exception e) {
             log.error("Failed to get realized P&L", e);
             return 0;
@@ -104,9 +130,12 @@ public class PortfolioService {
     }
 
     public int getOpenPositionCount(boolean isPaper) {
+        return getOpenPositionCount(isPaper, resolveOwnerUserId(isPaper));
+    }
+
+    public int getOpenPositionCount(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                Long userId = resolveDefaultUserId();
                 if (userId == null) {
                     return 0;
                 }
@@ -142,10 +171,10 @@ public class PortfolioService {
                 List<Double> prices = new ArrayList<>();
                 for (Trade trade : symbolTrades) {
                     if (trade.getEntryPrice() != null) {
-                        prices.add(trade.getEntryPrice());
+                        prices.add(trade.getEntryPrice().doubleValue());
                     }
                     if (trade.getExitPrice() != null) {
-                        prices.add(trade.getExitPrice());
+                        prices.add(trade.getExitPrice().doubleValue());
                     }
                 }
 
@@ -166,14 +195,20 @@ public class PortfolioService {
     }
 
     private PaperAccount resolvePaperAccount() {
-        Long userId = resolveDefaultUserId();
+        return resolvePaperAccount(resolveOwnerUserId(true));
+    }
+
+    private PaperAccount resolvePaperAccount(Long userId) {
         if (userId == null) {
             return null;
         }
         return paperTradingService.getAccount(userId);
     }
 
-    private Long resolveDefaultUserId() {
-        return userRepository.findTopByOrderByIdAsc().map(user -> user.getId()).orElse(null);
+    private Long resolveOwnerUserId(boolean isPaper) {
+        if (!isPaper) {
+            return null;
+        }
+        return strategyConfig.getTrading().getOwnerUserId();
     }
 }

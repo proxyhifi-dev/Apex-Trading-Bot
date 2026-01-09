@@ -66,7 +66,7 @@ public class CircuitBreaker {
                 logRepository.save(CircuitBreakerLog.builder()
                         .triggerTime(LocalDateTime.now())
                         .reason("DAILY_LIMIT")
-                        .triggeredValue(dailyPnl)
+                        .triggeredValue(java.math.BigDecimal.valueOf(dailyPnl))
                         .actionTaken("HALT_ENTRIES").build());
             }
         }
@@ -75,7 +75,7 @@ public class CircuitBreaker {
     private double calculatePnl(LocalDate since) {
         return tradeRepository.findAll().stream()
                 .filter(t -> t.getExitTime() != null && t.getExitTime().toLocalDate().isEqual(since))
-                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0.0)
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0.0)
                 .sum();
     }
 

@@ -5,6 +5,7 @@ import com.apex.backend.model.Candle;
 import com.apex.backend.model.StockScreeningResult;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
+import com.apex.backend.util.MoneyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -58,8 +59,8 @@ public class StockScreeningService {
                 .symbol(decision.getSymbol())
                 .signalScore(decision.getScore())
                 .grade(decision.getGrade())
-                .entryPrice(decision.getEntryPrice())
-                .stopLoss(decision.getSuggestedStopLoss())
+                .entryPrice(MoneyUtils.bd(decision.getEntryPrice()))
+                .stopLoss(MoneyUtils.bd(decision.getSuggestedStopLoss()))
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
                 .analysisReason(decision.getReason())

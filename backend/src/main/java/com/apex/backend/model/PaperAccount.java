@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -23,20 +24,23 @@ public class PaperAccount {
     @Column(nullable = false, unique = true)
     private Long userId;
 
-    @Column(nullable = false)
-    private Double startingCapital;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal startingCapital;
 
-    @Column(nullable = false)
-    private Double cashBalance;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal cashBalance;
 
-    @Column(nullable = false)
-    private Double reservedMargin;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal reservedMargin;
 
-    @Column(nullable = false)
-    private Double realizedPnl;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal realizedPnl;
 
-    @Column(nullable = false)
-    private Double unrealizedPnl;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal unrealizedPnl;
+
+    @Version
+    private Long version;
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

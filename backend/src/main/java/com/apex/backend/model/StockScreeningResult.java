@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,11 +30,11 @@ public class StockScreeningResult {
     @Column(nullable = false)
     private String grade;
 
-    @Column(nullable = false)
-    private Double entryPrice;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal entryPrice;
 
-    @Column
-    private Double stopLoss;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal stopLoss;
 
     @Column(nullable = false)
     private LocalDateTime scanTime;
@@ -56,7 +57,7 @@ public class StockScreeningResult {
     private TradingStrategy strategy;
 
     // Helper method
-    public Double getCurrentPrice() {
+    public BigDecimal getCurrentPrice() {
         return entryPrice;
     }
 

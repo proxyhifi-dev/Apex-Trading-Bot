@@ -1,6 +1,7 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.UserProfileDTO;
+import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.security.JwtTokenProvider;
@@ -205,9 +206,9 @@ public class AuthController {
                             .email(fyersEmail)
                             .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
                             .role("USER")
-                            .availableFunds(100000.0)
-                            .totalInvested(0.0)
-                            .currentValue(100000.0)
+                            .availableFunds(MoneyUtils.bd(100000.0))
+                            .totalInvested(MoneyUtils.ZERO)
+                            .currentValue(MoneyUtils.bd(100000.0))
                             .enabled(true)
                             .createdAt(LocalDateTime.now())
                             .fyersId(fyersId)
@@ -305,9 +306,9 @@ public class AuthController {
                     .passwordHash(passwordEncoder.encode(request.getPassword()))
                     .email(request.getEmail())
                     .role("USER")
-                    .availableFunds(100000.0)
-                    .totalInvested(0.0)
-                    .currentValue(100000.0)
+                    .availableFunds(MoneyUtils.bd(100000.0))
+                    .totalInvested(MoneyUtils.ZERO)
+                    .currentValue(MoneyUtils.bd(100000.0))
                     .enabled(true)
                     .createdAt(LocalDateTime.now())
                     .build();

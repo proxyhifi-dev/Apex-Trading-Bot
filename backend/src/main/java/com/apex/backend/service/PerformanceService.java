@@ -29,7 +29,7 @@ public class PerformanceService {
 
         for (Trade trade : trades) {
             if (trade.getRealizedPnl() != null) {
-                runningBalance += trade.getRealizedPnl();
+                runningBalance += trade.getRealizedPnl().doubleValue();
 
                 // Update peak if we reach a new high
                 if (runningBalance > peak) {
@@ -57,7 +57,7 @@ public class PerformanceService {
         }
 
         long winCount = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                 .count();
 
         return (double) winCount / trades.size() * 100;
@@ -72,13 +72,13 @@ public class PerformanceService {
         }
 
         double grossWin = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
-                .mapToDouble(Trade::getRealizedPnl)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
         double grossLoss = Math.abs(trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
-                .mapToDouble(Trade::getRealizedPnl)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum());
 
         if (grossLoss == 0) {
@@ -98,7 +98,7 @@ public class PerformanceService {
 
         double totalPnl = trades.stream()
                 .filter(t -> t.getRealizedPnl() != null)
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
         return totalPnl / trades.size();
@@ -113,7 +113,7 @@ public class PerformanceService {
         }
 
         List<Trade> winningTrades = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                 .toList();
 
         if (winningTrades.isEmpty()) {
@@ -121,7 +121,7 @@ public class PerformanceService {
         }
 
         double totalWins = winningTrades.stream()
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
         return totalWins / winningTrades.size();
@@ -136,7 +136,7 @@ public class PerformanceService {
         }
 
         List<Trade> losingTrades = trades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
                 .toList();
 
         if (losingTrades.isEmpty()) {
@@ -144,7 +144,7 @@ public class PerformanceService {
         }
 
         double totalLosses = losingTrades.stream()
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
         return totalLosses / losingTrades.size();
@@ -162,7 +162,7 @@ public class PerformanceService {
         int currentStreak = 0;
 
         for (Trade trade : trades) {
-            if (trade.getRealizedPnl() != null && trade.getRealizedPnl() > 0) {
+            if (trade.getRealizedPnl() != null && trade.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0) {
                 currentStreak++;
                 maxStreak = Math.max(maxStreak, currentStreak);
             } else {
@@ -185,7 +185,7 @@ public class PerformanceService {
         int currentStreak = 0;
 
         for (Trade trade : trades) {
-            if (trade.getRealizedPnl() != null && trade.getRealizedPnl() < 0) {
+            if (trade.getRealizedPnl() != null && trade.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0) {
                 currentStreak++;
                 maxStreak = Math.max(maxStreak, currentStreak);
             } else {
@@ -212,7 +212,7 @@ public class PerformanceService {
         double sumSquaredDiff = 0.0;
         for (Trade trade : trades) {
             if (trade.getRealizedPnl() != null) {
-                double diff = trade.getRealizedPnl() - avgReturn;
+                double diff = trade.getRealizedPnl().doubleValue() - avgReturn;
                 sumSquaredDiff += diff * diff;
             }
         }

@@ -3,6 +3,7 @@ package com.apex.backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,12 +30,14 @@ public class PaperPosition {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false)
-    private Double averagePrice;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal averagePrice;
 
-    private Double lastPrice;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal lastPrice;
 
-    private Double unrealizedPnl;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal unrealizedPnl;
 
     @Column(nullable = false)
     private String status;
