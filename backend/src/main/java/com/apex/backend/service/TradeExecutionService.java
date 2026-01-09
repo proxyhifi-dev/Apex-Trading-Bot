@@ -39,6 +39,7 @@ public class TradeExecutionService {
         log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.getSymbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
 
         StockScreeningResult signal = StockScreeningResult.builder()
+                .userId(userId)
                 .symbol(decision.getSymbol())
                 .signalScore(decision.getScore())
                 .grade(decision.getGrade())
@@ -55,7 +56,7 @@ public class TradeExecutionService {
 
     @Transactional
     public void approveAndExecute(Long userId, Long signalId, boolean isPaper, double currentVix) {
-        StockScreeningResult signal = screeningRepo.findById(signalId)
+        StockScreeningResult signal = screeningRepo.findByIdAndUserId(signalId, userId)
                 .orElseThrow(() -> new RuntimeException("Signal not found"));
 
         if (signal.getApprovalStatus() == StockScreeningResult.ApprovalStatus.EXECUTED) return;

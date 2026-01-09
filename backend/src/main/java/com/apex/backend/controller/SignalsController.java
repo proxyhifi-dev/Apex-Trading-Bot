@@ -2,12 +2,15 @@ package com.apex.backend.controller;
 
 import com.apex.backend.dto.ApiErrorResponse;
 import com.apex.backend.dto.SignalDTO;
+import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.repository.StockScreeningResultRepository;
+import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.BotScheduler;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,8 +30,9 @@ public class SignalsController {
     private final StockScreeningResultRepository screeningRepository;
 
     @PostMapping("/scan-now")
-    public ResponseEntity<?> scanNow() {
+    public ResponseEntity<?> scanNow(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            requireUserId(principal);
             new Thread(botScheduler::forceScan).start();
             return ResponseEntity.ok(new MessageResponse("Scan triggered"));
         } catch (Exception e) {
@@ -39,9 +43,10 @@ public class SignalsController {
     }
 
     @GetMapping("/recent")
-    public ResponseEntity<?> recentSignals() {
+    public ResponseEntity<?> recentSignals(@AuthenticationPrincipal UserPrincipal principal) {
         try {
-            List<SignalDTO> signals = screeningRepository.findTop50ByOrderByScanTimeDesc()
+            Long userId = requireUserId(principal);
+            List<SignalDTO> signals = screeningRepository.findTop50ByUserIdOrderByScanTimeDesc(userId)
                     .stream()
                     .map(result -> SignalDTO.builder()
                             .id(result.getId())
@@ -59,6 +64,13 @@ public class SignalsController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ApiErrorResponse("Failed to fetch recent signals", e.getMessage()));
         }
+    }
+
+    private Long requireUserId(UserPrincipal principal) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        return principal.getUserId();
     }
 
     public static class MessageResponse {
