@@ -10,16 +10,16 @@ import java.util.List;
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 
-    List<Trade> findBySymbol(String symbol);
-    List<Trade> findBySymbolAndIsPaperTradeOrderByEntryTimeAsc(String symbol, boolean isPaperTrade);
-    List<Trade> findByStatus(Trade.TradeStatus status);
-    List<Trade> findByIsPaperTrade(boolean isPaperTrade);
-    List<Trade> findByTradeType(Trade.TradeType tradeType);
+    List<Trade> findByUserId(Long userId);
+    List<Trade> findByUserIdAndSymbol(Long userId, String symbol);
+    List<Trade> findByUserIdAndSymbolAndIsPaperTradeOrderByEntryTimeAsc(Long userId, String symbol, boolean isPaperTrade);
+    List<Trade> findByUserIdAndStatus(Long userId, Trade.TradeStatus status);
+    List<Trade> findByUserIdAndIsPaperTrade(Long userId, boolean isPaperTrade);
+    List<Trade> findByUserIdAndTradeType(Long userId, Trade.TradeType tradeType);
+    List<Trade> findByUserIdAndIsPaperTradeAndStatus(Long userId, boolean isPaperTrade, Trade.TradeStatus status);
 
-    List<Trade> findByIsPaperTradeAndStatus(boolean isPaperTrade, Trade.TradeStatus status);
+    long countByUserIdAndStatus(Long userId, Trade.TradeStatus status);
 
-    long countByStatus(Trade.TradeStatus status);
-
-    @Query("SELECT SUM(t.realizedPnl) FROM Trade t WHERE t.isPaperTrade = :isPaper AND t.status = 'CLOSED'")
-    java.math.BigDecimal getTotalPnlByMode(@Param("isPaper") boolean isPaper);
+    @Query("SELECT SUM(t.realizedPnl) FROM Trade t WHERE t.userId = :userId AND t.isPaperTrade = :isPaper AND t.status = 'CLOSED'")
+    java.math.BigDecimal getTotalPnlByUserAndMode(@Param("userId") Long userId, @Param("isPaper") boolean isPaper);
 }

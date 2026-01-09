@@ -73,7 +73,11 @@ public class CircuitBreaker {
     }
 
     private double calculatePnl(LocalDate since) {
-        return tradeRepository.findAll().stream()
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId == null) {
+            return 0.0;
+        }
+        return tradeRepository.findByUserId(ownerUserId).stream()
                 .filter(t -> t.getExitTime() != null && t.getExitTime().toLocalDate().isEqual(since))
                 .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0.0)
                 .sum();

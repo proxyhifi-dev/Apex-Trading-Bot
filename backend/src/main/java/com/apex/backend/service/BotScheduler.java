@@ -70,8 +70,14 @@ public class BotScheduler {
             log.info("🔄 Running Bot Cycle...");
             botStatusService.markRunning();
             botStatusService.setLastScanTime(LocalDateTime.now());
-            exitManager.manageExits();
-            scannerOrchestrator.runScanner();
+            Long ownerUserId = config.getTrading().getOwnerUserId();
+            if (ownerUserId == null) {
+                log.warn("⚠️ Skipping bot cycle because apex.trading.owner-user-id is not configured.");
+                botStatusService.markPaused("Owner user not configured");
+                return;
+            }
+            exitManager.manageExits(ownerUserId);
+            scannerOrchestrator.runScanner(ownerUserId);
             botStatusService.setNextScanTime(LocalDateTime.now().plusSeconds(config.getScanner().getInterval()));
             log.info("✅ Bot Cycle Complete");
         } catch (Exception e) {
@@ -85,7 +91,7 @@ public class BotScheduler {
     /**
      * Manual scan triggered by frontend
      */
-    public void forceScan() {
+    public void forceScan(Long userId) {
         if (!botReady.get()) {
             log.warn("⏳ Bot not yet initialized - initializing now");
             initialize();
@@ -95,13 +101,22 @@ public class BotScheduler {
             log.info("⚡ Manual Scan Triggered by User");
             botStatusService.markRunning();
             botStatusService.setLastScanTime(LocalDateTime.now());
-            scannerOrchestrator.runScanner();
+            scannerOrchestrator.runScanner(userId);
             botStatusService.setNextScanTime(LocalDateTime.now().plusSeconds(config.getScanner().getInterval()));
             log.info("✅ Manual scan completed");
         } catch (Exception e) {
             log.error("❌ Failed to execute manual scan", e);
             botStatusService.setLastError(e.getMessage());
         }
+    }
+
+    public void forceScan() {
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId == null) {
+            log.warn("⚠️ Skipping manual scan because apex.trading.owner-user-id is not configured.");
+            return;
+        }
+        forceScan(ownerUserId);
     }
     
     /**

@@ -1,13 +1,19 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.PerformanceMetrics;
+import com.apex.backend.exception.UnauthorizedException;
+import com.apex.backend.model.PaperTrade;
 import com.apex.backend.model.Trade;
+import com.apex.backend.repository.PaperTradeRepository;
 import com.apex.backend.repository.TradeRepository;
+import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.PerformanceService;
+import com.apex.backend.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
@@ -26,15 +32,19 @@ public class PerformanceController {
 
     private final PerformanceService performanceService;
     private final TradeRepository tradeRepository;
+    private final PaperTradeRepository paperTradeRepository;
+    private final SettingsService settingsService;
 
     /**
      * Get comprehensive performance metrics
      */
     @GetMapping("/metrics")
-    public ResponseEntity<?> getMetrics() {
+    public ResponseEntity<?> getMetrics(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching performance metrics");
-            List<Trade> allTrades = tradeRepository.findAll();
+            List<Trade> allTrades = resolveTrades(userId, isPaper);
 
             if (allTrades.isEmpty()) {
                 return ResponseEntity.ok(PerformanceMetrics.builder()
@@ -84,13 +94,15 @@ public class PerformanceController {
      * Get today's P&L (trades closed today)
      */
     @GetMapping("/today-pnl")
-    public ResponseEntity<?> getTodayPnL() {
+    public ResponseEntity<?> getTodayPnL(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching today's P&L");
             LocalDateTime startOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MIDNIGHT);
             LocalDateTime endOfDay = LocalDateTime.of(LocalDate.now(), LocalTime.MAX);
 
-            List<Trade> todayTrades = tradeRepository.findAll().stream()
+            List<Trade> todayTrades = resolveTrades(userId, isPaper).stream()
                 .filter(t -> t.getExitTime() != null &&
                         t.getExitTime().isAfter(startOfDay) &&
                         t.getExitTime().isBefore(endOfDay))
@@ -118,10 +130,12 @@ public class PerformanceController {
      * Get unrealized P&L (open positions)
      */
     @GetMapping("/unrealized-pnl")
-    public ResponseEntity<?> getUnrealizedPnL() {
+    public ResponseEntity<?> getUnrealizedPnL(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching unrealized P&L");
-            List<Trade> openTrades = tradeRepository.findAll().stream()
+            List<Trade> openTrades = resolveTrades(userId, isPaper).stream()
                 .filter(t -> t.getStatus() != null && t.getStatus().name().equals("OPEN"))
                 .collect(Collectors.toList());
 
@@ -147,10 +161,12 @@ public class PerformanceController {
      * Get win rate metric
      */
     @GetMapping("/win-rate")
-    public ResponseEntity<?> getWinRate() {
+    public ResponseEntity<?> getWinRate(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching win rate");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = resolveTrades(userId, isPaper);
             double winRate = performanceService.calculateWinRate(trades);
             return ResponseEntity.ok(new MetricResponse("Win Rate", winRate));
         } catch (Exception e) {
@@ -164,10 +180,12 @@ public class PerformanceController {
      * Get max drawdown metric
      */
     @GetMapping("/max-drawdown")
-    public ResponseEntity<?> getMaxDrawdown() {
+    public ResponseEntity<?> getMaxDrawdown(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching max drawdown");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = resolveTrades(userId, isPaper);
             double maxDD = performanceService.calculateMaxDrawdown(trades);
             return ResponseEntity.ok(new MetricResponse("Max Drawdown", maxDD));
         } catch (Exception e) {
@@ -181,10 +199,12 @@ public class PerformanceController {
      * Get profit factor metric
      */
     @GetMapping("/profit-factor")
-    public ResponseEntity<?> getProfitFactor() {
+    public ResponseEntity<?> getProfitFactor(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching profit factor");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = resolveTrades(userId, isPaper);
             double pf = performanceService.calculateProfitFactor(trades);
             return ResponseEntity.ok(new MetricResponse("Profit Factor", pf));
         } catch (Exception e) {
@@ -198,10 +218,12 @@ public class PerformanceController {
      * Get Sharpe ratio metric
      */
     @GetMapping("/sharpe-ratio")
-    public ResponseEntity<?> getSharpeRatio() {
+    public ResponseEntity<?> getSharpeRatio(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching Sharpe ratio");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = resolveTrades(userId, isPaper);
             double sharpe = performanceService.calculateSharpeRatio(trades);
             return ResponseEntity.ok(new MetricResponse("Sharpe Ratio", sharpe));
         } catch (Exception e) {
@@ -215,10 +237,12 @@ public class PerformanceController {
      * Get ROI metric
      */
     @GetMapping("/roi")
-    public ResponseEntity<?> getROI() {
+    public ResponseEntity<?> getROI(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching ROI");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = resolveTrades(userId, isPaper);
             double totalPnL = trades.stream()
                 .filter(t -> t.getRealizedPnl() != null)
                 .mapToDouble(t -> t.getRealizedPnl().doubleValue())
@@ -236,19 +260,13 @@ public class PerformanceController {
      * Get equity curve data
      */
     @GetMapping("/equity-curve")
-    public ResponseEntity<?> getEquityCurve(@RequestParam(defaultValue = "PAPER") String type) {
+    public ResponseEntity<?> getEquityCurve(@AuthenticationPrincipal UserPrincipal principal) {
         try {
-            log.info("Fetching equity curve for type: {}", type);
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
+            log.info("Fetching equity curve for mode: {}", isPaper ? "PAPER" : "LIVE");
 
-            if (!type.equalsIgnoreCase("PAPER") && !type.equalsIgnoreCase("LIVE")) {
-                log.warn("Invalid type requested: {}", type);
-                return ResponseEntity.badRequest()
-                    .body(new ErrorResponse("Type must be PAPER or LIVE"));
-            }
-
-            List<Trade> trades = tradeRepository.findAll().stream()
-                .filter(t -> t.isPaperTrade() == type.equalsIgnoreCase("PAPER"))
-                .collect(Collectors.toList());
+            List<Trade> trades = resolveTrades(userId, isPaper);
 
             double[] equityCurve = new double[Math.max(trades.size(), 30)];
             double baseEquity = 100000;
@@ -266,13 +284,51 @@ public class PerformanceController {
                 equityCurve[i] = baseEquity;
             }
 
-            log.info("Equity curve retrieved for {}", type);
-            return ResponseEntity.ok(new EquityCurveResponse(type, equityCurve));
+            String modeLabel = isPaper ? "PAPER" : "LIVE";
+            log.info("Equity curve retrieved for {}", modeLabel);
+            return ResponseEntity.ok(new EquityCurveResponse(modeLabel, equityCurve));
         } catch (Exception e) {
             log.error("Failed to fetch equity curve", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(new ErrorResponse("Failed to fetch equity curve"));
         }
+    }
+
+    private List<Trade> resolveTrades(Long userId, boolean isPaper) {
+        if (isPaper) {
+            return paperTradeRepository.findByUserId(userId).stream()
+                    .map(this::mapPaperTrade)
+                    .collect(Collectors.toList());
+        }
+        return tradeRepository.findByUserIdAndIsPaperTrade(userId, false);
+    }
+
+    private Trade mapPaperTrade(PaperTrade paperTrade) {
+        Trade.TradeStatus status = "OPEN".equalsIgnoreCase(paperTrade.getStatus())
+                ? Trade.TradeStatus.OPEN
+                : Trade.TradeStatus.CLOSED;
+        Trade.TradeType tradeType = "SELL".equalsIgnoreCase(paperTrade.getSide())
+                ? Trade.TradeType.SHORT
+                : Trade.TradeType.LONG;
+        return Trade.builder()
+                .userId(paperTrade.getUserId())
+                .symbol(paperTrade.getSymbol())
+                .quantity(paperTrade.getQuantity())
+                .entryPrice(paperTrade.getEntryPrice())
+                .exitPrice(paperTrade.getExitPrice())
+                .entryTime(paperTrade.getEntryTime())
+                .exitTime(paperTrade.getExitTime())
+                .realizedPnl(paperTrade.getRealizedPnl())
+                .status(status)
+                .tradeType(tradeType)
+                .build();
+    }
+
+    private Long requireUserId(UserPrincipal principal) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        return principal.getUserId();
     }
 
     // ==================== INNER CLASSES ====================

@@ -24,18 +24,21 @@ public class ExitManager {
     private final StrategyConfig strategyConfig;
     private final RiskManagementEngine riskManagementEngine;
 
-    public long getOpenTradeCount() {
+    public long getOpenTradeCount(Long userId) {
         try {
-            return tradeRepository.countByStatus(Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return 0;
+            }
+            return tradeRepository.countByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
         } catch (Exception e) {
             log.error("Failed to get open trade count", e);
             return 0;
         }
     }
 
-    public boolean isMaxPositionsReached(int maxPositions) {
+    public boolean isMaxPositionsReached(Long userId, int maxPositions) {
         try {
-            return getOpenTradeCount() >= maxPositions;
+            return getOpenTradeCount(userId) >= maxPositions;
         } catch (Exception e) {
             log.error("Failed to check max positions", e);
             return false;
@@ -84,10 +87,13 @@ public class ExitManager {
     }
 
     // NEW: Added missing method
-    public void manageExits() {
+    public void manageExits(Long userId) {
         try {
             log.info("Managing trade exits");
-            List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return;
+            }
+            List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
 
             if (openTrades.isEmpty()) {
                 return;

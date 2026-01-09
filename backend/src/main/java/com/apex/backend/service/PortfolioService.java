@@ -31,7 +31,7 @@ public class PortfolioService {
     private double initialCapital;
 
     public double getPortfolioValue(boolean isPaper) {
-        return getPortfolioValue(isPaper, resolveOwnerUserId(isPaper));
+        return getPortfolioValue(isPaper, resolveOwnerUserId());
     }
 
     public double getPortfolioValue(boolean isPaper, Long userId) {
@@ -47,7 +47,10 @@ public class PortfolioService {
                 );
                 return total.doubleValue();
             }
-            BigDecimal totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            if (userId == null) {
+                return initialCapital;
+            }
+            BigDecimal totalPnl = tradeRepository.getTotalPnlByUserAndMode(userId, isPaper);
             BigDecimal pnl = (totalPnl != null) ? totalPnl : MoneyUtils.ZERO;
             return initialCapital + pnl.doubleValue();
         } catch (Exception e) {
@@ -57,7 +60,7 @@ public class PortfolioService {
     }
 
     public double getAvailableCash(boolean isPaper) {
-        return getAvailableCash(isPaper, resolveOwnerUserId(isPaper));
+        return getAvailableCash(isPaper, resolveOwnerUserId());
     }
 
     public double getAvailableCash(boolean isPaper, Long userId) {
@@ -66,7 +69,10 @@ public class PortfolioService {
                 PaperAccount account = resolvePaperAccount(userId);
                 return account != null ? account.getCashBalance().doubleValue() : 0.0;
             }
-            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return initialCapital;
+            }
+            List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(userId, isPaper, Trade.TradeStatus.OPEN);
             double usedCapital = openTrades.stream()
                     .mapToDouble(t -> t.getQuantity() * t.getEntryPrice().doubleValue())
                     .sum();
@@ -79,7 +85,7 @@ public class PortfolioService {
 
     // NEW: Added missing method
     public double getAvailableEquity(boolean isPaper) {
-        return getAvailableEquity(isPaper, resolveOwnerUserId(isPaper));
+        return getAvailableEquity(isPaper, resolveOwnerUserId());
     }
 
     public double getAvailableEquity(boolean isPaper, Long userId) {
@@ -92,7 +98,7 @@ public class PortfolioService {
     }
 
     public double getTotalInvested(boolean isPaper) {
-        return getTotalInvested(isPaper, resolveOwnerUserId(isPaper));
+        return getTotalInvested(isPaper, resolveOwnerUserId());
     }
 
     public double getTotalInvested(boolean isPaper, Long userId) {
@@ -101,7 +107,10 @@ public class PortfolioService {
                 PaperAccount account = resolvePaperAccount(userId);
                 return account != null ? account.getReservedMargin().doubleValue() : 0.0;
             }
-            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return 0;
+            }
+            List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(userId, isPaper, Trade.TradeStatus.OPEN);
             return openTrades.stream()
                     .mapToDouble(t -> t.getQuantity() * t.getEntryPrice().doubleValue())
                     .sum();
@@ -112,7 +121,7 @@ public class PortfolioService {
     }
 
     public double getRealizedPnL(boolean isPaper) {
-        return getRealizedPnL(isPaper, resolveOwnerUserId(isPaper));
+        return getRealizedPnL(isPaper, resolveOwnerUserId());
     }
 
     public double getRealizedPnL(boolean isPaper, Long userId) {
@@ -121,7 +130,10 @@ public class PortfolioService {
                 PaperAccount account = resolvePaperAccount(userId);
                 return account != null ? account.getRealizedPnl().doubleValue() : 0.0;
             }
-            BigDecimal totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
+            if (userId == null) {
+                return 0;
+            }
+            BigDecimal totalPnl = tradeRepository.getTotalPnlByUserAndMode(userId, isPaper);
             return (totalPnl != null) ? totalPnl.doubleValue() : 0;
         } catch (Exception e) {
             log.error("Failed to get realized P&L", e);
@@ -130,7 +142,7 @@ public class PortfolioService {
     }
 
     public int getOpenPositionCount(boolean isPaper) {
-        return getOpenPositionCount(isPaper, resolveOwnerUserId(isPaper));
+        return getOpenPositionCount(isPaper, resolveOwnerUserId());
     }
 
     public int getOpenPositionCount(boolean isPaper, Long userId) {
@@ -141,7 +153,10 @@ public class PortfolioService {
                 }
                 return paperTradingService.getOpenPositions(userId).size();
             }
-            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return 0;
+            }
+            List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(userId, isPaper, Trade.TradeStatus.OPEN);
             return openTrades.size();
         } catch (Exception e) {
             log.error("Failed to get open position count", e);
@@ -154,8 +169,15 @@ public class PortfolioService {
      * Uses trade entry/exit prices as historical points.
      */
     public Map<String, List<Double>> getPortfolioPriceSeries(boolean isPaper, int maxPoints) {
+        return getPortfolioPriceSeries(isPaper, maxPoints, resolveOwnerUserId());
+    }
+
+    public Map<String, List<Double>> getPortfolioPriceSeries(boolean isPaper, int maxPoints, Long userId) {
         try {
-            List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
+            if (userId == null) {
+                return Map.of();
+            }
+            List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(userId, isPaper, Trade.TradeStatus.OPEN);
             if (openTrades.isEmpty()) {
                 return Map.of();
             }
@@ -167,7 +189,8 @@ public class PortfolioService {
 
             Map<String, List<Double>> series = new LinkedHashMap<>();
             for (String symbol : symbols) {
-                List<Trade> symbolTrades = tradeRepository.findBySymbolAndIsPaperTradeOrderByEntryTimeAsc(symbol, isPaper);
+                List<Trade> symbolTrades = tradeRepository.findByUserIdAndSymbolAndIsPaperTradeOrderByEntryTimeAsc(
+                        userId, symbol, isPaper);
                 List<Double> prices = new ArrayList<>();
                 for (Trade trade : symbolTrades) {
                     if (trade.getEntryPrice() != null) {
@@ -195,7 +218,7 @@ public class PortfolioService {
     }
 
     private PaperAccount resolvePaperAccount() {
-        return resolvePaperAccount(resolveOwnerUserId(true));
+        return resolvePaperAccount(resolveOwnerUserId());
     }
 
     private PaperAccount resolvePaperAccount(Long userId) {
@@ -205,10 +228,7 @@ public class PortfolioService {
         return paperTradingService.getAccount(userId);
     }
 
-    private Long resolveOwnerUserId(boolean isPaper) {
-        if (!isPaper) {
-            return null;
-        }
+    private Long resolveOwnerUserId() {
         return strategyConfig.getTrading().getOwnerUserId();
     }
 }
