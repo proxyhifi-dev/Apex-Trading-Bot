@@ -64,7 +64,7 @@ public class User {
     @Column(unique = true, length = 50)
     private String fyersId;
 
-    @Column(length = 500)
+    @Column(length = 1500)
     private String fyersToken;
 
     @Column(nullable = false)
