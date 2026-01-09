@@ -3,12 +3,13 @@ package com.apex.backend.service;
 import com.apex.backend.model.Trade;
 import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +22,7 @@ public class ExitManager {
     private final TradeRepository tradeRepository;
     private final PaperTradingService paperTradingService;
     private final FyersService fyersService;
-    private final StrategyConfig strategyConfig;
+    private final StrategyProperties strategyProperties;
     private final RiskManagementEngine riskManagementEngine;
 
     public long getOpenTradeCount(Long userId) {
@@ -116,7 +117,8 @@ public class ExitManager {
                 updateTrailingStop(trade, currentPrice);
 
                 boolean stopLossHit = isStopLossHit(trade, currentPrice);
-                boolean targetHit = isTargetHit(trade, currentPrice, strategyConfig.getRisk().getTargetMultiplier());
+                boolean targetHit = isTargetHit(trade, currentPrice, strategyProperties.getAtr().getTargetMultiplier());
+                boolean timeExit = isTimeExit(trade);
 
                 if (stopLossHit) {
                     if (executeExitOrder(trade)) {
@@ -130,6 +132,12 @@ public class ExitManager {
                         finalizeTrade(trade, currentPrice, Trade.ExitReason.TARGET);
                     }
                     continue;
+                }
+
+                if (timeExit) {
+                    if (executeExitOrder(trade)) {
+                        finalizeTrade(trade, currentPrice, Trade.ExitReason.TIME_EXIT);
+                    }
                 }
             }
         } catch (Exception e) {
@@ -188,10 +196,10 @@ public class ExitManager {
                 : entryPrice.subtract(currentPrice);
         BigDecimal profitInR = profit.divide(initialRisk, MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP);
 
-        double breakevenMoveR = strategyConfig.getRisk().getBreakevenMoveR();
-        double breakevenOffsetR = strategyConfig.getRisk().getBreakevenOffsetR();
-        double trailingStartR = strategyConfig.getRisk().getTrailingStartR();
-        double trailingAtrMultiplier = strategyConfig.getRisk().getTrailingAtrMultiplier();
+        double breakevenMoveR = strategyProperties.getExit().getBreakevenThreshold();
+        double breakevenOffsetR = 0.0;
+        double trailingStartR = strategyProperties.getExit().getTrailingThreshold();
+        double trailingAtrMultiplier = strategyProperties.getExit().getTrailingMultiplier();
 
         if (trade.getTradeType() == Trade.TradeType.LONG) {
             if (trade.getHighestPrice() == null || currentPrice.compareTo(trade.getHighestPrice()) > 0) {
@@ -236,6 +244,17 @@ public class ExitManager {
         }
     }
 
+    private boolean isTimeExit(Trade trade) {
+        if (trade.getEntryTime() == null) {
+            return false;
+        }
+        long minutes = Duration.between(trade.getEntryTime(), LocalDateTime.now()).toMinutes();
+        long bars = minutes / 5;
+        int timeStopBars = strategyProperties.getExit().getTimeStopBars();
+        int maxBars = strategyProperties.getExit().getMaxBars();
+        return bars >= maxBars || bars >= timeStopBars;
+    }
+
     private boolean executeExitOrder(Trade trade) {
         if (trade.isPaperTrade()) {
             return true;
@@ -263,6 +282,7 @@ public class ExitManager {
         trade.setRealizedPnl(MoneyUtils.scale(pnl));
         tradeRepository.save(trade);
         riskManagementEngine.removeOpenPosition(trade.getSymbol());
+        riskManagementEngine.updateDailyLoss(pnl.doubleValue());
         if (trade.isPaperTrade()) {
             paperTradingService.recordExit(trade.getUserId(), trade);
         }

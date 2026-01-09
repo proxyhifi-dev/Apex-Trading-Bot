@@ -46,7 +46,7 @@ public class StockScreeningService {
                 SignalDecision decision = signalGenerator.generateSignalSmart(symbol, m5, m15, h1, daily);
 
                 if (decision.isHasSignal()) {
-                    saveSignal(decision);
+                    saveSignal(config.getTrading().getOwnerUserId(), decision);
                 }
             } catch (Exception e) {
                 log.error("Error screening {}: {}", symbol, e.getMessage());
@@ -54,14 +54,13 @@ public class StockScreeningService {
         }
     }
 
-    private void saveSignal(SignalDecision decision) {
-        Long ownerUserId = config.getTrading().getOwnerUserId();
-        if (ownerUserId == null) {
+    public void saveSignal(Long userId, SignalDecision decision) {
+        if (userId == null) {
             log.warn("⚠️ Skipping signal save because apex.trading.owner-user-id is not configured.");
             return;
         }
         StockScreeningResult result = StockScreeningResult.builder()
-                .userId(ownerUserId)
+                .userId(userId)
                 .symbol(decision.getSymbol())
                 .signalScore(decision.getScore())
                 .grade(decision.getGrade())
@@ -70,6 +69,9 @@ public class StockScreeningService {
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
                 .analysisReason(decision.getReason())
+                .macdValue(decision.getMacdLine())
+                .rsiValue(decision.getRsi())
+                .adxValue(decision.getAdx())
                 .build();
         screeningRepo.save(result);
         broadcastService.broadcastSignal(result);

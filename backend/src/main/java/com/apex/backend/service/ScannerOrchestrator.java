@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Candle;
 import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import java.util.stream.Collectors;
 public class ScannerOrchestrator {
 
     private final StrategyConfig config;
+    private final StrategyProperties strategyProperties;
     private final StockScreeningService screeningService;
     private final FyersService fyersService;
     private final IndicatorEngine indicatorEngine;
@@ -80,17 +82,24 @@ public class ScannerOrchestrator {
         // Sort by Score DESC (Hunter Logic)
         candidates.sort(Comparator.comparingInt(SignalDecision::getScore).reversed());
 
-        // Limit to Top 5
+        int maxCandidates = strategyProperties.getScanner().getMaxCandidates();
+        // Limit to Top N
         List<SignalDecision> topPicks = candidates.stream()
-                .limit(5)
+                .limit(maxCandidates)
                 .collect(Collectors.toList());
 
-        log.info("🏆 Executing Top {} Picks:", topPicks.size());
+        boolean requireManualApproval = strategyProperties.getScanner().isRequireManualApproval();
+        log.info("🏆 Processing Top {} Picks (manual approval: {}):", topPicks.size(), requireManualApproval);
 
         for (SignalDecision decision : topPicks) {
-            log.info("👉 Executing: {} [Score: {}]", decision.getSymbol(), decision.getScore());
-            // ✅ FIXED: Passing 'currentVix' (double) instead of 'isMarketBullish' (boolean)
-            tradeExecutionService.executeAutoTrade(userId, decision, true, currentVix);
+            if (requireManualApproval) {
+                log.info("📝 Queuing for approval: {} [Score: {}]", decision.getSymbol(), decision.getScore());
+                screeningService.saveSignal(userId, decision);
+            } else {
+                log.info("👉 Executing: {} [Score: {}]", decision.getSymbol(), decision.getScore());
+                // ✅ FIXED: Passing 'currentVix' (double) instead of 'isMarketBullish' (boolean)
+                tradeExecutionService.executeAutoTrade(userId, decision, true, currentVix);
+            }
         }
     }
 
