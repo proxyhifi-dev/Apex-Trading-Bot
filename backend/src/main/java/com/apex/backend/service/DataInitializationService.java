@@ -4,11 +4,13 @@ import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.env.Environment;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Value;
+
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 /**
@@ -41,9 +43,9 @@ public class DataInitializationService implements CommandLineRunner {
                     .passwordHash(passwordEncoder.encode("admin123"))
                     .email("admin@apextrading.com")
                     .role("ADMIN")
-                    .availableFunds(500000.0)
-                    .totalInvested(0.0)
-                    .currentValue(500000.0)
+                    .availableFunds(BigDecimal.valueOf(500000.0))
+                    .totalInvested(BigDecimal.ZERO)
+                    .currentValue(BigDecimal.valueOf(500000.0))
                     .enabled(true)
                     .createdAt(LocalDateTime.now())
                     .build();
@@ -58,9 +60,9 @@ public class DataInitializationService implements CommandLineRunner {
                     .passwordHash(passwordEncoder.encode("trader123"))
                     .email("trader@apextrading.com")
                     .role("USER")
-                    .availableFunds(100000.0)
-                    .totalInvested(0.0)
-                    .currentValue(100000.0)
+                    .availableFunds(BigDecimal.valueOf(100000.0))
+                    .totalInvested(BigDecimal.ZERO)
+                    .currentValue(BigDecimal.valueOf(100000.0))
                     .enabled(true)
                     .createdAt(LocalDateTime.now())
                     .build();
