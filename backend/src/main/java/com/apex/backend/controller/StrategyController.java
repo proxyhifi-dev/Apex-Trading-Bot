@@ -36,8 +36,8 @@ public class StrategyController {
     @PostMapping("/scan-now")
     public ResponseEntity<?> manualScan(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Manual scan triggered by user");
-        Long userId = requireUserId(principal);
-        new Thread(() -> botScheduler.forceScan(userId)).start();
+        requireUserId(principal);
+        new Thread(botScheduler::forceScan).start();
         return ResponseEntity.ok(new MessageResponse("Market Scan Triggered!"));
     }
     
