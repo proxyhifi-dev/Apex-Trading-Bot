@@ -8,5 +8,7 @@ import java.util.List;
 
 @Repository
 public interface PaperPositionRepository extends JpaRepository<PaperPosition, Long> {
-    List<PaperPosition> findByStatus(String status);
+    List<PaperPosition> findByUserIdAndStatus(Long userId, String status);
+    List<PaperPosition> findByUserId(Long userId);
+    void deleteByUserId(Long userId);
 }

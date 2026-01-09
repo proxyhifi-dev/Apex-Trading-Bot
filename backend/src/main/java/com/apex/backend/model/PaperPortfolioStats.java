@@ -17,6 +17,9 @@ public class PaperPortfolioStats {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
+    private Long userId;
+
     private Integer totalTrades;
     private Integer winningTrades;
     private Integer losingTrades;

@@ -1,14 +1,17 @@
 package com.apex.backend.service;
 
+import com.apex.backend.model.PaperAccount;
 import com.apex.backend.model.PaperOrder;
 import com.apex.backend.model.PaperPortfolioStats;
 import com.apex.backend.model.PaperPosition;
 import com.apex.backend.model.PaperTrade;
 import com.apex.backend.model.Trade;
+import com.apex.backend.repository.PaperAccountRepository;
 import com.apex.backend.repository.PaperOrderRepository;
 import com.apex.backend.repository.PaperPortfolioStatsRepository;
 import com.apex.backend.repository.PaperPositionRepository;
 import com.apex.backend.repository.PaperTradeRepository;
+import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,13 +33,26 @@ public class PaperTradingService {
     private final PaperTradeRepository tradeRepository;
     private final PaperPositionRepository positionRepository;
     private final PaperPortfolioStatsRepository statsRepository;
+    private final PaperAccountRepository accountRepository;
+    private final UserRepository userRepository;
     private final FyersService fyersService;
     private final BroadcastService broadcastService;
 
     @Transactional
     public void recordEntry(Trade trade) {
+        Long userId = resolveDefaultUserId();
+        if (userId == null) {
+            log.warn("Skipping paper entry record because no user is available.");
+            return;
+        }
+        recordEntry(trade, userId);
+    }
+
+    @Transactional
+    public void recordEntry(Trade trade, Long userId) {
         String orderId = "PAPER-" + UUID.randomUUID();
         PaperOrder order = PaperOrder.builder()
+                .userId(userId)
                 .orderId(orderId)
                 .symbol(trade.getSymbol())
                 .side(trade.getTradeType() == Trade.TradeType.SHORT ? "SELL" : "BUY")
@@ -47,9 +63,10 @@ public class PaperTradingService {
                 .createdAt(LocalDateTime.now())
                 .build();
         orderRepository.save(order);
-        broadcastService.broadcastOrders(orderRepository.findAll());
+        broadcastService.broadcastOrders(orderRepository.findByUserId(userId));
 
         PaperTrade paperTrade = PaperTrade.builder()
+                .userId(userId)
                 .symbol(trade.getSymbol())
                 .side(order.getSide())
                 .quantity(trade.getQuantity())
@@ -60,6 +77,7 @@ public class PaperTradingService {
         tradeRepository.save(paperTrade);
 
         PaperPosition position = PaperPosition.builder()
+                .userId(userId)
                 .symbol(trade.getSymbol())
                 .side(order.getSide())
                 .quantity(trade.getQuantity())
@@ -70,12 +88,23 @@ public class PaperTradingService {
                 .entryTime(trade.getEntryTime())
                 .build();
         positionRepository.save(position);
-        broadcastService.broadcastPositions(positionRepository.findByStatus(STATUS_OPEN));
+        broadcastService.broadcastPositions(positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN));
+        updateAccountForEntry(userId, trade);
     }
 
     @Transactional
     public void recordExit(Trade trade) {
-        List<PaperPosition> openPositions = positionRepository.findByStatus(STATUS_OPEN).stream()
+        Long userId = resolveDefaultUserId();
+        if (userId == null) {
+            log.warn("Skipping paper exit record because no user is available.");
+            return;
+        }
+        recordExit(trade, userId);
+    }
+
+    @Transactional
+    public void recordExit(Trade trade, Long userId) {
+        List<PaperPosition> openPositions = positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN).stream()
                 .filter(position -> position.getSymbol().equalsIgnoreCase(trade.getSymbol()))
                 .collect(Collectors.toList());
 
@@ -88,7 +117,7 @@ public class PaperTradingService {
         });
         positionRepository.saveAll(openPositions);
 
-        List<PaperTrade> openTrades = tradeRepository.findByStatus(STATUS_OPEN).stream()
+        List<PaperTrade> openTrades = tradeRepository.findByUserIdAndStatus(userId, STATUS_OPEN).stream()
                 .filter(paperTrade -> paperTrade.getSymbol().equalsIgnoreCase(trade.getSymbol()))
                 .collect(Collectors.toList());
 
@@ -100,31 +129,33 @@ public class PaperTradingService {
         });
         tradeRepository.saveAll(openTrades);
 
-        updateStats();
+        updateAccountForExit(userId, trade);
+        updateStats(userId);
     }
 
-    public List<PaperPosition> getOpenPositions() {
-        List<PaperPosition> positions = positionRepository.findByStatus(STATUS_OPEN);
+    public List<PaperPosition> getOpenPositions(Long userId) {
+        List<PaperPosition> positions = positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN);
         refreshPositionsWithMarketData(positions);
+        updateAccountUnrealized(userId, positions);
         return positions;
     }
 
-    public List<PaperPosition> getClosedPositions() {
-        return positionRepository.findByStatus(STATUS_CLOSED);
+    public List<PaperPosition> getClosedPositions(Long userId) {
+        return positionRepository.findByUserIdAndStatus(userId, STATUS_CLOSED);
     }
 
-    public List<PaperOrder> getOrders() {
-        return orderRepository.findAll();
+    public List<PaperOrder> getOrders(Long userId) {
+        return orderRepository.findByUserId(userId);
     }
 
-    public List<PaperTrade> getTrades() {
-        return tradeRepository.findAll();
+    public List<PaperTrade> getTrades(Long userId) {
+        return tradeRepository.findByUserId(userId);
     }
 
-    public PaperPortfolioStats getStats() {
-        return statsRepository.findAll().stream()
-                .max(Comparator.comparing(PaperPortfolioStats::getUpdatedAt))
+    public PaperPortfolioStats getStats(Long userId) {
+        return statsRepository.findTopByUserIdOrderByUpdatedAtDesc(userId)
                 .orElseGet(() -> PaperPortfolioStats.builder()
+                        .userId(userId)
                         .totalTrades(0)
                         .winningTrades(0)
                         .losingTrades(0)
@@ -134,9 +165,50 @@ public class PaperTradingService {
                         .build());
     }
 
-    public double getAvailableFunds(double initialCapital) {
-        PaperPortfolioStats stats = getStats();
-        return initialCapital + Optional.ofNullable(stats.getNetPnl()).orElse(0.0);
+    public PaperAccount getAccount(Long userId) {
+        return accountRepository.findByUserId(userId)
+                .orElseGet(() -> accountRepository.save(PaperAccount.builder()
+                        .userId(userId)
+                        .startingCapital(0.0)
+                        .cashBalance(0.0)
+                        .reservedMargin(0.0)
+                        .realizedPnl(0.0)
+                        .unrealizedPnl(0.0)
+                        .updatedAt(LocalDateTime.now())
+                        .build()));
+    }
+
+    @Transactional
+    public PaperAccount resetAccount(Long userId, double startingCapital) {
+        orderRepository.deleteByUserId(userId);
+        tradeRepository.deleteByUserId(userId);
+        positionRepository.deleteByUserId(userId);
+        statsRepository.deleteByUserId(userId);
+        accountRepository.deleteByUserId(userId);
+        PaperAccount account = PaperAccount.builder()
+                .userId(userId)
+                .startingCapital(startingCapital)
+                .cashBalance(startingCapital)
+                .reservedMargin(0.0)
+                .realizedPnl(0.0)
+                .unrealizedPnl(0.0)
+                .updatedAt(LocalDateTime.now())
+                .build();
+        return accountRepository.save(account);
+    }
+
+    @Transactional
+    public PaperAccount deposit(Long userId, double amount) {
+        PaperAccount account = getAccount(userId);
+        account.setCashBalance(account.getCashBalance() + amount);
+        return accountRepository.save(account);
+    }
+
+    @Transactional
+    public PaperAccount withdraw(Long userId, double amount) {
+        PaperAccount account = getAccount(userId);
+        account.setCashBalance(account.getCashBalance() - amount);
+        return accountRepository.save(account);
     }
 
     private void refreshPositionsWithMarketData(List<PaperPosition> positions) {
@@ -162,8 +234,8 @@ public class PaperTradingService {
         broadcastService.broadcastPositions(positions);
     }
 
-    private void updateStats() {
-        List<PaperTrade> trades = tradeRepository.findAll();
+    private void updateStats(Long userId) {
+        List<PaperTrade> trades = tradeRepository.findByUserId(userId);
         int totalTrades = trades.size();
         long winning = trades.stream().filter(trade -> trade.getRealizedPnl() != null && trade.getRealizedPnl() > 0).count();
         long losing = trades.stream().filter(trade -> trade.getRealizedPnl() != null && trade.getRealizedPnl() < 0).count();
@@ -171,6 +243,7 @@ public class PaperTradingService {
         double winRate = totalTrades == 0 ? 0.0 : (winning / (double) totalTrades) * 100;
 
         PaperPortfolioStats stats = PaperPortfolioStats.builder()
+                .userId(userId)
                 .totalTrades(totalTrades)
                 .winningTrades((int) winning)
                 .losingTrades((int) losing)
@@ -179,6 +252,44 @@ public class PaperTradingService {
                 .updatedAt(LocalDateTime.now())
                 .build();
         statsRepository.save(stats);
+    }
+
+    private void updateAccountForEntry(Long userId, Trade trade) {
+        PaperAccount account = getAccount(userId);
+        double required = trade.getEntryPrice() * trade.getQuantity();
+        account.setCashBalance(account.getCashBalance() - required);
+        account.setReservedMargin(account.getReservedMargin() + required);
+        accountRepository.save(account);
+    }
+
+    private void updateAccountForExit(Long userId, Trade trade) {
+        PaperAccount account = getAccount(userId);
+        double entryCost = trade.getEntryPrice() * trade.getQuantity();
+        double exitValue = trade.getExitPrice() != null ? trade.getExitPrice() * trade.getQuantity() : 0.0;
+        account.setReservedMargin(account.getReservedMargin() - entryCost);
+        account.setCashBalance(account.getCashBalance() + exitValue);
+        if (trade.getRealizedPnl() != null) {
+            account.setRealizedPnl(account.getRealizedPnl() + trade.getRealizedPnl());
+        }
+        accountRepository.save(account);
+    }
+
+    private void updateAccountUnrealized(Long userId, List<PaperPosition> positions) {
+        if (positions == null) {
+            return;
+        }
+        PaperAccount account = getAccount(userId);
+        double unrealized = positions.stream()
+                .map(PaperPosition::getUnrealizedPnl)
+                .filter(Objects::nonNull)
+                .mapToDouble(Double::doubleValue)
+                .sum();
+        account.setUnrealizedPnl(unrealized);
+        accountRepository.save(account);
+    }
+
+    private Long resolveDefaultUserId() {
+        return userRepository.findTopByOrderByIdAsc().map(user -> user.getId()).orElse(null);
     }
 
     private double calculatePnl(Trade.TradeType type, double entry, double exit, int qty) {

@@ -1,6 +1,5 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.StockScreeningResult;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.StockScreeningResultRepository;
@@ -24,13 +23,13 @@ public class TradeExecutionService {
     private final PositionSizingEngine sizingEngine;
     private final RiskManagementEngine riskEngine;
     private final PortfolioService portfolioService;
-    private final StrategyConfig config;
     private final DeadLetterQueueService dlqService;
     private final PaperTradingService paperTradingService;
+    private final SettingsService settingsService;
 
     @Transactional
     public void executeAutoTrade(SignalDecision decision, boolean isPaper, double currentVix) {
-        boolean effectivePaperMode = config.getTrading().isPaperMode();
+        boolean effectivePaperMode = settingsService.isPaperModeForDefaultUser();
         log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.getSymbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
 
         StockScreeningResult signal = StockScreeningResult.builder()
