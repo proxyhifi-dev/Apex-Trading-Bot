@@ -8,6 +8,7 @@ import com.apex.backend.security.JwtTokenProvider;
 import com.apex.backend.service.FyersAuthService;
 import com.apex.backend.service.FyersService;
 import com.apex.backend.service.PaperTradingService;
+import com.apex.backend.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -15,7 +16,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.ArrayList;
@@ -32,18 +32,24 @@ public class PortfolioController {
     private final FyersService fyersService;
     private final PaperTradingService paperTradingService;
     private final JwtTokenProvider jwtTokenProvider;
+    private final SettingsService settingsService;
 
     @GetMapping("/positions/open")
-    public ResponseEntity<?> getOpenPositions(@RequestParam(defaultValue = "live") String mode,
-                                              @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<?> getOpenPositions(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
+            Long userId = resolveUserId(authHeader);
+            String mode = settingsService.getModeForUser(userId);
             if ("paper".equalsIgnoreCase(mode)) {
-                List<PaperPosition> positions = paperTradingService.getOpenPositions();
+                List<PaperPosition> positions = paperTradingService.getOpenPositions(userId);
                 return ResponseEntity.ok(positions);
             }
             String token = resolveFyersToken(authHeader);
             List<Map<String, Object>> openPositions = filterPositions(fyersService.getPositions(token), true);
             return ResponseEntity.ok(openPositions);
+        } catch (IllegalStateException e) {
+            log.warn("Failed to fetch open positions: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiErrorResponse("Failed to fetch open positions", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to fetch open positions", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -52,16 +58,21 @@ public class PortfolioController {
     }
 
     @GetMapping("/positions/closed")
-    public ResponseEntity<?> getClosedPositions(@RequestParam(defaultValue = "live") String mode,
-                                                @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<?> getClosedPositions(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
+            Long userId = resolveUserId(authHeader);
+            String mode = settingsService.getModeForUser(userId);
             if ("paper".equalsIgnoreCase(mode)) {
-                List<PaperPosition> positions = paperTradingService.getClosedPositions();
+                List<PaperPosition> positions = paperTradingService.getClosedPositions(userId);
                 return ResponseEntity.ok(positions);
             }
             String token = resolveFyersToken(authHeader);
             List<Map<String, Object>> closedPositions = filterPositions(fyersService.getPositions(token), false);
             return ResponseEntity.ok(closedPositions);
+        } catch (IllegalStateException e) {
+            log.warn("Failed to fetch closed positions: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiErrorResponse("Failed to fetch closed positions", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to fetch closed positions", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -70,15 +81,20 @@ public class PortfolioController {
     }
 
     @GetMapping("/orders")
-    public ResponseEntity<?> getOrders(@RequestParam(defaultValue = "live") String mode,
-                                       @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<?> getOrders(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
+            Long userId = resolveUserId(authHeader);
+            String mode = settingsService.getModeForUser(userId);
             if ("paper".equalsIgnoreCase(mode)) {
-                List<PaperOrder> orders = paperTradingService.getOrders();
+                List<PaperOrder> orders = paperTradingService.getOrders(userId);
                 return ResponseEntity.ok(orders);
             }
             String token = resolveFyersToken(authHeader);
             return ResponseEntity.ok(fyersService.getOrders(token));
+        } catch (IllegalStateException e) {
+            log.warn("Failed to fetch orders: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiErrorResponse("Failed to fetch orders", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to fetch orders", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -87,15 +103,20 @@ public class PortfolioController {
     }
 
     @GetMapping("/trades")
-    public ResponseEntity<?> getTrades(@RequestParam(defaultValue = "live") String mode,
-                                       @RequestHeader(value = "Authorization", required = false) String authHeader) {
+    public ResponseEntity<?> getTrades(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
+            Long userId = resolveUserId(authHeader);
+            String mode = settingsService.getModeForUser(userId);
             if ("paper".equalsIgnoreCase(mode)) {
-                List<PaperTrade> trades = paperTradingService.getTrades();
+                List<PaperTrade> trades = paperTradingService.getTrades(userId);
                 return ResponseEntity.ok(trades);
             }
             String token = resolveFyersToken(authHeader);
             return ResponseEntity.ok(fyersService.getTrades(token));
+        } catch (IllegalStateException e) {
+            log.warn("Failed to fetch trades: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(new ApiErrorResponse("Failed to fetch trades", e.getMessage()));
         } catch (Exception e) {
             log.error("Failed to fetch trades", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
@@ -107,13 +128,24 @@ public class PortfolioController {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw new IllegalStateException("Missing Authorization header");
         }
-        String jwt = authHeader.substring(7);
-        Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+        Long userId = resolveUserId(authHeader);
         String token = fyersAuthService.getFyersToken(userId);
         if (token == null || token.isBlank()) {
             throw new IllegalStateException("Fyers account not linked");
         }
         return token;
+    }
+
+    private Long resolveUserId(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new IllegalStateException("Missing Authorization header");
+        }
+        String jwt = authHeader.substring(7);
+        Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+        if (userId == null) {
+            throw new IllegalStateException("Invalid user token");
+        }
+        return userId;
     }
 
     @SuppressWarnings("unchecked")

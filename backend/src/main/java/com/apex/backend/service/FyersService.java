@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -37,6 +38,8 @@ public class FyersService {
     private String appId;
     @Value("${fyers.api.access-token:}")
     private String accessToken;
+
+    private final Environment environment;
 
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
@@ -340,6 +343,11 @@ public class FyersService {
     private String resolveToken(String token) {
         if (token != null && !token.isBlank()) {
             return token;
+        }
+        boolean isProd = Arrays.stream(environment.getActiveProfiles())
+                .anyMatch(profile -> profile.equalsIgnoreCase("prod"));
+        if (isProd) {
+            return null;
         }
         return (accessToken != null && !accessToken.isBlank()) ? accessToken : null;
     }

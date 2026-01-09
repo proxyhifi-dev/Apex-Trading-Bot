@@ -1,7 +1,9 @@
 package com.apex.backend.service;
 
 import com.apex.backend.model.Trade;
+import com.apex.backend.model.PaperAccount;
 import com.apex.backend.repository.TradeRepository;
+import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,12 +22,21 @@ import java.util.Set;
 public class PortfolioService {
 
     private final TradeRepository tradeRepository;
+    private final PaperTradingService paperTradingService;
+    private final UserRepository userRepository;
 
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
 
     public double getPortfolioValue(boolean isPaper) {
         try {
+            if (isPaper) {
+                PaperAccount account = resolvePaperAccount();
+                if (account == null) {
+                    return 0.0;
+                }
+                return account.getCashBalance() + account.getReservedMargin() + account.getUnrealizedPnl();
+            }
             Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
             double pnl = (totalPnl != null) ? totalPnl : 0;
             return initialCapital + pnl;
@@ -37,6 +48,10 @@ public class PortfolioService {
 
     public double getAvailableCash(boolean isPaper) {
         try {
+            if (isPaper) {
+                PaperAccount account = resolvePaperAccount();
+                return account != null ? account.getCashBalance() : 0.0;
+            }
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
             double usedCapital = openTrades.stream()
                     .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
@@ -60,6 +75,10 @@ public class PortfolioService {
 
     public double getTotalInvested(boolean isPaper) {
         try {
+            if (isPaper) {
+                PaperAccount account = resolvePaperAccount();
+                return account != null ? account.getReservedMargin() : 0.0;
+            }
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
             return openTrades.stream()
                     .mapToDouble(t -> t.getQuantity() * t.getEntryPrice())
@@ -72,6 +91,10 @@ public class PortfolioService {
 
     public double getRealizedPnL(boolean isPaper) {
         try {
+            if (isPaper) {
+                PaperAccount account = resolvePaperAccount();
+                return account != null ? account.getRealizedPnl() : 0.0;
+            }
             Double totalPnl = tradeRepository.getTotalPnlByMode(isPaper);
             return (totalPnl != null) ? totalPnl : 0;
         } catch (Exception e) {
@@ -82,6 +105,13 @@ public class PortfolioService {
 
     public int getOpenPositionCount(boolean isPaper) {
         try {
+            if (isPaper) {
+                Long userId = resolveDefaultUserId();
+                if (userId == null) {
+                    return 0;
+                }
+                return paperTradingService.getOpenPositions(userId).size();
+            }
             List<Trade> openTrades = tradeRepository.findByIsPaperTradeAndStatus(isPaper, Trade.TradeStatus.OPEN);
             return openTrades.size();
         } catch (Exception e) {
@@ -133,5 +163,17 @@ public class PortfolioService {
             log.error("Failed to build portfolio price series", e);
             return Map.of();
         }
+    }
+
+    private PaperAccount resolvePaperAccount() {
+        Long userId = resolveDefaultUserId();
+        if (userId == null) {
+            return null;
+        }
+        return paperTradingService.getAccount(userId);
+    }
+
+    private Long resolveDefaultUserId() {
+        return userRepository.findTopByOrderByIdAsc().map(user -> user.getId()).orElse(null);
     }
 }

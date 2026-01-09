@@ -1,14 +1,18 @@
 package com.apex.backend.controller;
 
+import com.apex.backend.dto.PaperAccountAmountRequest;
+import com.apex.backend.dto.PaperAccountDTO;
+import com.apex.backend.dto.PaperAccountResetRequest;
 import com.apex.backend.dto.PaperPositionDTO;
 import com.apex.backend.dto.PaperStatsDTO;
 import com.apex.backend.dto.PaperSummaryDTO;
+import com.apex.backend.model.PaperAccount;
 import com.apex.backend.model.PaperPortfolioStats;
 import com.apex.backend.model.PaperPosition;
+import com.apex.backend.security.JwtTokenProvider;
 import com.apex.backend.service.PaperTradingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -22,19 +26,18 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PaperPortfolioController {
     
-    @Value("${apex.trading.capital:100000}")
-    private double initialCapital;
-
     private final PaperTradingService paperTradingService;
+    private final JwtTokenProvider jwtTokenProvider;
     
     /**
      * Get open paper trading positions
      */
     @GetMapping("/positions/open")
-    public ResponseEntity<?> getOpenPositions() {
+    public ResponseEntity<?> getOpenPositions(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             log.info("Fetching open paper positions");
-            List<PaperPositionDTO> positions = paperTradingService.getOpenPositions().stream()
+            Long userId = resolveUserId(authHeader);
+            List<PaperPositionDTO> positions = paperTradingService.getOpenPositions(userId).stream()
                     .map(this::toPositionDto)
                     .collect(Collectors.toList());
             log.info("Retrieved {} open positions", positions.size());
@@ -50,10 +53,11 @@ public class PaperPortfolioController {
      * Get closed paper trading positions
      */
     @GetMapping("/positions/closed")
-    public ResponseEntity<?> getClosedPositions() {
+    public ResponseEntity<?> getClosedPositions(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             log.info("Fetching closed paper positions");
-            List<PaperPositionDTO> positions = paperTradingService.getClosedPositions().stream()
+            Long userId = resolveUserId(authHeader);
+            List<PaperPositionDTO> positions = paperTradingService.getClosedPositions(userId).stream()
                     .map(this::toPositionDto)
                     .collect(Collectors.toList());
             log.info("Retrieved {} closed positions", positions.size());
@@ -69,10 +73,11 @@ public class PaperPortfolioController {
      * Get paper trading statistics
      */
     @GetMapping("/stats")
-    public ResponseEntity<?> getStats() {
+    public ResponseEntity<?> getStats(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
             log.info("Fetching paper trading stats");
-            PaperPortfolioStats storedStats = paperTradingService.getStats();
+            Long userId = resolveUserId(authHeader);
+            PaperPortfolioStats storedStats = paperTradingService.getStats(userId);
             PaperStatsDTO stats = PaperStatsDTO.builder()
                     .totalTrades(storedStats.getTotalTrades())
                     .winRate(storedStats.getWinRate())
@@ -92,16 +97,15 @@ public class PaperPortfolioController {
      * Get paper trading summary (cash/used/free/pnl/positions)
      */
     @GetMapping("/summary")
-    public ResponseEntity<?> getSummary() {
+    public ResponseEntity<?> getSummary(@RequestHeader(value = "Authorization", required = false) String authHeader) {
         try {
-            List<PaperPosition> openPositions = paperTradingService.getOpenPositions();
-            double used = openPositions.stream()
-                    .mapToDouble(position -> position.getAveragePrice() * position.getQuantity())
-                    .sum();
-            PaperPortfolioStats stats = paperTradingService.getStats();
-            double pnl = stats.getNetPnl() != null ? stats.getNetPnl() : 0.0;
-            double cash = initialCapital;
-            double free = cash + pnl - used;
+            Long userId = resolveUserId(authHeader);
+            List<PaperPosition> openPositions = paperTradingService.getOpenPositions(userId);
+            PaperAccount account = paperTradingService.getAccount(userId);
+            double pnl = account.getRealizedPnl() + account.getUnrealizedPnl();
+            double cash = account.getCashBalance();
+            double used = account.getReservedMargin();
+            double free = cash;
             PaperSummaryDTO summary = PaperSummaryDTO.builder()
                     .cash(cash)
                     .used(used)
@@ -114,6 +118,64 @@ public class PaperPortfolioController {
             log.error("Failed to fetch paper summary", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Failed to fetch paper summary"));
+        }
+    }
+
+    @GetMapping("/account")
+    public ResponseEntity<?> getAccount(@RequestHeader(value = "Authorization", required = false) String authHeader) {
+        try {
+            Long userId = resolveUserId(authHeader);
+            PaperAccount account = paperTradingService.getAccount(userId);
+            return ResponseEntity.ok(toAccountDto(account));
+        } catch (Exception e) {
+            log.error("Failed to fetch paper account", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to fetch paper account"));
+        }
+    }
+
+    @PostMapping("/account/reset")
+    public ResponseEntity<?> resetAccount(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                                          @RequestBody PaperAccountResetRequest request) {
+        try {
+            Long userId = resolveUserId(authHeader);
+            double startingCapital = request.getStartingCapital() != null ? request.getStartingCapital() : 0.0;
+            PaperAccount account = paperTradingService.resetAccount(userId, startingCapital);
+            return ResponseEntity.ok(toAccountDto(account));
+        } catch (Exception e) {
+            log.error("Failed to reset paper account", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to reset paper account"));
+        }
+    }
+
+    @PostMapping("/account/deposit")
+    public ResponseEntity<?> deposit(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                                     @RequestBody PaperAccountAmountRequest request) {
+        try {
+            Long userId = resolveUserId(authHeader);
+            double amount = request.getAmount() != null ? request.getAmount() : 0.0;
+            PaperAccount account = paperTradingService.deposit(userId, amount);
+            return ResponseEntity.ok(toAccountDto(account));
+        } catch (Exception e) {
+            log.error("Failed to deposit to paper account", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to deposit to paper account"));
+        }
+    }
+
+    @PostMapping("/account/withdraw")
+    public ResponseEntity<?> withdraw(@RequestHeader(value = "Authorization", required = false) String authHeader,
+                                      @RequestBody PaperAccountAmountRequest request) {
+        try {
+            Long userId = resolveUserId(authHeader);
+            double amount = request.getAmount() != null ? request.getAmount() : 0.0;
+            PaperAccount account = paperTradingService.withdraw(userId, amount);
+            return ResponseEntity.ok(toAccountDto(account));
+        } catch (Exception e) {
+            log.error("Failed to withdraw from paper account", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(new ErrorResponse("Failed to withdraw from paper account"));
         }
     }
 
@@ -131,6 +193,29 @@ public class PaperPortfolioController {
                 .pnl(pnl)
                 .pnlPercent(pnlPercent)
                 .build();
+    }
+
+    private PaperAccountDTO toAccountDto(PaperAccount account) {
+        return PaperAccountDTO.builder()
+                .startingCapital(account.getStartingCapital())
+                .cashBalance(account.getCashBalance())
+                .reservedMargin(account.getReservedMargin())
+                .realizedPnl(account.getRealizedPnl())
+                .unrealizedPnl(account.getUnrealizedPnl())
+                .updatedAt(account.getUpdatedAt())
+                .build();
+    }
+
+    private Long resolveUserId(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            throw new IllegalStateException("Missing Authorization header");
+        }
+        String jwt = authHeader.substring(7);
+        Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+        if (userId == null) {
+            throw new IllegalStateException("Invalid user token");
+        }
+        return userId;
     }
     
     // ==================== INNER CLASSES ====================

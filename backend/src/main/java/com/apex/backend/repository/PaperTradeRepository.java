@@ -8,5 +8,7 @@ import java.util.List;
 
 @Repository
 public interface PaperTradeRepository extends JpaRepository<PaperTrade, Long> {
-    List<PaperTrade> findByStatus(String status);
+    List<PaperTrade> findByUserIdAndStatus(Long userId, String status);
+    List<PaperTrade> findByUserId(Long userId);
+    void deleteByUserId(Long userId);
 }

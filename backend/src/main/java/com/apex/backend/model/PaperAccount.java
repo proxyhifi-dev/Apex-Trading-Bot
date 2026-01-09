@@ -9,12 +9,12 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "settings")
+@Table(name = "paper_accounts")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Settings {
+public class PaperAccount {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -23,29 +23,26 @@ public class Settings {
     @Column(nullable = false, unique = true)
     private Long userId;
 
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private String mode = "paper";
+    @Column(nullable = false)
+    private Double startingCapital;
 
     @Column(nullable = false)
-    @Builder.Default
-    private Integer maxPositions = 5;
+    private Double cashBalance;
 
     @Column(nullable = false)
-    @Builder.Default
-    private Double maxRiskPerTradePercent = 1.0;
+    private Double reservedMargin;
 
     @Column(nullable = false)
-    @Builder.Default
-    private Double maxDailyLossPercent = 3.0;
+    private Double realizedPnl;
+
+    @Column(nullable = false)
+    private Double unrealizedPnl;
 
     @Column(nullable = false, updatable = false)
-    @Builder.Default
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
 
     @Column(nullable = false)
-    @Builder.Default
-    private LocalDateTime updatedAt = LocalDateTime.now();
+    private LocalDateTime updatedAt;
 
     @PrePersist
     void onCreate() {
