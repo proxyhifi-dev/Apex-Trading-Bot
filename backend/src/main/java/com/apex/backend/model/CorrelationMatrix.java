@@ -15,8 +15,15 @@ public class CorrelationMatrix {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "date")
     private LocalDate date;
+
+    @Column(name = "symbol_a")
     private String symbolA;
+
+    @Column(name = "symbol_b")
     private String symbolB;
+
+    @Column(name = "correlation")
     private Double correlation;
 }
