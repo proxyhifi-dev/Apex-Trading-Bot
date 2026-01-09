@@ -53,7 +53,7 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("POST").path("/api/strategy/scan-now").description("Manual scan").build(),
             UiEndpointDTO.builder().method("GET").path("/api/strategy/signals").description("All signals").build(),
             UiEndpointDTO.builder().method("GET").path("/api/strategy/signals/pending").description("Pending signals").build(),
-            UiEndpointDTO.builder().method("POST").path("/api/strategy/mode?paperMode=true|false").description("Toggle strategy mode").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/strategy/mode?mode=PAPER|LIVE").description("Toggle strategy mode").build(),
             UiEndpointDTO.builder().method("GET").path("/api/strategy/mode").description("Get strategy mode").build(),
             UiEndpointDTO.builder().method("GET").path("/api/performance/metrics").description("Full metrics").build(),
             UiEndpointDTO.builder().method("GET").path("/api/performance/today-pnl").description("Today P&L").build(),

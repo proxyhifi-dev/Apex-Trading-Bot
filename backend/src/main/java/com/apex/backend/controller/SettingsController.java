@@ -28,7 +28,7 @@ public class SettingsController {
         Long userId = requireUserId(principal);
         Settings settings = settingsService.getOrCreateSettings(userId);
         SettingsDTO response = SettingsDTO.builder()
-                .mode(settings.getMode())
+                .mode(settingsService.getTradingMode(userId).name())
                 .maxPositions(settings.getMaxPositions())
                 .riskLimits(SettingsDTO.RiskLimitsDTO.builder()
                         .maxRiskPerTradePercent(settings.getMaxRiskPerTradePercent())
@@ -45,7 +45,7 @@ public class SettingsController {
         Long userId = requireUserId(principal);
         Settings settings = settingsService.updateSettings(userId, request);
         SettingsDTO response = SettingsDTO.builder()
-                .mode(settings.getMode())
+                .mode(settingsService.getTradingMode(userId).name())
                 .maxPositions(settings.getMaxPositions())
                 .riskLimits(SettingsDTO.RiskLimitsDTO.builder()
                         .maxRiskPerTradePercent(settings.getMaxRiskPerTradePercent())
