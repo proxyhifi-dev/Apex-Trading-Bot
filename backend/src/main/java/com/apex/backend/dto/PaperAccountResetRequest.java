@@ -1,10 +1,10 @@
 package com.apex.backend.dto;
 
+import java.math.BigDecimal;
+
 import lombok.Data;
 
 @Data
-import java.math.BigDecimal;
-
 public class PaperAccountResetRequest {
     private BigDecimal startingCapital;
 }
