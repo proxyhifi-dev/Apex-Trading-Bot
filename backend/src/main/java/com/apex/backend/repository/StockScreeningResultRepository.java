@@ -12,11 +12,13 @@ import java.util.Optional;
 public interface StockScreeningResultRepository extends JpaRepository<StockScreeningResult, Long> {
 
     // ✅ ADDED THIS MISSING METHOD
-    boolean existsBySymbolAndScanTimeAfter(String symbol, LocalDateTime scanTime);
+    boolean existsByUserIdAndSymbolAndScanTimeAfter(Long userId, String symbol, LocalDateTime scanTime);
 
-    List<StockScreeningResult> findByApprovalStatus(StockScreeningResult.ApprovalStatus status);
+    List<StockScreeningResult> findByUserIdAndApprovalStatus(Long userId, StockScreeningResult.ApprovalStatus status);
 
-    Optional<StockScreeningResult> findBySymbolAndApprovalStatus(String symbol, StockScreeningResult.ApprovalStatus status);
+    Optional<StockScreeningResult> findByUserIdAndSymbolAndApprovalStatus(Long userId, String symbol, StockScreeningResult.ApprovalStatus status);
 
-    List<StockScreeningResult> findTop50ByOrderByScanTimeDesc();
+    List<StockScreeningResult> findTop50ByUserIdOrderByScanTimeDesc(Long userId);
+
+    Optional<StockScreeningResult> findByIdAndUserId(Long id, Long userId);
 }

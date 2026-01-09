@@ -22,6 +22,9 @@ public class StockScreeningResult {
     private Long id;
 
     @Column(nullable = false)
+    private Long userId;
+
+    @Column(nullable = false)
     private String symbol;
 
     @Column(nullable = false)
