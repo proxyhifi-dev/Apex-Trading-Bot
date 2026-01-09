@@ -32,8 +32,8 @@ public class SignalsController {
     @PostMapping("/scan-now")
     public ResponseEntity<?> scanNow(@AuthenticationPrincipal UserPrincipal principal) {
         try {
-            requireUserId(principal);
-            new Thread(botScheduler::forceScan).start();
+            Long userId = requireUserId(principal);
+            new Thread(() -> botScheduler.forceScan(userId)).start();
             return ResponseEntity.ok(new MessageResponse("Scan triggered"));
         } catch (Exception e) {
             log.error("Failed to trigger scan", e);
