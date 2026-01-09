@@ -64,6 +64,12 @@ public class StrategyConfig {
         private int maxSectorPositions = 2;
         private double maxCorrelation = 0.7;
         private double targetMultiplier = 3.0;
+        private double breakevenMoveR = 1.0;
+        private double breakevenOffsetR = 0.1;
+        private double trailingStartR = 2.0;
+        private double trailingAtrMultiplier = 1.5;
+        private double momentumWeaknessTightenR = 0.5;
+        private double momentumWeaknessStopOffsetR = 0.25;
 
         // Circuit Breakers
         private double weeklyLossLimitPct = 0.10;

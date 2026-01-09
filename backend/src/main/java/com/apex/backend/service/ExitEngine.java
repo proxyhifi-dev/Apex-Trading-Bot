@@ -3,10 +3,17 @@ package com.apex.backend.service;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import com.apex.backend.config.StrategyConfig;
 
 @Component
 @Slf4j
 public class ExitEngine { // ✅ FIXED: Class name matches file name
+
+    private final StrategyConfig strategyConfig;
+
+    public ExitEngine(StrategyConfig strategyConfig) {
+        this.strategyConfig = strategyConfig;
+    }
 
     public ExitDecision manageTrade(TradeState state, double currentPrice,
                                     double currentAtr, boolean momentumWeakness) {
@@ -22,19 +29,32 @@ public class ExitEngine { // ✅ FIXED: Class name matches file name
         double currentProfit = currentPrice - entryPrice;
         double profitInR = currentProfit / initialRisk;
 
-        // 1. Breakeven after 1R
-        if (!state.isBreakevenMoved() && profitInR >= 1.0) {
-            state.setCurrentStopLoss(entryPrice + (initialRisk * 0.1));
+        double breakevenMoveR = strategyConfig.getRisk().getBreakevenMoveR();
+        double breakevenOffsetR = strategyConfig.getRisk().getBreakevenOffsetR();
+        double trailingStartR = strategyConfig.getRisk().getTrailingStartR();
+        double trailingAtrMultiplier = strategyConfig.getRisk().getTrailingAtrMultiplier();
+        double targetMultiplier = strategyConfig.getRisk().getTargetMultiplier();
+
+        // 1. Breakeven after configured R
+        if (!state.isBreakevenMoved() && profitInR >= breakevenMoveR) {
+            state.setCurrentStopLoss(entryPrice + (initialRisk * breakevenOffsetR));
             state.setBreakevenMoved(true);
             log.info("🎯 BREAKEVEN MOVED: New SL @ ₹{}", state.getCurrentStopLoss());
         }
 
         // 2. Trailing Stop
-        if (profitInR >= 2.0) {
-            double trailDistance = currentAtr * 1.5;
+        if (profitInR >= trailingStartR) {
+            double trailDistance = currentAtr * trailingAtrMultiplier;
             double proposedStop = state.getHighestPrice() - trailDistance;
             if (proposedStop > state.getCurrentStopLoss()) {
                 state.setCurrentStopLoss(proposedStop);
+            }
+        }
+
+        if (momentumWeakness && profitInR >= strategyConfig.getRisk().getMomentumWeaknessTightenR()) {
+            double tightenedStop = entryPrice + (initialRisk * strategyConfig.getRisk().getMomentumWeaknessStopOffsetR());
+            if (tightenedStop > state.getCurrentStopLoss()) {
+                state.setCurrentStopLoss(tightenedStop);
             }
         }
 
@@ -42,7 +62,7 @@ public class ExitEngine { // ✅ FIXED: Class name matches file name
         if (currentPrice <= state.getCurrentStopLoss()) {
             return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "STOP/TRAIL");
         }
-        if (profitInR >= 3.0) {
+        if (profitInR >= targetMultiplier) {
             return ExitDecision.exit(currentPrice, state.getCurrentStopLoss(), "TARGET");
         }
 
