@@ -61,14 +61,14 @@ public class TradeExecutionService {
 
         if (signal.getApprovalStatus() == StockScreeningResult.ApprovalStatus.EXECUTED) return;
 
-        double equity = portfolioService.getAvailableEquity(isPaper, userId);
+        BigDecimal equity = MoneyUtils.bd(portfolioService.getAvailableEquity(isPaper, userId));
         BigDecimal stopLoss = signal.getStopLoss();
         BigDecimal entryPrice = signal.getEntryPrice();
         BigDecimal atr = MoneyUtils.scale(entryPrice.subtract(stopLoss).divide(BigDecimal.valueOf(2), MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP));
 
-        int qty = sizingEngine.calculateQuantityIntelligent(equity, entryPrice.doubleValue(), stopLoss.doubleValue(), signal.getGrade(), currentVix, riskEngine);
+        int qty = sizingEngine.calculateQuantityIntelligent(equity, entryPrice, stopLoss, signal.getGrade(), currentVix, riskEngine);
 
-        if (qty == 0 || !riskEngine.canExecuteTrade(equity, signal.getSymbol(), entryPrice.doubleValue(), stopLoss.doubleValue(), qty)) {
+        if (qty == 0 || !riskEngine.canExecuteTrade(equity.doubleValue(), signal.getSymbol(), entryPrice.doubleValue(), stopLoss.doubleValue(), qty)) {
             signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
             screeningRepo.save(signal);
             return;

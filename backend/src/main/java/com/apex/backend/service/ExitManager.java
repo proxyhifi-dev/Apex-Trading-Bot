@@ -188,6 +188,11 @@ public class ExitManager {
                 : entryPrice.subtract(currentPrice);
         BigDecimal profitInR = profit.divide(initialRisk, MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP);
 
+        double breakevenMoveR = strategyConfig.getRisk().getBreakevenMoveR();
+        double breakevenOffsetR = strategyConfig.getRisk().getBreakevenOffsetR();
+        double trailingStartR = strategyConfig.getRisk().getTrailingStartR();
+        double trailingAtrMultiplier = strategyConfig.getRisk().getTrailingAtrMultiplier();
+
         if (trade.getTradeType() == Trade.TradeType.LONG) {
             if (trade.getHighestPrice() == null || currentPrice.compareTo(trade.getHighestPrice()) > 0) {
                 trade.setHighestPrice(currentPrice);
@@ -200,17 +205,17 @@ public class ExitManager {
             }
         }
 
-        if (!trade.isBreakevenMoved() && profitInR.compareTo(BigDecimal.ONE) >= 0) {
+        if (!trade.isBreakevenMoved() && profitInR.compareTo(BigDecimal.valueOf(breakevenMoveR)) >= 0) {
             BigDecimal breakevenStop = trade.getTradeType() == Trade.TradeType.LONG
-                    ? entryPrice.add(initialRisk.multiply(BigDecimal.valueOf(0.1)))
-                    : entryPrice.subtract(initialRisk.multiply(BigDecimal.valueOf(0.1)));
+                    ? entryPrice.add(initialRisk.multiply(BigDecimal.valueOf(breakevenOffsetR)))
+                    : entryPrice.subtract(initialRisk.multiply(BigDecimal.valueOf(breakevenOffsetR)));
             trade.setCurrentStopLoss(breakevenStop);
             trade.setBreakevenMoved(true);
             updated = true;
         }
 
-        if (profitInR.compareTo(BigDecimal.valueOf(2.0)) >= 0 && trade.getAtr() != null) {
-            BigDecimal trailDistance = trade.getAtr().multiply(BigDecimal.valueOf(1.5));
+        if (profitInR.compareTo(BigDecimal.valueOf(trailingStartR)) >= 0 && trade.getAtr() != null) {
+            BigDecimal trailDistance = trade.getAtr().multiply(BigDecimal.valueOf(trailingAtrMultiplier));
             if (trade.getTradeType() == Trade.TradeType.LONG) {
                 BigDecimal proposedStop = trade.getHighestPrice().subtract(trailDistance);
                 if (trade.getCurrentStopLoss() == null || proposedStop.compareTo(trade.getCurrentStopLoss()) > 0) {

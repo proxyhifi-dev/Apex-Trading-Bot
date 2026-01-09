@@ -1,9 +1,13 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.util.MoneyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 @Slf4j
@@ -13,16 +17,17 @@ public class PositionSizingEngine {
     private final StrategyConfig config;
 
     public int calculateQuantityIntelligent(
-            double currentEquity,
-            double entryPrice,
-            double stopLoss,
+            BigDecimal currentEquity,
+            BigDecimal entryPrice,
+            BigDecimal stopLoss,
             String grade,           // ✅ Grade (A, A++, etc)
             double currentVix,      // ✅ VIX Input
             RiskManagementEngine riskMgmt) {
 
         // 1. Minimum Capital Check (₹50,000)
-        if (currentEquity < config.getRisk().getMinEquity()) {
-            log.warn("⛔ Sizing: Insufficient Capital (₹{} < ₹50,000). Trade Skipped.", (int)currentEquity);
+        BigDecimal minEquity = BigDecimal.valueOf(config.getRisk().getMinEquity());
+        if (currentEquity.compareTo(minEquity) < 0) {
+            log.warn("⛔ Sizing: Insufficient Capital (₹{} < ₹50,000). Trade Skipped.", currentEquity.intValue());
             return 0;
         }
 
@@ -49,7 +54,7 @@ public class PositionSizingEngine {
         }
 
         // 5. Safety Cut (High VIX or High Daily Drawdown)
-        double currentDailyLossPct = riskMgmt.getDailyLossPercent(currentEquity);
+        double currentDailyLossPct = riskMgmt.getDailyLossPercent(currentEquity.doubleValue());
         boolean highVix = currentVix > 25.0;
         boolean highDrawdown = currentDailyLossPct > 3.0; // 3% Loss
 
@@ -59,16 +64,18 @@ public class PositionSizingEngine {
         }
 
         // --- Calculate Quantity ---
-        double maxRiskAmount = currentEquity * riskPercent;
-        double riskPerShare = Math.abs(entryPrice - stopLoss);
+        BigDecimal maxRiskAmount = currentEquity.multiply(BigDecimal.valueOf(riskPercent));
+        BigDecimal riskPerShare = entryPrice.subtract(stopLoss).abs();
 
-        if (riskPerShare == 0) riskPerShare = entryPrice * 0.01; // Avoid div/0
+        if (riskPerShare.compareTo(BigDecimal.ZERO) == 0) {
+            riskPerShare = entryPrice.multiply(BigDecimal.valueOf(0.01));
+        }
 
-        int quantity = (int) (maxRiskAmount / riskPerShare);
+        int quantity = maxRiskAmount.divide(riskPerShare, 0, RoundingMode.DOWN).intValue();
 
         // 6. Max Capital Allocation Check (Max 35% per trade)
-        double maxAllocatedCapital = currentEquity * config.getRisk().getMaxSingleTradeCapitalPct(); // 35%
-        int maxQtyByCapital = (int) (maxAllocatedCapital / entryPrice);
+        BigDecimal maxAllocatedCapital = currentEquity.multiply(BigDecimal.valueOf(config.getRisk().getMaxSingleTradeCapitalPct())); // 35%
+        int maxQtyByCapital = maxAllocatedCapital.divide(entryPrice, 0, RoundingMode.DOWN).intValue();
 
         if (quantity > maxQtyByCapital) {
             log.info("🔒 Quantity Capped by Max Capital (35%). Reduced {} -> {}", quantity, maxQtyByCapital);
@@ -77,7 +84,8 @@ public class PositionSizingEngine {
 
         if (quantity < 1) quantity = 0;
 
-        log.info("🧮 Final Sizing: Qty={} | Risk Amt=₹{} | Eq=₹{}", quantity, (int)(quantity * riskPerShare), (int)currentEquity);
+        BigDecimal riskAmount = riskPerShare.multiply(BigDecimal.valueOf(quantity));
+        log.info("🧮 Final Sizing: Qty={} | Risk Amt=₹{} | Eq=₹{}", quantity, MoneyUtils.scale(riskAmount), MoneyUtils.scale(currentEquity));
         return quantity;
     }
 }
