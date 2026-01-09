@@ -113,3 +113,7 @@ task bootRunProd(type: JavaExec) {
 		languageVersion = JavaLanguageVersion.of(21)
 	}
 }
+
+dependencies {
+	implementation 'org.flywaydb:flyway-database-postgresql'
+}
