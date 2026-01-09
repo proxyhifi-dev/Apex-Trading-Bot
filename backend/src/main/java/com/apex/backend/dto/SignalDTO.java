@@ -2,6 +2,7 @@ package com.apex.backend.dto;
 
 import lombok.Builder;
 import lombok.Data;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -11,7 +12,7 @@ public class SignalDTO {
     private String symbol;
     private Integer signalScore;
     private String grade;
-    private Double entryPrice;
+    private BigDecimal entryPrice;
     private LocalDateTime scanTime;
     private boolean hasEntrySignal; // ✅ Ensure this is present
 }

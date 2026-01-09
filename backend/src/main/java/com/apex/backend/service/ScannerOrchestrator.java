@@ -72,6 +72,11 @@ public class ScannerOrchestrator {
             log.info("🚫 No valid setups found.");
             return;
         }
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId == null) {
+            log.warn("⚠️ Skipping auto-trade execution because apex.trading.owner-user-id is not configured.");
+            return;
+        }
 
         // Sort by Score DESC (Hunter Logic)
         candidates.sort(Comparator.comparingInt(SignalDecision::getScore).reversed());
@@ -86,7 +91,7 @@ public class ScannerOrchestrator {
         for (SignalDecision decision : topPicks) {
             log.info("👉 Executing: {} [Score: {}]", decision.getSymbol(), decision.getScore());
             // ✅ FIXED: Passing 'currentVix' (double) instead of 'isMarketBullish' (boolean)
-            tradeExecutionService.executeAutoTrade(decision, true, currentVix);
+            tradeExecutionService.executeAutoTrade(ownerUserId, decision, true, currentVix);
         }
     }
 

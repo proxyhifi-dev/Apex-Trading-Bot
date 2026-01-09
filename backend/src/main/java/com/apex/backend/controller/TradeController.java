@@ -59,26 +59,26 @@ public class TradeController {
             }
 
             long winCount = allTrades.stream()
-                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                     .count();
 
             long lossCount = allTrades.stream()
-                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
+                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
                     .count();
 
             double totalPnl = allTrades.stream()
                     .filter(t -> t.getRealizedPnl() != null)
-                    .mapToDouble(Trade::getRealizedPnl)
+                    .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                     .sum();
 
             double grossWin = allTrades.stream()
-                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
-                    .mapToDouble(Trade::getRealizedPnl)
+                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
+                    .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                     .sum();
 
             double grossLoss = Math.abs(allTrades.stream()
-                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
-                    .mapToDouble(Trade::getRealizedPnl)
+                    .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
+                    .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                     .sum());
 
             double profitFactor = calculateProfitFactor(grossWin, grossLoss);

@@ -3,6 +3,7 @@ package com.apex.backend.model;
 import jakarta.persistence.*;
 import lombok.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -29,17 +30,19 @@ public class PaperTrade {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false)
-    private Double entryPrice;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal entryPrice;
 
-    private Double exitPrice;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal exitPrice;
 
     @Column(nullable = false)
     private LocalDateTime entryTime;
 
     private LocalDateTime exitTime;
 
-    private Double realizedPnl;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal realizedPnl;
 
     @Column(nullable = false)
     private String status;

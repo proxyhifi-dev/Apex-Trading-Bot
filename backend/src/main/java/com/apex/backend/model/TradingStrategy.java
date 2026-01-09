@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 
 @Data
 @Builder
@@ -40,7 +41,8 @@ public class TradingStrategy {
     // Extra fields
         @Builder.Default
     private boolean active = true;
-    private double initialCapital;
+    @Column(precision = 19, scale = 4)
+    private BigDecimal initialCapital;
     private int minEntryScore;
     private double rsiNeutral;
 }

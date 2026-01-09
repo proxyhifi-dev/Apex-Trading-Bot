@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -47,7 +48,7 @@ public class SignalsController {
                             .symbol(result.getSymbol())
                             .signalScore(result.getSignalScore())
                             .grade(result.getGrade())
-                            .entryPrice(result.getEntryPrice() > 0 ? result.getEntryPrice() : result.getCurrentPrice())
+                            .entryPrice(resolveEntryPrice(result.getEntryPrice(), result.getCurrentPrice()))
                             .scanTime(result.getScanTime())
                             .hasEntrySignal(true)
                             .build())
@@ -68,5 +69,12 @@ public class SignalsController {
             this.message = message;
             this.timestamp = System.currentTimeMillis();
         }
+    }
+
+    private BigDecimal resolveEntryPrice(BigDecimal entryPrice, BigDecimal currentPrice) {
+        if (entryPrice != null && entryPrice.compareTo(BigDecimal.ZERO) > 0) {
+            return entryPrice;
+        }
+        return currentPrice;
     }
 }

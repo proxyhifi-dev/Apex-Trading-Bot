@@ -3,15 +3,16 @@ package com.apex.backend.dto;
 import lombok.Builder;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
 @Builder
 public class PaperAccountDTO {
-    private Double startingCapital;
-    private Double cashBalance;
-    private Double reservedMargin;
-    private Double realizedPnl;
-    private Double unrealizedPnl;
+    private BigDecimal startingCapital;
+    private BigDecimal cashBalance;
+    private BigDecimal reservedMargin;
+    private BigDecimal realizedPnl;
+    private BigDecimal unrealizedPnl;
     private LocalDateTime updatedAt;
 }

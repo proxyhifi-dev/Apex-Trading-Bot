@@ -21,5 +21,5 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
     long countByStatus(Trade.TradeStatus status);
 
     @Query("SELECT SUM(t.realizedPnl) FROM Trade t WHERE t.isPaperTrade = :isPaper AND t.status = 'CLOSED'")
-    Double getTotalPnlByMode(@Param("isPaper") boolean isPaper);
+    java.math.BigDecimal getTotalPnlByMode(@Param("isPaper") boolean isPaper);
 }

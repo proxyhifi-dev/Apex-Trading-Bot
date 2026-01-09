@@ -1,12 +1,14 @@
 package com.apex.backend.service;
 
 import com.apex.backend.model.Trade;
+import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.config.StrategyConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +42,7 @@ public class ExitManager {
         }
     }
 
-    public void closeTradeByTarget(Long tradeId, double exitPrice) {
+    public void closeTradeByTarget(Long tradeId, BigDecimal exitPrice) {
         try {
             log.info("Closing trade {} by target at price {}", tradeId, exitPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
@@ -52,7 +54,7 @@ public class ExitManager {
         }
     }
 
-    public void closeTradeByStopLoss(Long tradeId, double stopLossPrice) {
+    public void closeTradeByStopLoss(Long tradeId, BigDecimal stopLossPrice) {
         try {
             log.info("Closing trade {} by stop loss at price {}", tradeId, stopLossPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
@@ -64,7 +66,7 @@ public class ExitManager {
         }
     }
 
-    public void updateStopLoss(Long tradeId, double newStopLoss) {
+    public void updateStopLoss(Long tradeId, BigDecimal newStopLoss) {
         try {
             log.info("Updating stop loss for trade {} to {}", tradeId, newStopLoss);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
@@ -95,11 +97,11 @@ public class ExitManager {
                     .map(Trade::getSymbol)
                     .distinct()
                     .toList();
-            Map<String, Double> ltpMap = fyersService.getLtpBatch(symbols);
+            Map<String, BigDecimal> ltpMap = fyersService.getLtpBatch(symbols);
 
             for (Trade trade : openTrades) {
-                Double currentPrice = ltpMap.get(trade.getSymbol());
-                if (currentPrice == null || currentPrice <= 0) {
+                BigDecimal currentPrice = ltpMap.get(trade.getSymbol());
+                if (currentPrice == null || currentPrice.compareTo(BigDecimal.ZERO) <= 0) {
                     log.debug("Skipping trade {} due to missing price data", trade.getId());
                     continue;
                 }
@@ -129,30 +131,30 @@ public class ExitManager {
         }
     }
 
-    public boolean isStopLossHit(Trade trade, double currentPrice) {
+    public boolean isStopLossHit(Trade trade, BigDecimal currentPrice) {
         if (trade == null || trade.getCurrentStopLoss() == null) {
             return false;
         }
 
         if (trade.getTradeType() == Trade.TradeType.LONG) {
-            return currentPrice <= trade.getCurrentStopLoss();
+            return currentPrice.compareTo(trade.getCurrentStopLoss()) <= 0;
         } else {
-            return currentPrice >= trade.getCurrentStopLoss();
+            return currentPrice.compareTo(trade.getCurrentStopLoss()) >= 0;
         }
     }
 
-    public boolean isTargetHit(Trade trade, double currentPrice, double targetMultiplier) {
+    public boolean isTargetHit(Trade trade, BigDecimal currentPrice, double targetMultiplier) {
         if (trade == null || trade.getAtr() == null) {
             return false;
         }
 
-        double target = trade.getEntryPrice() + (trade.getAtr() * targetMultiplier);
+        BigDecimal target = trade.getEntryPrice().add(trade.getAtr().multiply(BigDecimal.valueOf(targetMultiplier)));
 
         if (trade.getTradeType() == Trade.TradeType.LONG) {
-            return currentPrice >= target;
+            return currentPrice.compareTo(target) >= 0;
         } else {
-            target = trade.getEntryPrice() - (trade.getAtr() * targetMultiplier);
-            return currentPrice <= target;
+            target = trade.getEntryPrice().subtract(trade.getAtr().multiply(BigDecimal.valueOf(targetMultiplier)));
+            return currentPrice.compareTo(target) <= 0;
         }
     }
 
@@ -165,53 +167,53 @@ public class ExitManager {
         }
     }
 
-    private void updateTrailingStop(Trade trade, double currentPrice) {
+    private void updateTrailingStop(Trade trade, BigDecimal currentPrice) {
         if (trade.getStopLoss() == null || trade.getEntryPrice() == null) {
             return;
         }
         boolean updated = false;
-        double entryPrice = trade.getEntryPrice();
-        double initialRisk = Math.abs(entryPrice - trade.getStopLoss());
-        if (initialRisk <= 0) {
+        BigDecimal entryPrice = trade.getEntryPrice();
+        BigDecimal initialRisk = entryPrice.subtract(trade.getStopLoss()).abs();
+        if (initialRisk.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
-        double profit = trade.getTradeType() == Trade.TradeType.LONG
-                ? currentPrice - entryPrice
-                : entryPrice - currentPrice;
-        double profitInR = profit / initialRisk;
+        BigDecimal profit = trade.getTradeType() == Trade.TradeType.LONG
+                ? currentPrice.subtract(entryPrice)
+                : entryPrice.subtract(currentPrice);
+        BigDecimal profitInR = profit.divide(initialRisk, MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP);
 
         if (trade.getTradeType() == Trade.TradeType.LONG) {
-            if (trade.getHighestPrice() == null || currentPrice > trade.getHighestPrice()) {
+            if (trade.getHighestPrice() == null || currentPrice.compareTo(trade.getHighestPrice()) > 0) {
                 trade.setHighestPrice(currentPrice);
                 updated = true;
             }
         } else {
-            if (trade.getHighestPrice() == null || currentPrice < trade.getHighestPrice()) {
+            if (trade.getHighestPrice() == null || currentPrice.compareTo(trade.getHighestPrice()) < 0) {
                 trade.setHighestPrice(currentPrice);
                 updated = true;
             }
         }
 
-        if (!trade.isBreakevenMoved() && profitInR >= 1.0) {
-            double breakevenStop = trade.getTradeType() == Trade.TradeType.LONG
-                    ? entryPrice + (initialRisk * 0.1)
-                    : entryPrice - (initialRisk * 0.1);
+        if (!trade.isBreakevenMoved() && profitInR.compareTo(BigDecimal.ONE) >= 0) {
+            BigDecimal breakevenStop = trade.getTradeType() == Trade.TradeType.LONG
+                    ? entryPrice.add(initialRisk.multiply(BigDecimal.valueOf(0.1)))
+                    : entryPrice.subtract(initialRisk.multiply(BigDecimal.valueOf(0.1)));
             trade.setCurrentStopLoss(breakevenStop);
             trade.setBreakevenMoved(true);
             updated = true;
         }
 
-        if (profitInR >= 2.0 && trade.getAtr() != null) {
-            double trailDistance = trade.getAtr() * 1.5;
+        if (profitInR.compareTo(BigDecimal.valueOf(2.0)) >= 0 && trade.getAtr() != null) {
+            BigDecimal trailDistance = trade.getAtr().multiply(BigDecimal.valueOf(1.5));
             if (trade.getTradeType() == Trade.TradeType.LONG) {
-                double proposedStop = trade.getHighestPrice() - trailDistance;
-                if (trade.getCurrentStopLoss() == null || proposedStop > trade.getCurrentStopLoss()) {
+                BigDecimal proposedStop = trade.getHighestPrice().subtract(trailDistance);
+                if (trade.getCurrentStopLoss() == null || proposedStop.compareTo(trade.getCurrentStopLoss()) > 0) {
                     trade.setCurrentStopLoss(proposedStop);
                     updated = true;
                 }
             } else {
-                double proposedStop = trade.getHighestPrice() + trailDistance;
-                if (trade.getCurrentStopLoss() == null || proposedStop < trade.getCurrentStopLoss()) {
+                BigDecimal proposedStop = trade.getHighestPrice().add(trailDistance);
+                if (trade.getCurrentStopLoss() == null || proposedStop.compareTo(trade.getCurrentStopLoss()) < 0) {
                     trade.setCurrentStopLoss(proposedStop);
                     updated = true;
                 }
@@ -238,20 +240,20 @@ public class ExitManager {
         }
     }
 
-    private void finalizeTrade(Trade trade, double exitPrice, Trade.ExitReason reason) {
+    private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason) {
         trade.setExitPrice(exitPrice);
         trade.setExitTime(LocalDateTime.now());
         trade.setStatus(Trade.TradeStatus.CLOSED);
         trade.setExitReason(reason);
-        double pnl = (exitPrice - trade.getEntryPrice()) * trade.getQuantity();
+        BigDecimal pnl = MoneyUtils.multiply(exitPrice.subtract(trade.getEntryPrice()), trade.getQuantity());
         if (trade.getTradeType() == Trade.TradeType.SHORT) {
-            pnl = -pnl;
+            pnl = pnl.negate();
         }
-        trade.setRealizedPnl(pnl);
+        trade.setRealizedPnl(MoneyUtils.scale(pnl));
         tradeRepository.save(trade);
         riskManagementEngine.removeOpenPosition(trade.getSymbol());
         if (trade.isPaperTrade()) {
-            paperTradingService.recordExit(trade);
+            paperTradingService.recordExit(trade.getUserId(), trade);
         }
         log.info("Trade {} closed successfully. P&L: {}", trade.getId(), pnl);
     }

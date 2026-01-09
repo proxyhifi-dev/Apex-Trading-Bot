@@ -98,7 +98,7 @@ public class RiskManagementService {
                 .toList();
             
             return closedTradesToday.stream()
-                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl() : 0)
+                .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                 .sum();
         } catch (Exception e) {
             log.error("Failed to calculate today's PnL", e);
@@ -163,7 +163,7 @@ public class RiskManagementService {
             
             for (Trade trade : allTrades) {
                 if (trade.getRealizedPnl() != null) {
-                    runningBalance += trade.getRealizedPnl();
+                    runningBalance += trade.getRealizedPnl().doubleValue();
                     if (runningBalance > peak) {
                         peak = runningBalance;
                     }
@@ -185,7 +185,7 @@ public class RiskManagementService {
     public boolean validateTrade(Trade trade) {
         try {
             // Check position size
-            if (!isPositionSizeValid(trade.getQuantity() * trade.getEntryPrice())) {
+            if (!isPositionSizeValid(trade.getQuantity() * trade.getEntryPrice().doubleValue())) {
                 log.warn("Trade position size validation failed");
                 return false;
             }
@@ -197,8 +197,8 @@ public class RiskManagementService {
             }
             
             // Check available equity
-            double requiredCapital = trade.getQuantity() * trade.getEntryPrice();
-            double availableEquity = portfolioService.getAvailableEquity(trade.isPaperTrade());
+            double requiredCapital = trade.getQuantity() * trade.getEntryPrice().doubleValue();
+            double availableEquity = portfolioService.getAvailableEquity(trade.isPaperTrade(), trade.getUserId());
             
             if (availableEquity < requiredCapital) {
                 log.warn("Insufficient equity for trade");

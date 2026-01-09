@@ -47,15 +47,15 @@ public class PerformanceController {
             }
 
             long winCount = allTrades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() > 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) > 0)
                 .count();
             long lossCount = allTrades.stream()
-                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl() < 0)
+                .filter(t -> t.getRealizedPnl() != null && t.getRealizedPnl().compareTo(java.math.BigDecimal.ZERO) < 0)
                 .count();
 
             double totalPnl = allTrades.stream()
                 .filter(t -> t.getRealizedPnl() != null)
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
             PerformanceMetrics metrics = PerformanceMetrics.builder()
@@ -98,7 +98,7 @@ public class PerformanceController {
 
             double todayPnL = todayTrades.stream()
                 .filter(t -> t.getRealizedPnl() != null)
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
 
             Map<String, Object> response = new HashMap<>();
@@ -127,8 +127,8 @@ public class PerformanceController {
 
             double unrealizedPnL = openTrades.stream()
                 .filter(t -> t.getCurrentStopLoss() != null)
-                .mapToDouble(t -> (t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice()) * t.getQuantity() - 
-                               t.getEntryPrice() * t.getQuantity())
+                .mapToDouble(t -> ((t.getExitPrice() != null ? t.getExitPrice() : t.getEntryPrice()).doubleValue() * t.getQuantity()) -
+                               (t.getEntryPrice().doubleValue() * t.getQuantity()))
                 .sum();
 
             Map<String, Object> response = new HashMap<>();
@@ -221,7 +221,7 @@ public class PerformanceController {
             List<Trade> trades = tradeRepository.findAll();
             double totalPnL = trades.stream()
                 .filter(t -> t.getRealizedPnl() != null)
-                .mapToDouble(Trade::getRealizedPnl)
+                .mapToDouble(t -> t.getRealizedPnl().doubleValue())
                 .sum();
             double roi = performanceService.calculateROI(totalPnL);
             return ResponseEntity.ok(new MetricResponse("ROI", roi));
@@ -256,7 +256,7 @@ public class PerformanceController {
 
             for (Trade trade : trades) {
                 if (trade.getRealizedPnl() != null && idx < equityCurve.length) {
-                    baseEquity += trade.getRealizedPnl();
+                    baseEquity += trade.getRealizedPnl().doubleValue();
                     equityCurve[idx++] = baseEquity;
                 }
             }

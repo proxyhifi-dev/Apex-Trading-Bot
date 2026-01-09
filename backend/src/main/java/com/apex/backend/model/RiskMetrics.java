@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 
 @Entity
@@ -23,14 +24,14 @@ public class RiskMetrics {
     @Column(nullable = false)
     private LocalDate tradingDate;
 
-    @Column(nullable = false)
-    private Double dailyLoss;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal dailyLoss;
 
     @Column(nullable = false)
     private Integer consecutiveLosses;
 
-    @Column(nullable = false)
-    private Double currentEquity;
+    @Column(nullable = false, precision = 19, scale = 4)
+    private BigDecimal currentEquity;
 
     @Column
     private Integer totalTrades;

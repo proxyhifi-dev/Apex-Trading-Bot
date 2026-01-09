@@ -1,7 +1,9 @@
 package com.apex.backend.service;
 
+import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.model.StockScreeningResult;
 import com.apex.backend.model.Trade;
+import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
@@ -10,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Service
@@ -28,40 +31,43 @@ public class TradeExecutionService {
     private final SettingsService settingsService;
 
     @Transactional
-    public void executeAutoTrade(SignalDecision decision, boolean isPaper, double currentVix) {
-        boolean effectivePaperMode = settingsService.isPaperModeForDefaultUser();
+    public void executeAutoTrade(Long userId, SignalDecision decision, boolean isPaper, double currentVix) {
+        if (userId == null) {
+            throw new BadRequestException("User ID is required for trade execution");
+        }
+        boolean effectivePaperMode = settingsService.isPaperModeForUser(userId);
         log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.getSymbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
 
         StockScreeningResult signal = StockScreeningResult.builder()
                 .symbol(decision.getSymbol())
                 .signalScore(decision.getScore())
                 .grade(decision.getGrade())
-                .entryPrice(decision.getEntryPrice())
-                .stopLoss(decision.getSuggestedStopLoss())
+                .entryPrice(MoneyUtils.bd(decision.getEntryPrice()))
+                .stopLoss(MoneyUtils.bd(decision.getSuggestedStopLoss()))
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
                 .analysisReason(decision.getReason())
                 .build();
 
         signal = screeningRepo.save(signal);
-        approveAndExecute(signal.getId(), effectivePaperMode, currentVix);
+        approveAndExecute(userId, signal.getId(), effectivePaperMode, currentVix);
     }
 
     @Transactional
-    public void approveAndExecute(Long signalId, boolean isPaper, double currentVix) {
+    public void approveAndExecute(Long userId, Long signalId, boolean isPaper, double currentVix) {
         StockScreeningResult signal = screeningRepo.findById(signalId)
                 .orElseThrow(() -> new RuntimeException("Signal not found"));
 
         if (signal.getApprovalStatus() == StockScreeningResult.ApprovalStatus.EXECUTED) return;
 
-        double equity = portfolioService.getAvailableEquity(isPaper);
-        double stopLoss = signal.getStopLoss();
-        double entryPrice = signal.getEntryPrice();
-        double atr = (entryPrice - stopLoss) / 2.0;
+        double equity = portfolioService.getAvailableEquity(isPaper, userId);
+        BigDecimal stopLoss = signal.getStopLoss();
+        BigDecimal entryPrice = signal.getEntryPrice();
+        BigDecimal atr = MoneyUtils.scale(entryPrice.subtract(stopLoss).divide(BigDecimal.valueOf(2), MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP));
 
-        int qty = sizingEngine.calculateQuantityIntelligent(equity, entryPrice, stopLoss, signal.getGrade(), currentVix, riskEngine);
+        int qty = sizingEngine.calculateQuantityIntelligent(equity, entryPrice.doubleValue(), stopLoss.doubleValue(), signal.getGrade(), currentVix, riskEngine);
 
-        if (qty == 0 || !riskEngine.canExecuteTrade(equity, signal.getSymbol(), entryPrice, stopLoss, qty)) {
+        if (qty == 0 || !riskEngine.canExecuteTrade(equity, signal.getSymbol(), entryPrice.doubleValue(), stopLoss.doubleValue(), qty)) {
             signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
             screeningRepo.save(signal);
             return;
@@ -74,7 +80,7 @@ public class TradeExecutionService {
                 if (entryOrderId != null && !entryOrderId.startsWith("ERROR")) {
                     log.info("✅ Entry Filled: {}", entryOrderId);
                     try {
-                        fyersService.placeOrder(signal.getSymbol(), qty, "SELL", "SL-M", stopLoss);
+                        fyersService.placeOrder(signal.getSymbol(), qty, "SELL", "SL-M", stopLoss.doubleValue());
                     } catch (Exception slEx) {
                         String errorMsg = "SL FAILED for " + signal.getSymbol() + ": " + slEx.getMessage();
                         log.error(errorMsg);
@@ -93,10 +99,11 @@ public class TradeExecutionService {
             }
         }
 
-        riskEngine.addOpenPosition(signal.getSymbol(), entryPrice);
+        riskEngine.addOpenPosition(signal.getSymbol(), entryPrice.doubleValue());
 
         Trade trade = Trade.builder()
                 .symbol(signal.getSymbol())
+                .userId(userId)
                 .quantity(qty)
                 .tradeType(Trade.TradeType.LONG)
                 .entryPrice(entryPrice)
@@ -111,13 +118,13 @@ public class TradeExecutionService {
 
         tradeRepo.save(trade);
         if (isPaper) {
-            paperTradingService.recordEntry(trade);
+            paperTradingService.recordEntry(userId, trade);
         }
         signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.EXECUTED);
         screeningRepo.save(signal);
     }
 
-    public void approveAndExecute(Long signalId, boolean isPaper) {
-        approveAndExecute(signalId, isPaper, 15.0);
+    public void approveAndExecute(Long userId, Long signalId, boolean isPaper) {
+        approveAndExecute(userId, signalId, isPaper, 15.0);
     }
 }

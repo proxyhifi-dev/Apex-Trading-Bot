@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -36,14 +37,14 @@ public class EmergencyStopService {
                 trade.setExitPrice(trade.getEntryPrice());
             }
             if (trade.getRealizedPnl() == null) {
-                trade.setRealizedPnl(0.0);
+                trade.setRealizedPnl(BigDecimal.ZERO);
             }
         }
 
         tradeRepository.saveAll(openTrades);
         openTrades.stream()
                 .filter(Trade::isPaperTrade)
-                .forEach(paperTradingService::recordExit);
+                .forEach(trade -> paperTradingService.recordExit(trade.getUserId(), trade));
         return openTrades.size();
     }
 

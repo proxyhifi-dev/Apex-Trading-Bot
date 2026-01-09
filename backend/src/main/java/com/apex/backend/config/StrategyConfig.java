@@ -21,6 +21,7 @@ public class StrategyConfig {
         // ✅ NEW: Global Paper Mode Toggle (Default: true)
         private boolean paperMode = true;
         private double capital;
+        private Long ownerUserId;
         private Universe universe;
 
         @Data
