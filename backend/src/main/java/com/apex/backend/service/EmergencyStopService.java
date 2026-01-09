@@ -1,5 +1,6 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
@@ -18,6 +19,7 @@ public class EmergencyStopService {
     private final TradeRepository tradeRepository;
     private final CircuitBreaker circuitBreaker;
     private final PaperTradingService paperTradingService;
+    private final StrategyConfig strategyConfig;
 
     public EmergencyStopResult triggerEmergencyStop(String reason) {
         int closedTrades = closeAllOpenTrades();
@@ -26,7 +28,11 @@ public class EmergencyStopService {
     }
 
     private int closeAllOpenTrades() {
-        List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
+        Long ownerUserId = strategyConfig.getTrading().getOwnerUserId();
+        if (ownerUserId == null) {
+            return 0;
+        }
+        List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(ownerUserId, Trade.TradeStatus.OPEN);
         LocalDateTime now = LocalDateTime.now();
 
         for (Trade trade : openTrades) {

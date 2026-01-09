@@ -32,8 +32,12 @@ public class ScannerOrchestrator {
     // Thread pool for parallel execution
     private final ExecutorService executor = Executors.newFixedThreadPool(10);
 
-    public void runScanner() {
+    public void runScanner(Long userId) {
         if (!config.getScanner().isEnabled()) return;
+        if (userId == null) {
+            log.warn("⚠️ Skipping scan because user id is not configured.");
+            return;
+        }
 
         // 1. 🌍 MARKET REGIME & VIX CHECK
         boolean isMarketBullish = checkMarketRegime();
@@ -64,17 +68,12 @@ public class ScannerOrchestrator {
         CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
 
         // 3. 📊 RANKING & EXECUTION
-        processCandidates(new ArrayList<>(candidates), currentVix);
+        processCandidates(new ArrayList<>(candidates), currentVix, userId);
     }
 
-    private void processCandidates(List<SignalDecision> candidates, double currentVix) {
+    private void processCandidates(List<SignalDecision> candidates, double currentVix, Long userId) {
         if (candidates.isEmpty()) {
             log.info("🚫 No valid setups found.");
-            return;
-        }
-        Long ownerUserId = config.getTrading().getOwnerUserId();
-        if (ownerUserId == null) {
-            log.warn("⚠️ Skipping auto-trade execution because apex.trading.owner-user-id is not configured.");
             return;
         }
 
@@ -91,7 +90,7 @@ public class ScannerOrchestrator {
         for (SignalDecision decision : topPicks) {
             log.info("👉 Executing: {} [Score: {}]", decision.getSymbol(), decision.getScore());
             // ✅ FIXED: Passing 'currentVix' (double) instead of 'isMarketBullish' (boolean)
-            tradeExecutionService.executeAutoTrade(ownerUserId, decision, true, currentVix);
+            tradeExecutionService.executeAutoTrade(userId, decision, true, currentVix);
         }
     }
 

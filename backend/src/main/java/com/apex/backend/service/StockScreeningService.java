@@ -55,7 +55,13 @@ public class StockScreeningService {
     }
 
     private void saveSignal(SignalDecision decision) {
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId == null) {
+            log.warn("⚠️ Skipping signal save because apex.trading.owner-user-id is not configured.");
+            return;
+        }
         StockScreeningResult result = StockScreeningResult.builder()
+                .userId(ownerUserId)
                 .symbol(decision.getSymbol())
                 .signalScore(decision.getScore())
                 .grade(decision.getGrade())

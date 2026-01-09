@@ -18,6 +18,7 @@ public class DatabaseSeeder implements CommandLineRunner {
     private final TradingStrategyRepository strategyRepo;
     private final WatchlistStockRepository watchlistRepo;
     private final StockScreeningResultRepository screeningRepo;
+    private final UserRepository userRepository;
 
     @Override
     @Transactional // ✅ FIXED: Keeps entity managed during the entire seeding process
@@ -67,9 +68,18 @@ public class DatabaseSeeder implements CommandLineRunner {
                 watchlistRepo.save(stock);
             }
 
+            Long ownerUserId = userRepository.findTopByOrderByIdAsc()
+                    .map(User::getId)
+                    .orElse(null);
+            if (ownerUserId == null) {
+                log.warn("⚠️ Skipping signal seeding because no users exist yet.");
+                return;
+            }
+
             // Seed Sample Signals
             StockScreeningResult signal1 = StockScreeningResult.builder()
                     .strategy(strategy)
+                    .userId(ownerUserId)
                     .symbol("NSE:RELIANCE-EQ")
                     .scanTime(LocalDateTime.now())
                     .entryPrice(2450.50)
@@ -82,6 +92,7 @@ public class DatabaseSeeder implements CommandLineRunner {
 
             StockScreeningResult signal2 = StockScreeningResult.builder()
                     .strategy(strategy)
+                    .userId(ownerUserId)
                     .symbol("NSE:TCS-EQ")
                     .scanTime(LocalDateTime.now())
                     .entryPrice(3520.75)

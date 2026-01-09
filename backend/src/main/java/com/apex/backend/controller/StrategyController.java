@@ -34,9 +34,10 @@ public class StrategyController {
      * Trigger manual market scan
      */
     @PostMapping("/scan-now")
-    public ResponseEntity<?> manualScan() {
+    public ResponseEntity<?> manualScan(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Manual scan triggered by user");
-        new Thread(botScheduler::forceScan).start();
+        Long userId = requireUserId(principal);
+        new Thread(() -> botScheduler.forceScan(userId)).start();
         return ResponseEntity.ok(new MessageResponse("Market Scan Triggered!"));
     }
     
@@ -44,9 +45,10 @@ public class StrategyController {
      * Get all trading signals
      */
     @GetMapping("/signals")
-    public ResponseEntity<?> getAllSignals() {
+    public ResponseEntity<?> getAllSignals(@AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
         log.info("Fetching all trading signals");
-        List<SignalDTO> signals = screeningRepo.findAll()
+        List<SignalDTO> signals = screeningRepo.findTop50ByUserIdOrderByScanTimeDesc(userId)
                 .stream()
                 .map(s -> SignalDTO.builder()
                         .id(s.getId())
@@ -66,9 +68,11 @@ public class StrategyController {
      * Get pending approval signals
      */
     @GetMapping("/signals/pending")
-    public ResponseEntity<?> getPendingSignals() {
+    public ResponseEntity<?> getPendingSignals(@AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
         log.info("Fetching pending signals");
-        List<SignalDTO> signals = screeningRepo.findByApprovalStatus(StockScreeningResult.ApprovalStatus.PENDING)
+        List<SignalDTO> signals = screeningRepo.findByUserIdAndApprovalStatus(
+                        userId, StockScreeningResult.ApprovalStatus.PENDING)
                 .stream()
                 .map(s -> SignalDTO.builder()
                         .id(s.getId())

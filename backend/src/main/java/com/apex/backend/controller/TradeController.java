@@ -1,13 +1,17 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.PerformanceMetrics;
+import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.service.PerformanceService;
+import com.apex.backend.service.SettingsService;
+import com.apex.backend.security.UserPrincipal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,15 +24,18 @@ public class TradeController {
 
     private final TradeRepository tradeRepository;
     private final PerformanceService performanceService;
+    private final SettingsService settingsService;
 
     /**
      * Get all trade history
      */
     @GetMapping("/history")
-    public ResponseEntity<?> getTradeHistory() {
+    public ResponseEntity<?> getTradeHistory(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching trade history");
-            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> trades = tradeRepository.findByUserIdAndIsPaperTrade(userId, isPaper);
             log.info("Retrieved {} trades from database", trades.size());
             return ResponseEntity.ok(trades);
         } catch (Exception e) {
@@ -42,10 +49,12 @@ public class TradeController {
      * Get performance metrics
      */
     @GetMapping("/performance")
-    public ResponseEntity<?> getPerformance() {
+    public ResponseEntity<?> getPerformance(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Calculating performance metrics");
-            List<Trade> allTrades = tradeRepository.findAll();
+            List<Trade> allTrades = tradeRepository.findByUserIdAndIsPaperTrade(userId, isPaper);
 
             if (allTrades.isEmpty()) {
                 log.info("No trades found, returning empty metrics");
@@ -115,10 +124,14 @@ public class TradeController {
      * Get trades by symbol
      */
     @GetMapping("/by-symbol")
-    public ResponseEntity<?> getTradesBySymbol(@RequestParam String symbol) {
+    public ResponseEntity<?> getTradesBySymbol(@RequestParam String symbol,
+                                               @AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching trades for symbol: {}", symbol);
-            List<Trade> trades = tradeRepository.findBySymbol(symbol);
+            List<Trade> trades = tradeRepository.findByUserIdAndSymbolAndIsPaperTradeOrderByEntryTimeAsc(
+                    userId, symbol, isPaper);
             log.info("Retrieved {} trades for symbol: {}", trades.size(), symbol);
             return ResponseEntity.ok(trades);
         } catch (Exception e) {
@@ -132,10 +145,13 @@ public class TradeController {
      * Get open trades only
      */
     @GetMapping("/open")
-    public ResponseEntity<?> getOpenTrades() {
+    public ResponseEntity<?> getOpenTrades(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching open trades");
-            List<Trade> openTrades = tradeRepository.findByStatus(Trade.TradeStatus.OPEN);
+            List<Trade> openTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(
+                    userId, isPaper, Trade.TradeStatus.OPEN);
             log.info("Retrieved {} open trades", openTrades.size());
             return ResponseEntity.ok(openTrades);
         } catch (Exception e) {
@@ -149,10 +165,13 @@ public class TradeController {
      * Get closed trades only
      */
     @GetMapping("/closed")
-    public ResponseEntity<?> getClosedTrades() {
+    public ResponseEntity<?> getClosedTrades(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            Long userId = requireUserId(principal);
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Fetching closed trades");
-            List<Trade> closedTrades = tradeRepository.findByStatus(Trade.TradeStatus.CLOSED);
+            List<Trade> closedTrades = tradeRepository.findByUserIdAndIsPaperTradeAndStatus(
+                    userId, isPaper, Trade.TradeStatus.CLOSED);
             log.info("Retrieved {} closed trades", closedTrades.size());
             return ResponseEntity.ok(closedTrades);
         } catch (Exception e) {
@@ -170,6 +189,13 @@ public class TradeController {
             return grossWin > 0 ? Double.POSITIVE_INFINITY : 0;
         }
         return grossWin / grossLoss;
+    }
+
+    private Long requireUserId(UserPrincipal principal) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        return principal.getUserId();
     }
 
     // Error response wrapper
