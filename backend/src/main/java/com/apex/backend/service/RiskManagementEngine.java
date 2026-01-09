@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Candle;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,10 +17,11 @@ import java.util.Map;
 public class RiskManagementEngine {
 
     private final StrategyConfig config;
+    private final StrategyProperties strategyProperties;
     private final SectorService sectorService;
     private final FyersService fyersService;
     private final IndicatorEngine indicatorEngine;
-    private final CircuitBreaker circuitBreaker;
+    private final CircuitBreakerService circuitBreakerService;
 
     private int consecutiveLosses = 0;
     private double dailyLossToday = 0;
@@ -28,26 +30,28 @@ public class RiskManagementEngine {
     private final Map<String, Double> openPositions = new HashMap<>();
 
     public RiskManagementEngine(StrategyConfig config,
+                                StrategyProperties strategyProperties,
                                 SectorService sectorService,
                                 FyersService fyersService,
                                 IndicatorEngine indicatorEngine,
-                                CircuitBreaker circuitBreaker) {
+                                CircuitBreakerService circuitBreakerService) {
         this.config = config;
+        this.strategyProperties = strategyProperties;
         this.sectorService = sectorService;
         this.fyersService = fyersService;
         this.indicatorEngine = indicatorEngine;
-        this.circuitBreaker = circuitBreaker;
+        this.circuitBreakerService = circuitBreakerService;
     }
 
     // ✅ FIXED: This is the method RiskController was looking for
     public boolean isTradingHalted(double currentEquity) {
-        double limit = currentEquity * -config.getRisk().getDailyLossLimitPct();
+        double limit = currentEquity * -strategyProperties.getCircuit().getDailyLossLimit();
         return dailyLossToday < limit;
     }
 
     public boolean canExecuteTrade(double currentEquity, String symbol, double entryPrice, double stopLoss, int quantity) {
         // Gate 7: Circuit Breaker
-        if (!circuitBreaker.canTrade()) {
+        if (!circuitBreakerService.canTrade()) {
             log.warn("❌ Gate 7 Fail: Circuit Breaker Active");
             return false;
         }
@@ -97,7 +101,7 @@ public class RiskManagementEngine {
         if (tradeResult < 0) consecutiveLosses++;
         else consecutiveLosses = 0;
 
-        circuitBreaker.updateMetrics();
+        circuitBreakerService.updateAfterTrade(tradeResult);
     }
 
     private boolean isMarketHours() {

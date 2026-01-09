@@ -7,6 +7,7 @@ import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
+import com.apex.backend.config.StrategyProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,7 @@ public class TradeExecutionService {
     private final DeadLetterQueueService dlqService;
     private final PaperTradingService paperTradingService;
     private final SettingsService settingsService;
+    private final StrategyProperties strategyProperties;
 
     @Transactional
     public void executeAutoTrade(Long userId, SignalDecision decision, boolean isPaper, double currentVix) {
@@ -37,6 +39,7 @@ public class TradeExecutionService {
         }
         boolean effectivePaperMode = settingsService.isPaperModeForUser(userId);
         log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.getSymbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
+        log.info("📊 Score Breakdown: {}", decision.getReason());
 
         StockScreeningResult signal = StockScreeningResult.builder()
                 .userId(userId)
@@ -48,6 +51,9 @@ public class TradeExecutionService {
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
                 .analysisReason(decision.getReason())
+                .macdValue(decision.getMacdLine())
+                .rsiValue(decision.getRsi())
+                .adxValue(decision.getAdx())
                 .build();
 
         signal = screeningRepo.save(signal);
@@ -64,7 +70,10 @@ public class TradeExecutionService {
         BigDecimal equity = MoneyUtils.bd(portfolioService.getAvailableEquity(isPaper, userId));
         BigDecimal stopLoss = signal.getStopLoss();
         BigDecimal entryPrice = signal.getEntryPrice();
-        BigDecimal atr = MoneyUtils.scale(entryPrice.subtract(stopLoss).divide(BigDecimal.valueOf(2), MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP));
+        double stopMultiplier = strategyProperties.getAtr().getStopMultiplier();
+        BigDecimal atr = stopMultiplier == 0
+                ? MoneyUtils.ZERO
+                : MoneyUtils.scale(entryPrice.subtract(stopLoss).abs().divide(BigDecimal.valueOf(stopMultiplier), MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP));
 
         int qty = sizingEngine.calculateQuantityIntelligent(equity, entryPrice, stopLoss, signal.getGrade(), currentVix, riskEngine);
 

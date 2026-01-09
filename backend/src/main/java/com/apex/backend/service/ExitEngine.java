@@ -3,16 +3,16 @@ package com.apex.backend.service;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
-import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 
 @Component
 @Slf4j
 public class ExitEngine { // ✅ FIXED: Class name matches file name
 
-    private final StrategyConfig strategyConfig;
+    private final StrategyProperties strategyProperties;
 
-    public ExitEngine(StrategyConfig strategyConfig) {
-        this.strategyConfig = strategyConfig;
+    public ExitEngine(StrategyProperties strategyProperties) {
+        this.strategyProperties = strategyProperties;
     }
 
     public ExitDecision manageTrade(TradeState state, double currentPrice,
@@ -29,11 +29,11 @@ public class ExitEngine { // ✅ FIXED: Class name matches file name
         double currentProfit = currentPrice - entryPrice;
         double profitInR = currentProfit / initialRisk;
 
-        double breakevenMoveR = strategyConfig.getRisk().getBreakevenMoveR();
-        double breakevenOffsetR = strategyConfig.getRisk().getBreakevenOffsetR();
-        double trailingStartR = strategyConfig.getRisk().getTrailingStartR();
-        double trailingAtrMultiplier = strategyConfig.getRisk().getTrailingAtrMultiplier();
-        double targetMultiplier = strategyConfig.getRisk().getTargetMultiplier();
+        double breakevenMoveR = strategyProperties.getExit().getBreakevenThreshold();
+        double breakevenOffsetR = 0.0;
+        double trailingStartR = strategyProperties.getExit().getTrailingThreshold();
+        double trailingAtrMultiplier = strategyProperties.getExit().getTrailingMultiplier();
+        double targetMultiplier = strategyProperties.getAtr().getTargetMultiplier();
 
         // 1. Breakeven after configured R
         if (!state.isBreakevenMoved() && profitInR >= breakevenMoveR) {
@@ -51,8 +51,8 @@ public class ExitEngine { // ✅ FIXED: Class name matches file name
             }
         }
 
-        if (momentumWeakness && profitInR >= strategyConfig.getRisk().getMomentumWeaknessTightenR()) {
-            double tightenedStop = entryPrice + (initialRisk * strategyConfig.getRisk().getMomentumWeaknessStopOffsetR());
+        if (momentumWeakness && profitInR >= strategyProperties.getExit().getTrailingThreshold()) {
+            double tightenedStop = entryPrice;
             if (tightenedStop > state.getCurrentStopLoss()) {
                 state.setCurrentStopLoss(tightenedStop);
             }

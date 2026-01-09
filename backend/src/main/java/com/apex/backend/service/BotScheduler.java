@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class BotScheduler {
     
     private final StrategyConfig config;
-    private final CircuitBreaker circuitBreaker;
+    private final CircuitBreakerService circuitBreakerService;
     private final ScannerOrchestrator scannerOrchestrator;
     private final ExitManager exitManager;
     private final LogBroadcastService logger;
@@ -60,7 +60,7 @@ public class BotScheduler {
             return;
         }
         
-        if (circuitBreaker.isGlobalHalt()) {
+        if (circuitBreakerService.isGlobalHalt()) {
             log.warn("⛔ Circuit Breaker Active. Skipping cycle.");
             botStatusService.markPaused("Circuit breaker active");
             return;
@@ -84,7 +84,7 @@ public class BotScheduler {
             log.error("❌ Error in bot cycle", e);
             botStatusService.setLastError(e.getMessage());
             // Update metrics to trigger circuit breaker if needed
-            circuitBreaker.updateMetrics();
+            circuitBreakerService.updateMetrics();
         }
     }
     

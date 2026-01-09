@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.util.MoneyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,7 @@ import java.math.RoundingMode;
 public class PositionSizingEngine {
 
     private final StrategyConfig config;
+    private final StrategyProperties strategyProperties;
 
     public int calculateQuantityIntelligent(
             BigDecimal currentEquity,
@@ -32,16 +34,16 @@ public class PositionSizingEngine {
         }
 
         // 2. Base Risk (1% default)
-        double riskPercent = config.getRisk().getMaxPositionLossPct();
+        double riskPercent = strategyProperties.getSizing().getBaseRisk();
         log.info("🔹 Base Risk: {}%", riskPercent * 100);
 
         // 3. Grade Multiplier
         double gradeMultiplier = 1.0;
         switch (grade) {
-            case "A+++": gradeMultiplier = 2.0; break;
-            case "A++":  gradeMultiplier = 1.5; break;
+            case "A+++": gradeMultiplier = strategyProperties.getSizing().getMultiplierAaa(); break;
+            case "A++":  gradeMultiplier = strategyProperties.getSizing().getMultiplierAa(); break;
             case "A+":
-            case "A":    gradeMultiplier = 1.0; break;
+            case "A":    gradeMultiplier = strategyProperties.getSizing().getMultiplierA(); break;
             default:     gradeMultiplier = 0.75; // Penalize B/C grades
         }
         riskPercent *= gradeMultiplier;

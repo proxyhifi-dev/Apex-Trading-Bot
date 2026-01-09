@@ -1,9 +1,14 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Candle;
-import com.apex.backend.service.IndicatorEngine.AdxResult;
-import com.apex.backend.service.IndicatorEngine.MacdResult;
+import com.apex.backend.service.StrategyScoringService.ScoreBreakdown;
+import com.apex.backend.service.indicator.AdxService;
+import com.apex.backend.service.indicator.AtrService;
+import com.apex.backend.service.indicator.BollingerBandService;
+import com.apex.backend.service.indicator.MacdService;
+import com.apex.backend.service.indicator.RsiService;
+import com.apex.backend.service.indicator.SqueezeService;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -19,8 +24,14 @@ import java.util.List;
 @RequiredArgsConstructor
 public class SmartSignalGenerator {
 
-    private final IndicatorEngine indicatorEngine;
-    private final StrategyConfig config;
+    private final StrategyProperties strategyProperties;
+    private final MacdService macdService;
+    private final AdxService adxService;
+    private final RsiService rsiService;
+    private final AtrService atrService;
+    private final BollingerBandService bollingerBandService;
+    private final SqueezeService squeezeService;
+    private final StrategyScoringService strategyScoringService;
 
     @Data
     @Builder
@@ -37,6 +48,10 @@ public class SmartSignalGenerator {
         public double macdLine;
         public double adx;
         public double rsi;
+        public double atr;
+        public double atrPercent;
+        public boolean squeeze;
+        public double macdMomentumScore;
 
         // Helper to check signal
         public boolean isHasSignal() { return hasSignal; }
@@ -45,48 +60,75 @@ public class SmartSignalGenerator {
     public SignalDecision generateSignalSmart(String symbol, List<Candle> m5, List<Candle> m15, List<Candle> h1, List<Candle> daily) {
         if (m5.size() < 50) return SignalDecision.builder().hasSignal(false).reason("Insufficient Data").build();
 
-        AdxResult adxRes = indicatorEngine.calculateADX(m5);
-        double rsi = indicatorEngine.calculateRSI(m5);
-        MacdResult macdRes = indicatorEngine.calculateMACD(m5);
-        boolean squeeze = indicatorEngine.hasBollingerSqueeze(m5);
-        double currentAtr = indicatorEngine.calculateATR(m5, 14);
+        MacdService.MacdResult macdRes = macdService.calculate(m5);
+        AdxService.AdxResult adxRes = adxService.calculate(m5);
+        RsiService.RsiResult rsiRes = rsiService.calculate(m5);
+        AtrService.AtrResult atrRes = atrService.calculate(m5);
+        SqueezeService.SqueezeResult squeezeRes = squeezeService.detect(m5);
+        BollingerBandService.BollingerBands bollinger = bollingerBandService.calculate(m5);
+        ScoreBreakdown breakdown = strategyScoringService.score(m5);
 
-        double minAdx = config.getStrategy().getAdxThreshold();
+        double minAdx = strategyProperties.getAdx().getThreshold();
+        double close = m5.get(m5.size() - 1).getClose();
 
-        if (adxRes.getAdx() < minAdx) {
-            return SignalDecision.builder().hasSignal(false).reason("ADX Low").build();
+        boolean rsiGoldilocks = rsiRes.rsi() >= strategyProperties.getRsi().getGoldilocksMin()
+                && rsiRes.rsi() <= strategyProperties.getRsi().getGoldilocksMax();
+        boolean atrValid = atrRes.atrPercent() >= strategyProperties.getAtr().getMinPercent()
+                && atrRes.atrPercent() <= strategyProperties.getAtr().getMaxPercent();
+        boolean strongMomentum = macdRes.histogram() > 0
+                && macdRes.momentumScore() >= strategyProperties.getMacd().getMinMomentumScore();
+        boolean squeezeBreakout = squeezeRes.squeeze() && close > bollinger.upper();
+
+        if (breakdown.totalScore() < 70) {
+            return SignalDecision.builder().hasSignal(false).score((int) Math.round(breakdown.totalScore())).reason("Score Below 70").build();
         }
 
-        int score = 0;
-        StringBuilder reason = new StringBuilder();
-
-        if (macdRes.getMacdLine() > macdRes.getSignalLine()) { score += 20; reason.append("MACD "); }
-        if (adxRes.getAdx() >= minAdx) { score += 20; reason.append("Trend "); }
-
-        if (rsi >= 40 && rsi <= 70) { score += 20; reason.append("RSI "); }
-        if (squeeze) { score += 20; reason.append("Squeeze "); }
-
-        double close = m5.get(m5.size() - 1).getClose();
-        if (close > indicatorEngine.calculateEMA(m5, 50)) { score += 10; reason.append("EMA50 "); }
-
-        if (score >= config.getStrategy().getMinEntryScore()) {
-            double sl = close - (currentAtr * 2.0);
-            String grade = score >= 90 ? "A+" : (score >= 80 ? "A" : "B");
-
+        if (adxRes.adx() < minAdx || !rsiGoldilocks || !atrValid || !(squeezeBreakout || strongMomentum)) {
             return SignalDecision.builder()
-                    .hasSignal(true)
-                    .symbol(symbol)
-                    .score(score)
-                    .grade(grade)
-                    .entryPrice(close)
-                    .suggestedStopLoss(sl)
-                    .reason(reason.toString())
-                    .macdLine(macdRes.getMacdLine())
-                    .adx(adxRes.getAdx())
-                    .rsi(rsi)
+                    .hasSignal(false)
+                    .score((int) Math.round(breakdown.totalScore()))
+                    .reason("Entry conditions not met")
                     .build();
         }
 
-        return SignalDecision.builder().hasSignal(false).score(score).reason("Low Score").build();
+        double sl = close - (atrRes.atr() * strategyProperties.getAtr().getStopMultiplier());
+        String grade = breakdown.totalScore() >= 90 ? "A+++"
+                : (breakdown.totalScore() >= 85 ? "A++"
+                : (breakdown.totalScore() >= 80 ? "A+" : "A"));
+
+        String reason = String.format(
+                "Score=%.1f (momentum=%.1f trend=%.1f rsi=%.1f vol=%.1f squeeze=%.1f) | " +
+                        "MACD momentum=%.1f ADX=%.1f RSI=%.1f ATR%%=%.2f squeeze=%s(%d,%.2f)",
+                breakdown.totalScore(),
+                breakdown.momentumScore(),
+                breakdown.trendScore(),
+                breakdown.rsiScore(),
+                breakdown.volatilityScore(),
+                breakdown.squeezeScore(),
+                breakdown.macdMomentumScore(),
+                breakdown.adxValue(),
+                breakdown.rsiValue(),
+                breakdown.atrPercent(),
+                breakdown.squeezeActive(),
+                breakdown.squeezeBars(),
+                breakdown.squeezeRatio()
+        );
+
+        return SignalDecision.builder()
+                .hasSignal(true)
+                .symbol(symbol)
+                .score((int) Math.round(breakdown.totalScore()))
+                .grade(grade)
+                .entryPrice(close)
+                .suggestedStopLoss(sl)
+                .reason(reason)
+                .macdLine(macdRes.macdLine())
+                .adx(adxRes.adx())
+                .rsi(rsiRes.rsi())
+                .atr(atrRes.atr())
+                .atrPercent(atrRes.atrPercent())
+                .squeeze(squeezeRes.squeeze())
+                .macdMomentumScore(macdRes.momentumScore())
+                .build();
     }
 }
