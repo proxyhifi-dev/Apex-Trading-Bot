@@ -22,6 +22,7 @@ public class ExitManager {
     private final TradeRepository tradeRepository;
     private final PaperTradingService paperTradingService;
     private final FyersService fyersService;
+    private final ExecutionCostModel executionCostModel;
     private final StrategyProperties strategyProperties;
     private final RiskManagementEngine riskManagementEngine;
     private final ExitPriorityEngine exitPriorityEngine;
@@ -260,6 +261,20 @@ public class ExitManager {
     }
 
     private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason, String detail) {
+        if (trade.isPaperTrade() && exitPrice != null) {
+            double atr = trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0;
+            ExecutionCostModel.ExecutionEstimate estimate = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
+                    trade.getSymbol(),
+                    trade.getQuantity(),
+                    exitPrice.doubleValue(),
+                    exitPrice.doubleValue(),
+                    ExecutionCostModel.OrderType.MARKET,
+                    ExecutionCostModel.ExecutionSide.SELL,
+                    List.of(),
+                    atr
+            ));
+            exitPrice = MoneyUtils.bd(estimate.effectivePrice());
+        }
         trade.setExitPrice(exitPrice);
         trade.setExitTime(LocalDateTime.now());
         trade.setStatus(Trade.TradeStatus.CLOSED);

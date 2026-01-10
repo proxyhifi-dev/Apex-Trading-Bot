@@ -44,3 +44,20 @@ Flyway migrations run automatically on startup. Schema changes should be applied
 ```
 src/main/resources/db/migration
 ```
+
+## Backtest + Validation
+
+1. Run a backtest:
+   ```bash
+   curl -X POST http://localhost:8080/api/backtest/run \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"symbol":"NSE:RELIANCE-EQ","timeframe":"5","bars":200}'
+   ```
+2. Validate the stored backtest result:
+   ```bash
+   curl -X POST http://localhost:8080/api/backtest/validate \
+     -H "Authorization: Bearer <token>" \
+     -H "Content-Type: application/json" \
+     -d '{"backtestResultId":1}'
+   ```

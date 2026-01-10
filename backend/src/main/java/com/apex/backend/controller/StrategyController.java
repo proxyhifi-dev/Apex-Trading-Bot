@@ -1,6 +1,7 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.dto.SignalDTO;
+import com.apex.backend.dto.StrategyHealthResponse;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.StockScreeningResult;
 import com.apex.backend.model.TradingMode;
@@ -9,6 +10,7 @@ import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.BotScheduler;
 import com.apex.backend.service.SettingsService;
+import com.apex.backend.service.StrategyHealthService;
 import com.apex.backend.service.TradeExecutionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,6 +32,7 @@ public class StrategyController {
     private final TradeExecutionService tradeExecutionService;
     private final BotScheduler botScheduler;
     private final SettingsService settingsService;
+    private final StrategyHealthService strategyHealthService;
     
     /**
      * Trigger manual market scan
@@ -120,11 +123,47 @@ public class StrategyController {
                 .build());
     }
 
+    @GetMapping("/health")
+    public ResponseEntity<StrategyHealthResponse> getHealth(@AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
+        var decision = strategyHealthService.evaluate(userId);
+        var state = strategyHealthService.getLatestState(userId);
+        return ResponseEntity.ok(new StrategyHealthResponse(
+                decision.status().name(),
+                state != null && state.isPaused(),
+                decision.reasons()
+        ));
+    }
+
+    @PostMapping("/pause")
+    public ResponseEntity<?> pause(@AuthenticationPrincipal UserPrincipal principal) {
+        requireRole(principal);
+        Long userId = requireUserId(principal);
+        return ResponseEntity.ok(strategyHealthService.pause(userId, "Manual pause"));
+    }
+
+    @PostMapping("/resume")
+    public ResponseEntity<?> resume(@AuthenticationPrincipal UserPrincipal principal) {
+        requireRole(principal);
+        Long userId = requireUserId(principal);
+        return ResponseEntity.ok(strategyHealthService.resume(userId));
+    }
+
     private Long requireUserId(UserPrincipal principal) {
         if (principal == null || principal.getUserId() == null) {
             throw new UnauthorizedException("Missing authentication");
         }
         return principal.getUserId();
+    }
+
+    private void requireRole(UserPrincipal principal) {
+        if (principal == null || principal.getRole() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        String role = principal.getRole();
+        if (!role.equalsIgnoreCase("ADMIN") && !role.equalsIgnoreCase("USER")) {
+            throw new UnauthorizedException("Insufficient permissions");
+        }
     }
 
     private BigDecimal resolveEntryPrice(StockScreeningResult result) {

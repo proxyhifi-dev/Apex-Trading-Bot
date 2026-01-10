@@ -31,6 +31,7 @@ public class BacktestEngine {
     private final MacdConfirmationService macdConfirmationService;
     private final CandleConfirmationValidator candleConfirmationValidator;
     private final BacktestResultRepository backtestResultRepository;
+    private final ExecutionCostModel executionCostModel;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public BacktestResult run(String symbol, String timeframe, List<Candle> candles) {
@@ -51,12 +52,12 @@ public class BacktestEngine {
 
     public Map<String, Object> calculateMetrics(List<Candle> candles) {
         List<BacktestTrade> trades = simulateTrades(candles);
-        return calculateMetrics(trades);
+        return calculateTradeMetrics(trades);
     }
 
     public double calculateExpectancy(List<Candle> candles) {
         Map<String, Object> metrics = calculateMetrics(candles);
-        Object value = metrics.get(\"expectancyR\");
+        Object value = metrics.get("expectancyR");
         return value instanceof Number ? ((Number) value).doubleValue() : 0.0;
     }
 
@@ -76,7 +77,17 @@ public class BacktestEngine {
                     double entry = candle.getClose();
                     double stop = entry - (atr * strategyProperties.getAtr().getStopMultiplier());
                     double target = entry + (atr * strategyProperties.getAtr().getTargetMultiplier());
-                    current = new BacktestTrade(entry, stop, target, candle.getTimestamp(), i);
+                    var entryCost = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
+                            "BACKTEST",
+                            1,
+                            entry,
+                            entry,
+                            ExecutionCostModel.OrderType.MARKET,
+                            ExecutionCostModel.ExecutionSide.BUY,
+                            window,
+                            null
+                    ));
+                    current = new BacktestTrade(entryCost.effectivePrice(), stop, target, candle.getTimestamp(), i);
                     inTrade = true;
                 }
             } else if (current != null) {
@@ -84,8 +95,18 @@ public class BacktestEngine {
                 boolean targetHit = candle.getHigh() >= current.target;
                 int barsHeld = i - current.entryIndex;
                 if (stopHit || targetHit || barsHeld >= advancedTradingProperties.getBacktest().getMaxBarsInTrade()) {
-                    double exitPrice = stopHit ? current.stopLoss : targetHit ? current.target : candle.getClose();
-                    current.exit(exitPrice, candle.getTimestamp());
+                    double rawExitPrice = stopHit ? current.stopLoss : targetHit ? current.target : candle.getClose();
+                    var exitCost = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
+                            "BACKTEST",
+                            1,
+                            rawExitPrice,
+                            rawExitPrice,
+                            ExecutionCostModel.OrderType.MARKET,
+                            ExecutionCostModel.ExecutionSide.SELL,
+                            window,
+                            null
+                    ));
+                    current.exit(exitCost.effectivePrice(), candle.getTimestamp());
                     trades.add(current);
                     inTrade = false;
                     current = null;
@@ -95,7 +116,7 @@ public class BacktestEngine {
         return trades;
     }
 
-    private Map<String, Object> calculateMetrics(List<BacktestTrade> trades) {
+    private Map<String, Object> calculateTradeMetrics(List<BacktestTrade> trades) {
         Map<String, Object> metrics = new HashMap<>();
         if (trades.isEmpty()) {
             metrics.put("totalTrades", 0);

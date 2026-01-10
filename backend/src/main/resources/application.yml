@@ -50,3 +50,43 @@ apex:
     broker:
       failure-threshold: 3
       cool-down-seconds: 120
+
+strategy:
+  health:
+    rolling-trades: 30
+    min-expectancy: 0.1
+    min-sharpe: 0.5
+    max-drawdown-pct: 0.1
+    max-consecutive-loss-probability: 0.2
+
+execution:
+  spread-pct: 0.0005
+  slippage-atr-pct: 0.1
+  impact-factor: 0.05
+  avg-daily-notional: 10000000.0
+  latency-millis: 200
+  latency-move-pct-per-second: 0.0005
+  limit-fill-max-distance-pct: 0.002
+  limit-fill-volume-factor: 0.2
+  default-order-type: MARKET
+
+analytics:
+  validation:
+    bootstrap-samples: 500
+    num-trials: 50
+  cvar:
+    confidence: 95
+
+risk:
+  ruin:
+    risk-per-trade-pct: 0.01
+    bankroll-r: 50
+  correlation:
+    lookback: 50
+    spike-threshold: 0.75
+    sizing-multiplier-on-spike: 0.5
+
+dataQuality:
+  max-missing-candles: 1
+  max-gap-multiplier: 2.0
+  outlier-pct: 0.1

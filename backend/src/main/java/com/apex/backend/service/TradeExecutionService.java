@@ -7,7 +7,9 @@ import com.apex.backend.repository.OrderIntentRepository;
 import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.service.SmartSignalGenerator.SignalDecision;
+import com.apex.backend.trading.pipeline.DecisionResult;
+import com.apex.backend.trading.pipeline.PipelineRequest;
+import com.apex.backend.trading.pipeline.TradeDecisionPipelineService;
 import com.apex.backend.config.StrategyProperties;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -33,35 +36,32 @@ public class TradeExecutionService {
     private final SettingsService settingsService;
     private final StrategyProperties strategyProperties;
     private final HybridPositionSizingService hybridPositionSizingService;
-    private final PortfolioHeatService portfolioHeatService;
-    private final LiquidityValidator liquidityValidator;
     private final ExecutionCostModel executionCostModel;
     private final OrderIntentRepository orderIntentRepository;
     private final MetricsService metricsService;
     private final DecisionAuditService decisionAuditService;
+    private final TradeDecisionPipelineService tradeDecisionPipelineService;
+    private final TradeFeatureAttributionService tradeFeatureAttributionService;
 
     @Transactional
-    public void executeAutoTrade(Long userId, SignalDecision decision, boolean isPaper, double currentVix) {
+    public void executeAutoTrade(Long userId, DecisionResult decision, boolean isPaper, double currentVix) {
         if (userId == null) {
             throw new BadRequestException("User ID is required for trade execution");
         }
         boolean effectivePaperMode = settingsService.isPaperModeForUser(userId);
-        log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.getSymbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
-        log.info("📊 Score Breakdown: {}", decision.getReason());
+        log.info("🤖 Auto-Trade Signal: {} | VIX: {} | Mode: {}", decision.symbol(), currentVix, effectivePaperMode ? "PAPER" : "LIVE");
+        log.info("📊 Score Breakdown: {}", decision.signalScore().reason());
 
         StockScreeningResult signal = StockScreeningResult.builder()
                 .userId(userId)
-                .symbol(decision.getSymbol())
-                .signalScore(decision.getScore())
-                .grade(decision.getGrade())
-                .entryPrice(MoneyUtils.bd(decision.getEntryPrice()))
-                .stopLoss(MoneyUtils.bd(decision.getSuggestedStopLoss()))
+                .symbol(decision.symbol())
+                .signalScore((int) Math.round(decision.score()))
+                .grade(decision.signalScore().grade())
+                .entryPrice(MoneyUtils.bd(decision.signalScore().entryPrice()))
+                .stopLoss(MoneyUtils.bd(decision.signalScore().suggestedStopLoss()))
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
-                .analysisReason(decision.getReason())
-                .macdValue(decision.getMacdLine())
-                .rsiValue(decision.getRsi())
-                .adxValue(decision.getAdx())
+                .analysisReason(decision.signalScore().reason())
                 .build();
 
         signal = screeningRepo.save(signal);
@@ -75,15 +75,33 @@ public class TradeExecutionService {
 
         if (signal.getApprovalStatus() == StockScreeningResult.ApprovalStatus.EXECUTED) return;
 
+        List<com.apex.backend.model.Candle> candles = fyersService.getHistoricalData(signal.getSymbol(), 200, "5");
+        DecisionResult pipelineDecision = tradeDecisionPipelineService.evaluate(new PipelineRequest(
+                userId,
+                signal.getSymbol(),
+                "5",
+                candles,
+                null
+        ));
+        if (pipelineDecision.action() != DecisionResult.DecisionAction.BUY) {
+            metricsService.recordReject("PIPELINE_HOLD");
+            signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
+            screeningRepo.save(signal);
+            return;
+        }
         BigDecimal equity = MoneyUtils.bd(portfolioService.getAvailableEquity(isPaper, userId));
-        BigDecimal stopLoss = signal.getStopLoss();
-        BigDecimal entryPrice = signal.getEntryPrice();
+        BigDecimal stopLoss = MoneyUtils.bd(pipelineDecision.signalScore().suggestedStopLoss());
+        BigDecimal entryPrice = MoneyUtils.bd(pipelineDecision.signalScore().entryPrice());
         double stopMultiplier = strategyProperties.getAtr().getStopMultiplier();
         BigDecimal atr = stopMultiplier == 0
                 ? MoneyUtils.ZERO
                 : MoneyUtils.scale(entryPrice.subtract(stopLoss).abs().divide(BigDecimal.valueOf(stopMultiplier), MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP));
 
-        int qty = hybridPositionSizingService.calculateQuantity(equity, entryPrice, stopLoss, atr, userId);
+        int qty = pipelineDecision.riskDecision().recommendedQuantity();
+        if (qty == 0) {
+            qty = hybridPositionSizingService.calculateQuantity(equity, entryPrice, stopLoss, atr, userId);
+        }
+        qty = (int) Math.floor(qty * pipelineDecision.riskDecision().sizingMultiplier());
 
         if (qty == 0) {
             metricsService.recordReject("SIZE_ZERO");
@@ -92,22 +110,7 @@ public class TradeExecutionService {
             return;
         }
 
-        LiquidityValidator.LiquidityDecision liquidityDecision = liquidityValidator.validate(
-                signal.getSymbol(),
-                fyersService.getHistoricalData(signal.getSymbol(), 30, "D"),
-                qty
-        );
-        if (!liquidityDecision.allowed()) {
-            metricsService.recordReject("LIQUIDITY");
-            signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
-            screeningRepo.save(signal);
-            return;
-        }
-        qty = liquidityDecision.adjustedQty();
-
-        if (!portfolioHeatService.withinHeatLimit(userId, equity, entryPrice, stopLoss, qty)
-                || !portfolioHeatService.passesCorrelationCheck(signal.getSymbol(), userId)
-                || !riskEngine.canExecuteTrade(equity.doubleValue(), signal.getSymbol(), entryPrice.doubleValue(), stopLoss.doubleValue(), qty)) {
+        if (!pipelineDecision.riskDecision().allowed()) {
             metricsService.recordReject("RISK_GATE");
             signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
             screeningRepo.save(signal);
@@ -165,6 +168,17 @@ public class TradeExecutionService {
             if (executionCost.getExpectedCost() != null) {
                 executionCostModel.updateRealizedCost(clientOrderId, executionCost.getExpectedCost().doubleValue(), "PAPER");
             }
+            ExecutionCostModel.ExecutionEstimate estimate = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
+                    signal.getSymbol(),
+                    qty,
+                    entryPrice.doubleValue(),
+                    entryPrice.doubleValue(),
+                    ExecutionCostModel.OrderType.MARKET,
+                    ExecutionCostModel.ExecutionSide.BUY,
+                    candles,
+                    atr.doubleValue()
+            ));
+            entryPrice = MoneyUtils.bd(estimate.effectivePrice());
         }
 
         riskEngine.addOpenPosition(signal.getSymbol(), entryPrice.doubleValue());
@@ -188,13 +202,14 @@ public class TradeExecutionService {
         tradeRepo.save(trade);
         metricsService.incrementOrdersPlaced();
         decisionAuditService.record(signal.getSymbol(), "5m", "SIGNAL_SCORE", Map.of(
-                "score", signal.getSignalScore(),
-                "grade", signal.getGrade(),
-                "reason", signal.getAnalysisReason()
+                "score", pipelineDecision.score(),
+                "grade", pipelineDecision.signalScore().grade(),
+                "reason", pipelineDecision.signalScore().reason()
         ));
         if (isPaper) {
             paperTradingService.recordEntry(userId, trade);
         }
+        tradeFeatureAttributionService.saveAttributions(trade.getId(), userId, signal.getSymbol(), pipelineDecision.signalScore().featureContributions());
         signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.EXECUTED);
         screeningRepo.save(signal);
     }

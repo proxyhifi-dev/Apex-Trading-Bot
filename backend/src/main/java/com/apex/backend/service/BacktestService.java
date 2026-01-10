@@ -24,7 +24,7 @@ public class BacktestService {
     private final DataAdjustmentService dataAdjustmentService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public BacktestResult runBacktest(String symbol, String timeframe, int bars) {
+    public BacktestResult runBacktest(Long userId, String symbol, String timeframe, int bars) {
         List<Candle> candles = fyersService.getHistoricalData(symbol, bars, timeframe);
         candles = dataAdjustmentService.applyCorporateActions(candles, List.of());
         Map<String, Object> metrics = new HashMap<>(backtestEngine.calculateMetrics(candles));
@@ -36,6 +36,7 @@ public class BacktestService {
         ));
         String metricsJson = toJson(metrics);
         BacktestResult result = BacktestResult.builder()
+                .userId(userId)
                 .symbol(symbol)
                 .timeframe(timeframe)
                 .startTime(candles.isEmpty() ? null : candles.get(0).getTimestamp())
