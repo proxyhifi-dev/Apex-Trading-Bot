@@ -14,7 +14,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class BacktestEngineTest {
 
@@ -27,7 +29,9 @@ class BacktestEngineTest {
         MacdConfirmationService macdConfirmationService = new MacdConfirmationService(macdService, advanced);
         CandleConfirmationValidator candleConfirmationValidator = new CandleConfirmationValidator(advanced);
         BacktestResultRepository repo = mock(BacktestResultRepository.class);
-        BacktestEngine engine = new BacktestEngine(atrService, strategyProperties, advanced, macdConfirmationService, candleConfirmationValidator, repo);
+        ExecutionCostModel executionCostModel = mock(ExecutionCostModel.class);
+        when(executionCostModel.estimateExecution(any())).thenReturn(new ExecutionCostModel.ExecutionEstimate(0, 0, 0, 0, 0, 0, 1));
+        BacktestEngine engine = new BacktestEngine(atrService, strategyProperties, advanced, macdConfirmationService, candleConfirmationValidator, repo, executionCostModel);
 
         List<com.apex.backend.model.Candle> candles = TestCandleFactory.trendingCandles(120, 100, 0.8);
         Map<String, Object> metrics = engine.calculateMetrics(candles);

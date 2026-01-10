@@ -21,6 +21,7 @@ public class BotScheduler {
     private final ExitManager exitManager;
     private final LogBroadcastService logger;
     private final BotStatusService botStatusService;
+    private final StrategyHealthService strategyHealthService;
     
     // Market data connection status
     private final AtomicBoolean marketDataConnected = new AtomicBoolean(true);
@@ -74,6 +75,11 @@ public class BotScheduler {
             if (ownerUserId == null) {
                 log.warn("⚠️ Skipping bot cycle because apex.trading.owner-user-id is not configured.");
                 botStatusService.markPaused("Owner user not configured");
+                return;
+            }
+            var healthState = strategyHealthService.getLatestState(ownerUserId);
+            if (healthState != null && healthState.isPaused()) {
+                botStatusService.markPaused("Strategy health paused");
                 return;
             }
             exitManager.manageExits(ownerUserId);

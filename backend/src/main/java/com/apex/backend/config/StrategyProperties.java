@@ -21,6 +21,7 @@ public class StrategyProperties {
     private Circuit circuit = new Circuit();
     private Scoring scoring = new Scoring();
     private Scanner scanner = new Scanner();
+    private Health health = new Health();
 
     @Data
     public static class Macd {
@@ -112,5 +113,14 @@ public class StrategyProperties {
     public static class Scanner {
         private int maxCandidates = 5;
         private boolean requireManualApproval = false;
+    }
+
+    @Data
+    public static class Health {
+        private int rollingTrades = 30;
+        private double minExpectancy = 0.1;
+        private double minSharpe = 0.5;
+        private double maxDrawdownPct = 0.1;
+        private double maxConsecutiveLossProbability = 0.2;
     }
 }

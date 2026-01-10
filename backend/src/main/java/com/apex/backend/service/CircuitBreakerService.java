@@ -77,7 +77,7 @@ public class CircuitBreakerService {
         metricsService.updatePnl(tradeResult);
         persistState();
         updateMetrics();
-        if (strategyProperties.getCircuit().getAutoPause() && consecutiveLosses >= strategyProperties.getCircuit().getMaxConsecutiveLosses()) {
+        if (strategyProperties.getCircuit().isAutoPause() && consecutiveLosses >= strategyProperties.getCircuit().getMaxConsecutiveLosses()) {
             pauseTrading("MAX_CONSECUTIVE_LOSSES", null);
         }
     }
@@ -90,13 +90,13 @@ public class CircuitBreakerService {
         PnlSummary pnlSummary = calculatePnl(ownerUserId);
         StrategyProperties.Circuit circuit = strategyProperties.getCircuit();
 
-        if (circuit.getAutoPause() && pnlSummary.dailyPnl <= -(circuit.getDailyLossLimit() * pnlSummary.startingCapital)) {
+        if (circuit.isAutoPause() && pnlSummary.dailyPnl <= -(circuit.getDailyLossLimit() * pnlSummary.startingCapital)) {
             pauseTrading("DAILY_LIMIT", BigDecimal.valueOf(pnlSummary.dailyPnl));
         }
-        if (circuit.getAutoPause() && pnlSummary.weeklyPnl <= -(circuit.getWeeklyLossLimit() * pnlSummary.startingCapital)) {
+        if (circuit.isAutoPause() && pnlSummary.weeklyPnl <= -(circuit.getWeeklyLossLimit() * pnlSummary.startingCapital)) {
             pauseTrading("WEEKLY_LIMIT", BigDecimal.valueOf(pnlSummary.weeklyPnl));
         }
-        if (circuit.getAutoPause() && pnlSummary.monthlyPnl <= -(circuit.getMonthlyLossLimit() * pnlSummary.startingCapital)) {
+        if (circuit.isAutoPause() && pnlSummary.monthlyPnl <= -(circuit.getMonthlyLossLimit() * pnlSummary.startingCapital)) {
             pauseTrading("MONTHLY_LIMIT", BigDecimal.valueOf(pnlSummary.monthlyPnl));
         }
     }
