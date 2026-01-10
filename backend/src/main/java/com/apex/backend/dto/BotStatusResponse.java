@@ -15,4 +15,8 @@ public class BotStatusResponse {
     private int totalStocks;
     private String strategyName;
     private String lastError;
+    private Double portfolioValue;
+    private Double availableEquity;
+    private Double portfolioHeat;
+    private Boolean tradingHalted;
 }

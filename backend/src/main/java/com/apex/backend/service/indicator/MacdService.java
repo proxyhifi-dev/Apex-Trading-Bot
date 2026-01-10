@@ -49,6 +49,58 @@ public class MacdService {
         return new MacdResult(macdLine, signalLine, histogram, momentumScore);
     }
 
+    public MacdSeries calculateSeries(List<Candle> candles) {
+        if (candles == null || candles.isEmpty()) {
+            return new MacdSeries(List.of(), List.of(), List.of());
+        }
+        StrategyProperties.Macd config = strategyProperties.getMacd();
+        int fast = config.getFastPeriod();
+        int slow = config.getSlowPeriod();
+        int signal = config.getSignalPeriod();
+
+        List<Double> closes = candles.stream().map(Candle::getClose).toList();
+        List<Double> fastSeries = calculateEmaSeries(closes, fast);
+        List<Double> slowSeries = calculateEmaSeries(closes, slow);
+
+        List<Double> macdSeries = new ArrayList<>();
+        for (int i = 0; i < closes.size(); i++) {
+            Double fastVal = fastSeries.get(i);
+            Double slowVal = slowSeries.get(i);
+            if (fastVal != null && slowVal != null) {
+                macdSeries.add(fastVal - slowVal);
+            } else {
+                macdSeries.add(null);
+            }
+        }
+
+        List<Double> signalSeries = calculateEmaSeries(
+                macdSeries.stream().filter(val -> val != null).toList(), signal);
+        List<Double> paddedSignal = new ArrayList<>();
+        int signalIndex = 0;
+        for (Double macdVal : macdSeries) {
+            if (macdVal == null) {
+                paddedSignal.add(null);
+            } else if (signalIndex < signalSeries.size()) {
+                paddedSignal.add(signalSeries.get(signalIndex));
+                signalIndex++;
+            } else {
+                paddedSignal.add(null);
+            }
+        }
+
+        List<Double> histogramSeries = new ArrayList<>();
+        for (int i = 0; i < macdSeries.size(); i++) {
+            Double macdVal = macdSeries.get(i);
+            Double sigVal = paddedSignal.get(i);
+            if (macdVal != null && sigVal != null) {
+                histogramSeries.add(macdVal - sigVal);
+            } else {
+                histogramSeries.add(null);
+            }
+        }
+        return new MacdSeries(macdSeries, paddedSignal, histogramSeries);
+    }
+
     private double calculateMomentumScore(double histogram, double price) {
         if (price <= 0) {
             return 0;
@@ -77,4 +129,6 @@ public class MacdService {
     }
 
     public record MacdResult(double macdLine, double signalLine, double histogram, double momentumScore) {}
+
+    public record MacdSeries(List<Double> macdLine, List<Double> signalLine, List<Double> histogram) {}
 }

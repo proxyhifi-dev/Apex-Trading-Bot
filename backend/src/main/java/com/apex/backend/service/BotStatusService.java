@@ -17,6 +17,10 @@ public class BotStatusService {
 
     private final StrategyConfig strategyConfig;
     private final BroadcastService broadcastService;
+    private final PortfolioService portfolioService;
+    private final SettingsService settingsService;
+    private final PortfolioHeatService portfolioHeatService;
+    private final RiskManagementEngine riskManagementEngine;
 
     private final AtomicReference<String> status = new AtomicReference<>("STOPPED");
     private final AtomicReference<String> lastError = new AtomicReference<>(null);
@@ -72,6 +76,11 @@ public class BotStatusService {
     }
 
     public BotStatusResponse getStatus() {
+        Long ownerUserId = strategyConfig.getTrading().getOwnerUserId();
+        boolean isPaper = ownerUserId != null && settingsService.isPaperModeForUser(ownerUserId);
+        Double portfolioValue = ownerUserId == null ? null : portfolioService.getPortfolioValue(isPaper, ownerUserId);
+        Double equity = ownerUserId == null ? null : portfolioService.getAvailableEquity(isPaper, ownerUserId);
+        Double heat = (ownerUserId == null || equity == null) ? null : portfolioHeatService.currentPortfolioHeat(ownerUserId, java.math.BigDecimal.valueOf(equity));
         return BotStatusResponse.builder()
                 .status(status.get())
                 .lastScanTime(lastScanTime)
@@ -80,6 +89,10 @@ public class BotStatusService {
                 .totalStocks(totalStocks.get())
                 .strategyName(strategyConfig.getStrategy().getName())
                 .lastError(lastError.get())
+                .portfolioValue(portfolioValue)
+                .availableEquity(equity)
+                .portfolioHeat(heat)
+                .tradingHalted(equity != null && riskManagementEngine.isTradingHalted(equity))
                 .build();
     }
 

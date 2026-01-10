@@ -1,0 +1,52 @@
+apex:
+  advanced:
+    market-regime:
+      trending-adx-threshold: 25.0
+      strong-trend-adx: 30.0
+      high-vol-atr-percent: 3.0
+      low-vol-atr-percent: 1.0
+    macd-confirmation:
+      divergence-lookback: 30
+      histogram-slope-lookback: 3
+    candle-confirmation:
+      required-candles: 3
+      volume-confirmation: true
+      volume-multiplier: 1.2
+      avg-volume-period: 20
+    multi-timeframe-momentum:
+      weights:
+        5m: 0.4
+        15m: 0.3
+        1h: 0.2
+        1d: 0.1
+      conflict-penalty: 0.15
+    risk:
+      max-portfolio-heat-pct: 0.06
+      correlation-threshold: 0.7
+      correlation-lookback: 50
+      kelly-lookback-trades: 50
+      kelly-fraction: 0.25
+      max-daily-loss-pct: 0.02
+      max-weekly-loss-pct: 0.1
+      max-monthly-loss-pct: 0.15
+    execution-cost:
+      spread-bps: 5.0
+      slippage-atr-pct: 0.1
+      commission-pct: 0.0003
+      stt-pct: 0.00025
+      txn-pct: 0.00003
+      sebi-pct: 0.000001
+      gst-pct: 0.18
+    liquidity:
+      min-rupee-volume: 2000000.0
+      max-spread-pct: 0.3
+      max-order-pct-daily-volume: 0.02
+      impact-lambda: 0.1
+    backtest:
+      max-bars-in-trade: 50
+      in-sample-bars: 200
+      out-sample-bars: 100
+      decay-lookback-trades: 20
+    broker:
+      failure-threshold: 3
+      cool-down-seconds: 120

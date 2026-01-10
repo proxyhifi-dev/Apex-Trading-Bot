@@ -2,14 +2,12 @@ package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.config.StrategyProperties;
-import com.apex.backend.model.Candle;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 @Component
@@ -20,8 +18,8 @@ public class RiskManagementEngine {
     private final StrategyProperties strategyProperties;
     private final SectorService sectorService;
     private final FyersService fyersService;
-    private final IndicatorEngine indicatorEngine;
     private final CircuitBreakerService circuitBreakerService;
+    private final PortfolioHeatService portfolioHeatService;
 
     private int consecutiveLosses = 0;
     private double dailyLossToday = 0;
@@ -33,14 +31,14 @@ public class RiskManagementEngine {
                                 StrategyProperties strategyProperties,
                                 SectorService sectorService,
                                 FyersService fyersService,
-                                IndicatorEngine indicatorEngine,
-                                CircuitBreakerService circuitBreakerService) {
+                                CircuitBreakerService circuitBreakerService,
+                                PortfolioHeatService portfolioHeatService) {
         this.config = config;
         this.strategyProperties = strategyProperties;
         this.sectorService = sectorService;
         this.fyersService = fyersService;
-        this.indicatorEngine = indicatorEngine;
         this.circuitBreakerService = circuitBreakerService;
+        this.portfolioHeatService = portfolioHeatService;
     }
 
     // ✅ FIXED: This is the method RiskController was looking for
@@ -74,21 +72,18 @@ public class RiskManagementEngine {
                 .filter(s -> sectorService.getSector(s).equals(newSector)).count();
         if (sectorCount >= config.getRisk().getMaxSectorPositions()) return false;
 
-        // Gate 6: Correlation
-        return checkCorrelation(symbol);
+        // Gate 6: Correlation & Portfolio Heat
+        boolean correlationOk = portfolioHeatService.passesCorrelationCheck(symbol, config.getTrading().getOwnerUserId());
+        boolean heatOk = portfolioHeatService.withinHeatLimit(config.getTrading().getOwnerUserId(),
+                java.math.BigDecimal.valueOf(currentEquity),
+                java.math.BigDecimal.valueOf(entryPrice),
+                java.math.BigDecimal.valueOf(stopLoss),
+                quantity);
+        return correlationOk && heatOk;
     }
 
     private boolean checkCorrelation(String newSymbol) {
-        double maxCorr = config.getRisk().getMaxCorrelation();
-        List<Candle> newHistory = fyersService.getHistoricalData(newSymbol, 50, "5");
-        if (newHistory.size() < 50) return true;
-
-        for (String openSymbol : openPositions.keySet()) {
-            List<Candle> openHistory = fyersService.getHistoricalData(openSymbol, 50, "5");
-            double correlation = indicatorEngine.calculateCorrelation(newHistory, openHistory);
-            if (correlation > maxCorr) return false;
-        }
-        return true;
+        return portfolioHeatService.passesCorrelationCheck(newSymbol, config.getTrading().getOwnerUserId());
     }
 
     public void updateDailyLoss(double tradeResult) {
@@ -113,4 +108,5 @@ public class RiskManagementEngine {
     public double getDailyLossPercent(double currentEquity) { return (Math.abs(dailyLossToday) / currentEquity) * 100.0; }
     public void addOpenPosition(String symbol, double price) { openPositions.put(symbol, price); }
     public void removeOpenPosition(String symbol) { openPositions.remove(symbol); }
+    public int getOpenPositionCount() { return openPositions.size(); }
 }

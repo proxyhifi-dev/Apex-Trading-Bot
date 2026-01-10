@@ -1,31 +1,30 @@
 package com.apex.backend.model;
 
 import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "paper_orders")
+@Table(name = "order_intents")
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class PaperOrder {
+public class OrderIntent {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private Long userId;
-
-    @Column(nullable = false, unique = true)
-    private String orderId;
-
     @Column(nullable = false, unique = true)
     private String clientOrderId;
+
+    @Column(nullable = false)
+    private Long userId;
 
     @Column(nullable = false)
     private String symbol;
@@ -34,13 +33,7 @@ public class PaperOrder {
     private String side;
 
     @Column(nullable = false)
-    private String orderType;
-
-    @Column(nullable = false)
     private Integer quantity;
-
-    @Column(precision = 19, scale = 4)
-    private BigDecimal price;
 
     @Column(nullable = false)
     private String status;
