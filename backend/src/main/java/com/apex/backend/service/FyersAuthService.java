@@ -33,6 +33,9 @@ public class FyersAuthService {
     private static final String VALIDATE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode";
     private static final String PROFILE_URL = "https://api-t1.fyers.in/api/v3/profile";
 
+    @Value("${fyers.api.refresh-url:https://api-t1.fyers.in/api/v3/refresh-token}")
+    private String refreshUrl;
+
     private final OkHttpClient httpClient = new OkHttpClient();
     private final Gson gson = new Gson();
     private final UserRepository userRepository;
@@ -60,7 +63,7 @@ public class FyersAuthService {
                 .toUriString();
     }
 
-    public String exchangeAuthCodeForToken(String authCode) throws Exception {
+    public FyersTokens exchangeAuthCodeForToken(String authCode) throws Exception {
         String appHash = generateAppHash();
 
         JsonObject requestBody = new JsonObject();
@@ -93,10 +96,45 @@ public class FyersAuthService {
 
             if (json.has("access_token")) {
                 log.info("✅ Successfully obtained Fyers access token");
-                return json.get("access_token").getAsString();
+                String accessToken = json.get("access_token").getAsString();
+                String refreshToken = json.has("refresh_token") ? json.get("refresh_token").getAsString() : null;
+                return new FyersTokens(accessToken, refreshToken);
             } else {
                 throw new Exception("Failed to obtain Fyers token: " + responseBody);
             }
+        }
+    }
+
+    public FyersTokens refreshAccessToken(String refreshToken) throws Exception {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            throw new Exception("Refresh token missing");
+        }
+        JsonObject requestBody = new JsonObject();
+        requestBody.addProperty("grant_type", "refresh_token");
+        requestBody.addProperty("refresh_token", refreshToken);
+
+        RequestBody body = RequestBody.create(
+                requestBody.toString(),
+                MediaType.parse("application/json; charset=utf-8")
+        );
+
+        Request request = new Request.Builder()
+                .url(refreshUrl)
+                .post(body)
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body().string();
+            if (!response.isSuccessful()) {
+                throw new Exception("Failed to refresh token: " + responseBody);
+            }
+            JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+            if (json.has("access_token")) {
+                String accessToken = json.get("access_token").getAsString();
+                String newRefreshToken = json.has("refresh_token") ? json.get("refresh_token").getAsString() : refreshToken;
+                return new FyersTokens(accessToken, newRefreshToken);
+            }
+            throw new Exception("Invalid refresh response: " + responseBody);
         }
     }
 
@@ -128,9 +166,16 @@ public class FyersAuthService {
     }
 
     public void storeFyersToken(Long userId, String token) {
+        storeFyersTokens(userId, new FyersTokens(token, null));
+    }
+
+    public void storeFyersTokens(Long userId, FyersTokens tokens) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new IllegalStateException("User not found for token storage"));
-        user.setFyersToken(token);
+        user.setFyersToken(tokens.accessToken());
+        if (tokens.refreshToken() != null && !tokens.refreshToken().isBlank()) {
+            user.setFyersRefreshToken(tokens.refreshToken());
+        }
         user.setFyersConnected(true);
         userRepository.save(user);
     }
@@ -139,6 +184,13 @@ public class FyersAuthService {
         return userRepository.findById(userId)
                 .filter(User::getFyersConnected)
                 .map(User::getFyersToken)
+                .orElse(null);
+    }
+
+    public String getFyersRefreshToken(Long userId) {
+        return userRepository.findById(userId)
+                .filter(User::getFyersConnected)
+                .map(User::getFyersRefreshToken)
                 .orElse(null);
     }
 
@@ -163,4 +215,6 @@ public class FyersAuthService {
         public String getEmail() { return email; }
         public void setEmail(String email) { this.email = email; }
     }
+
+    public record FyersTokens(String accessToken, String refreshToken) {}
 }

@@ -85,6 +85,8 @@ public class BacktestEngine {
                             ExecutionCostModel.OrderType.MARKET,
                             ExecutionCostModel.ExecutionSide.BUY,
                             window,
+                            null,
+                            null,
                             null
                     ));
                     current = new BacktestTrade(entryCost.effectivePrice(), stop, target, candle.getTimestamp(), i);
@@ -104,6 +106,8 @@ public class BacktestEngine {
                             ExecutionCostModel.OrderType.MARKET,
                             ExecutionCostModel.ExecutionSide.SELL,
                             window,
+                            null,
+                            null,
                             null
                     ));
                     current.exit(exitCost.effectivePrice(), candle.getTimestamp());

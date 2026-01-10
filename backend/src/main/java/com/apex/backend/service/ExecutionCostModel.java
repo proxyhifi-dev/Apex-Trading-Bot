@@ -20,33 +20,20 @@ public class ExecutionCostModel {
     private final ExecutionCostRepository executionCostRepository;
     private final com.apex.backend.service.indicator.AtrService atrService;
 
-    public ExecutionCost estimateCost(String clientOrderId, String symbol, int quantity, double price, double atr) {
-        ExecutionEstimate estimate = estimateExecution(new ExecutionRequest(
-                symbol,
-                quantity,
-                price,
-                price,
-                OrderType.MARKET,
-                ExecutionSide.BUY,
-                List.of(),
-                atr
-        ));
-        AdvancedTradingProperties.ExecutionCost cfg = advancedTradingProperties.getExecutionCost();
-        double notional = price * quantity;
-        double commissionCost = notional * cfg.getCommissionPct();
-        double taxBase = notional * (cfg.getSttPct() + cfg.getTxnPct() + cfg.getSebiPct());
-        double taxCost = taxBase + (taxBase * cfg.getGstPct());
-        double expected = estimate.totalCost + commissionCost + taxCost;
+    public ExecutionCost estimateCost(String clientOrderId, ExecutionRequest request) {
+        ExecutionEstimate estimate = estimateExecution(request);
+        CostBreakdown breakdown = computeCostBreakdown(request, estimate);
+        double expected = breakdown.totalCost();
 
         ExecutionCost cost = ExecutionCost.builder()
                 .clientOrderId(clientOrderId)
-                .symbol(symbol)
-                .quantity(quantity)
+                .symbol(request.symbol)
+                .quantity(request.quantity)
                 .expectedCost(MoneyUtils.bd(expected))
                 .spreadCost(MoneyUtils.bd(estimate.spreadCost))
                 .slippageCost(MoneyUtils.bd(estimate.slippageCost))
-                .commissionCost(MoneyUtils.bd(commissionCost))
-                .taxCost(MoneyUtils.bd(taxCost))
+                .commissionCost(MoneyUtils.bd(breakdown.commissionCost()))
+                .taxCost(MoneyUtils.bd(breakdown.taxCost()))
                 .createdAt(LocalDateTime.now())
                 .build();
         return executionCostRepository.save(cost);
@@ -67,14 +54,22 @@ public class ExecutionCostModel {
                 : request.candles != null && !request.candles.isEmpty()
                 ? atrService.calculate(request.candles).atr()
                 : Math.abs(request.price - request.limitPrice) * 0.5;
-        double spreadCost = request.price * executionProperties.getSpreadPct();
-        double slippageCost = atr * executionProperties.getSlippageAtrPct();
+        boolean hasBidAsk = request.bidPrice != null && request.askPrice != null
+                && request.bidPrice > 0 && request.askPrice > 0;
+        double spreadCost = hasBidAsk
+                ? Math.max(0.0, (request.askPrice - request.bidPrice) / 2.0)
+                : request.price * executionProperties.getSpreadPct();
+        double slippageCost = hasBidAsk ? 0.0 : atr * executionProperties.getSlippageAtrPct();
         double notional = request.price * request.quantity;
         double marketImpactCost = Math.sqrt(notional / executionProperties.getAvgDailyNotional())
                 * executionProperties.getImpactFactor() * request.price;
         double latencyCost = request.price * executionProperties.getLatencyMovePctPerSecond()
                 * (executionProperties.getLatencyMillis() / 1000.0);
         double totalPerShare = spreadCost + slippageCost + marketImpactCost + latencyCost;
+        double basePrice = request.price;
+        if (hasBidAsk) {
+            basePrice = request.side == ExecutionSide.BUY ? request.askPrice : request.bidPrice;
+        }
         double fillProbability = 1.0;
         if (request.orderType == OrderType.LIMIT) {
             double distancePct = Math.abs(request.limitPrice - request.price) / request.price;
@@ -84,8 +79,8 @@ public class ExecutionCostModel {
             fillProbability = distanceFactor * volumeFactor;
         }
         double effectivePrice = request.side == ExecutionSide.BUY
-                ? request.price + totalPerShare
-                : request.price - totalPerShare;
+                ? basePrice + totalPerShare
+                : basePrice - totalPerShare;
         return new ExecutionEstimate(
                 spreadCost,
                 slippageCost,
@@ -97,6 +92,24 @@ public class ExecutionCostModel {
         );
     }
 
+    public double calculateAllInCost(ExecutionRequest request) {
+        ExecutionEstimate estimate = estimateExecution(request);
+        CostBreakdown breakdown = computeCostBreakdown(request, estimate);
+        return breakdown.totalCost();
+    }
+
+    private CostBreakdown computeCostBreakdown(ExecutionRequest request, ExecutionEstimate estimate) {
+        AdvancedTradingProperties.ExecutionCost cfg = advancedTradingProperties.getExecutionCost();
+        double notional = request.price * request.quantity;
+        double commissionCost = notional * cfg.getCommissionPct();
+        double taxBase = notional * (cfg.getSttPct() + cfg.getTxnPct() + cfg.getSebiPct());
+        double taxCost = taxBase + (taxBase * cfg.getGstPct());
+        double total = estimate.totalCost + commissionCost + taxCost;
+        return new CostBreakdown(commissionCost, taxCost, total);
+    }
+
+    private record CostBreakdown(double commissionCost, double taxCost, double totalCost) {}
+
     public record ExecutionRequest(
             String symbol,
             int quantity,
@@ -105,7 +118,9 @@ public class ExecutionCostModel {
             OrderType orderType,
             ExecutionSide side,
             List<com.apex.backend.model.Candle> candles,
-            Double atrOverride
+            Double atrOverride,
+            Double bidPrice,
+            Double askPrice
     ) {}
 
     public record ExecutionEstimate(

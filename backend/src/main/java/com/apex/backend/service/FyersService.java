@@ -10,15 +10,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestTemplate;
-
-import jakarta.annotation.PostConstruct;
+import org.springframework.web.util.UriComponentsBuilder;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -32,33 +28,26 @@ import java.util.concurrent.Semaphore;
 @RequiredArgsConstructor
 public class FyersService {
 
-    private RestTemplate restTemplate;
     private final Gson gson = new Gson();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${fyers.api.app-id:}")
-    private String appId;
     @Value("${fyers.api.access-token:}")
     private String accessToken;
+    @Value("${fyers.api.base-url:https://api-t1.fyers.in/api/v3}")
+    private String apiBaseUrl;
+    @Value("${fyers.data.base-url:https://api-t1.fyers.in/data}")
+    private String dataBaseUrl;
 
     private final Environment environment;
     private final MetricsService metricsService;
     private final AlertService alertService;
-    private final BrokerCircuitBreakerService brokerCircuitBreakerService;
+    private final FyersHttpClient fyersHttpClient;
+    private final FyersTokenService fyersTokenService;
 
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
     private final Map<String, CacheEntry> candleCache = new ConcurrentHashMap<>();
     private final Map<String, CacheEntry> ltpCache = new ConcurrentHashMap<>();
-
-    @PostConstruct
-    public void init() {
-        // ✅ CHECKLIST: Network timeout handling (10-second timeout)
-        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
-        factory.setConnectTimeout(10000); // 10s
-        factory.setReadTimeout(10000);    // 10s
-        this.restTemplate = new RestTemplate(factory);
-    }
 
     // ... (Keep existing getLTP and getHistoricalData methods)
 
@@ -180,9 +169,14 @@ public class FyersService {
         String toDate = LocalDateTime.now().format(dtf);
         String fromDate = LocalDateTime.now().minusDays(20).format(dtf);
 
-        String url = "https://api-t1.fyers.in/data/history?symbol=" + symbol +
-                "&resolution=" + resolution + "&date_format=1&range_from=" + fromDate +
-                "&range_to=" + toDate + "&cont_flag=1";
+        String url = UriComponentsBuilder.fromHttpUrl(dataBaseUrl + "/history")
+                .queryParam("symbol", symbol)
+                .queryParam("resolution", resolution)
+                .queryParam("date_format", 1)
+                .queryParam("range_from", fromDate)
+                .queryParam("range_to", toDate)
+                .queryParam("cont_flag", 1)
+                .toUriString();
 
         String response = executeGetRequest(url, token);
         if (response == null) throw new RuntimeException("Empty Response");
@@ -213,12 +207,7 @@ public class FyersService {
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token");
         }
-        if (!brokerCircuitBreakerService.allowRequest()) {
-            metricsService.incrementBrokerFailures();
-            throw new RuntimeException("Broker circuit breaker open until " + brokerCircuitBreakerService.getOpenUntil());
-        }
-
-        String url = "https://api-t1.fyers.in/api/v3/orders";
+        String url = apiBaseUrl + "/orders";
         int attempts = 0;
         while (attempts < 3) {
             try {
@@ -232,15 +221,9 @@ public class FyersService {
                 body.put("validity", "DAY");
                 body.put("clientId", clientOrderId);
 
-                HttpHeaders headers = new HttpHeaders();
-                headers.set("Authorization", appId + ":" + resolvedToken);
-                headers.setContentType(MediaType.APPLICATION_JSON);
-
-                HttpEntity<String> entity = new HttpEntity<>(gson.toJson(body), headers);
-                String response = restTemplate.postForObject(url, entity, String.class);
+                String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
                 JsonObject json = JsonParser.parseString(response).getAsJsonObject();
                 if (json.has("id")) {
-                    brokerCircuitBreakerService.recordSuccess();
                     return json.get("id").getAsString();
                 }
                 return "ORD-" + System.currentTimeMillis();
@@ -254,13 +237,11 @@ public class FyersService {
                 metricsService.incrementBrokerFailures();
                 alertService.sendAlert("BROKER_ERROR", e.getMessage());
                 log.error("❌ Order Failed: {}", e.getMessage());
-                brokerCircuitBreakerService.recordFailure();
                 throw new RuntimeException("Order placement failed: " + e.getMessage());
             }
         }
         metricsService.incrementBrokerFailures();
         alertService.sendAlert("BROKER_ERROR", "Order placement retries exhausted");
-        brokerCircuitBreakerService.recordFailure();
         throw new RuntimeException("Order placement failed after retries");
     }
 
@@ -269,79 +250,120 @@ public class FyersService {
     }
 
     public String getOrderStatus(String orderId, String token) {
+        return getOrderDetails(orderId, token)
+                .map(FyersOrderStatus::status)
+                .orElse("UNKNOWN");
+    }
+
+    public Optional<FyersOrderStatus> getOrderDetails(String orderId, String token) {
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null || orderId == null || orderId.isBlank()) {
-            return "UNKNOWN";
+            return Optional.empty();
         }
-        String url = "https://api-t1.fyers.in/api/v3/orders?id=" + orderId;
+        String url = UriComponentsBuilder.fromHttpUrl(apiBaseUrl + "/orders")
+                .queryParam("id", orderId)
+                .toUriString();
         try {
             String response = executeGetRequest(url, resolvedToken);
             if (response == null) {
-                return "UNKNOWN";
+                return Optional.empty();
             }
             JsonNode root = objectMapper.readTree(response);
             JsonNode dataNode = root.path("data");
             if (dataNode.isObject()) {
-                String status = dataNode.path("status").asText(null);
-                if (status != null && !status.isBlank()) {
-                    return status;
-                }
+                return Optional.of(parseOrderNode(orderId, dataNode));
             }
             if (dataNode.isArray()) {
                 for (JsonNode orderNode : dataNode) {
                     String id = orderNode.path("id").asText();
                     if (orderId.equalsIgnoreCase(id)) {
-                        String status = orderNode.path("status").asText("UNKNOWN");
-                        return status;
+                        return Optional.of(parseOrderNode(orderId, orderNode));
                     }
                 }
             }
-            return "UNKNOWN";
+            return Optional.empty();
         } catch (Exception e) {
             log.error("❌ Failed to fetch order status: {}", e.getMessage());
-            return "ERROR";
+            return Optional.empty();
         }
     }
-    public UserProfile getUnifiedUserProfile() { return new UserProfile(); }
+    public UserProfile getUnifiedUserProfile() {
+        String token = resolveToken(null);
+        if (token == null || token.isBlank()) {
+            return UserProfile.builder()
+                    .brokerStatus("DISCONNECTED")
+                    .statusMessage("Fyers token not available")
+                    .build();
+        }
+        try {
+            Map<String, Object> profile = getProfile(token);
+            return mapUserProfile(profile);
+        } catch (Exception e) {
+            return UserProfile.builder()
+                    .brokerStatus("DISCONNECTED")
+                    .statusMessage("Fyers profile unavailable: " + e.getMessage())
+                    .build();
+        }
+    }
 
     public Map<String, Object> getProfile(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/profile", token);
+        return fetchJsonAsMap(apiBaseUrl + "/profile", token);
+    }
+
+    public Map<String, Object> getProfileForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/profile", userId);
     }
 
     public Map<String, Object> getFunds(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/funds", token);
+        return fetchJsonAsMap(apiBaseUrl + "/funds", token);
+    }
+
+    public Map<String, Object> getFundsForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/funds", userId);
     }
 
     public Map<String, Object> getHoldings(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/holdings", token);
+        return fetchJsonAsMap(apiBaseUrl + "/holdings", token);
+    }
+
+    public Map<String, Object> getHoldingsForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/holdings", userId);
     }
 
     public Map<String, Object> getPositions(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/positions", token);
+        return fetchJsonAsMap(apiBaseUrl + "/positions", token);
+    }
+
+    public Map<String, Object> getPositionsForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/positions", userId);
     }
 
     public Map<String, Object> getOrders(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/orders", token);
+        return fetchJsonAsMap(apiBaseUrl + "/orders", token);
+    }
+
+    public Map<String, Object> getOrdersForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/orders", userId);
     }
 
     public Map<String, Object> getTrades(String token) throws IOException {
-        return fetchJsonAsMap("https://api-t1.fyers.in/api/v3/tradebook", token);
+        return fetchJsonAsMap(apiBaseUrl + "/tradebook", token);
+    }
+
+    public Map<String, Object> getTradesForUser(Long userId) throws IOException {
+        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/tradebook", userId);
     }
 
     private String executeGetRequest(String url, String token) {
         if (token == null) return null;
-        HttpHeaders headers = new HttpHeaders();
-        headers.set("Authorization", appId + ":" + token);
-        HttpEntity<Void> entity = new HttpEntity<>(headers);
-        ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
-        return response.getBody();
+        return fyersHttpClient.get(url, token);
     }
 
     private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token) {
         if (symbols.isEmpty()) {
             return Collections.emptyMap();
         }
-        String url = "https://api-t1.fyers.in/data/quotes?symbols=" + String.join(",", symbols);
+        String url = dataBaseUrl + "/quotes?symbols=" + String.join(",", symbols);
         try {
             String response = executeGetRequest(url, token);
             if (response == null) {
@@ -384,6 +406,71 @@ public class FyersService {
             return null;
         }
         return (accessToken != null && !accessToken.isBlank()) ? accessToken : null;
+    }
+
+    private Map<String, Object> fetchJsonAsMapWithRefresh(String url, Long userId) throws IOException {
+        String token = fyersTokenService.getAccessToken(userId);
+        try {
+            return fetchJsonAsMap(url, token);
+        } catch (com.apex.backend.exception.FyersApiException e) {
+            if (e.getStatusCode() == 401) {
+                Optional<String> refreshed = fyersTokenService.refreshAccessToken(userId);
+                if (refreshed.isPresent()) {
+                    return fetchJsonAsMap(url, refreshed.get());
+                }
+            }
+            throw e;
+        }
+    }
+
+    private FyersOrderStatus parseOrderNode(String orderId, JsonNode orderNode) {
+        String status = orderNode.path("status").asText("UNKNOWN");
+        int filledQty = orderNode.path("filledQty").asInt(orderNode.path("filled_qty").asInt(0));
+        double avgPrice = orderNode.path("avgPrice").asDouble(orderNode.path("avg_price").asDouble(0.0));
+        return new FyersOrderStatus(orderId, status, filledQty, MoneyUtils.bd(avgPrice));
+    }
+
+    private UserProfile mapUserProfile(Map<String, Object> profileResponse) {
+        if (profileResponse == null || profileResponse.isEmpty()) {
+            return UserProfile.builder()
+                    .brokerStatus("DISCONNECTED")
+                    .statusMessage("Empty profile response")
+                    .build();
+        }
+        JsonNode root = objectMapper.valueToTree(profileResponse);
+        JsonNode data = root.path("data");
+        if (data.isMissingNode() || data.isNull() || data.isEmpty()) {
+            return UserProfile.builder()
+                    .brokerStatus("DISCONNECTED")
+                    .statusMessage(root.path("message").asText("Missing profile data"))
+                    .build();
+        }
+        String name = firstNonBlank(
+                data.path("name").asText(null),
+                data.path("display_name").asText(null)
+        );
+        String clientId = firstNonBlank(
+                data.path("fy_id").asText(null),
+                data.path("client_id").asText(null)
+        );
+        return UserProfile.builder()
+                .name(name)
+                .clientId(clientId)
+                .broker("FYERS")
+                .brokerStatus("CONNECTED")
+                .email(data.path("email_id").asText(null))
+                .mobileNumber(data.path("mobile_number").asText(null))
+                .statusMessage(root.path("message").asText("Connected"))
+                .build();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 
     @lombok.Data

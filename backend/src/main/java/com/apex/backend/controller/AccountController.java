@@ -4,13 +4,11 @@ import com.apex.backend.dto.AccountOverviewDTO;
 import com.apex.backend.dto.AccountProfileDTO;
 import com.apex.backend.dto.HoldingDTO;
 import com.apex.backend.dto.UserProfileDTO;
-import com.apex.backend.exception.ConflictException;
 import com.apex.backend.model.PaperAccount;
 import com.apex.backend.model.PaperPortfolioStats;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.TradingMode;
 import com.apex.backend.security.UserPrincipal;
-import com.apex.backend.service.FyersAuthService;
 import com.apex.backend.service.FyersService;
 import com.apex.backend.service.PaperTradingService;
 import com.apex.backend.service.SettingsService;
@@ -34,7 +32,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AccountController {
 
-    private final FyersAuthService fyersAuthService;
     private final FyersService fyersService;
     private final PaperTradingService paperTradingService;
     private final SettingsService settingsService;
@@ -56,8 +53,7 @@ public class AccountController {
                     .connected(false)
                     .build());
         }
-        String token = resolveFyersToken(userId);
-        Map<String, Object> profile = fyersService.getProfile(token);
+        Map<String, Object> profile = fyersService.getProfileForUser(userId);
         log.info("Successfully retrieved profile");
         return ResponseEntity.ok(AccountProfileDTO.builder()
                 .name(extractProfileName(profile))
@@ -93,8 +89,7 @@ public class AccountController {
                     .build();
             return ResponseEntity.ok(summary);
         }
-        String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(fyersService.getFunds(token));
+        return ResponseEntity.ok(fyersService.getFundsForUser(userId));
     }
 
     @GetMapping("/holdings")
@@ -108,8 +103,7 @@ public class AccountController {
                     .toList();
             return ResponseEntity.ok(holdings);
         }
-        String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(mapHoldings(fyersService.getHoldings(token)));
+        return ResponseEntity.ok(mapHoldings(fyersService.getHoldingsForUser(userId)));
     }
     
     /**
@@ -123,8 +117,7 @@ public class AccountController {
             PaperAccount account = paperTradingService.getAccount(userId);
             return ResponseEntity.ok(new CapitalInfo(account.getStartingCapital(), account.getCashBalance(), account.getReservedMargin()));
         }
-        String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(fyersService.getFunds(token));
+        return ResponseEntity.ok(fyersService.getFundsForUser(userId));
     }
 
     @GetMapping("/overview")
@@ -160,11 +153,10 @@ public class AccountController {
                     .build());
         }
 
-        String token = resolveFyersToken(userId);
-        Map<String, Object> profile = fyersService.getProfile(token);
-        Map<String, Object> funds = fyersService.getFunds(token);
-        Map<String, Object> holdings = fyersService.getHoldings(token);
-        Map<String, Object> positions = fyersService.getPositions(token);
+        Map<String, Object> profile = fyersService.getProfileForUser(userId);
+        Map<String, Object> funds = fyersService.getFundsForUser(userId);
+        Map<String, Object> holdings = fyersService.getHoldingsForUser(userId);
+        Map<String, Object> positions = fyersService.getPositionsForUser(userId);
         return ResponseEntity.ok(AccountOverviewDTO.builder()
                 .mode("LIVE")
                 .profile(AccountOverviewDTO.ProfileDTO.builder()
@@ -199,14 +191,6 @@ public class AccountController {
             this.availableCapital = availableCapital;
             this.usedCapital = usedCapital;
         }
-    }
-
-    private String resolveFyersToken(Long userId) {
-        String token = fyersAuthService.getFyersToken(userId);
-        if (token == null || token.isBlank()) {
-            throw new ConflictException("Fyers account not linked");
-        }
-        return token;
     }
 
     private Long requireUserId(UserPrincipal principal) {

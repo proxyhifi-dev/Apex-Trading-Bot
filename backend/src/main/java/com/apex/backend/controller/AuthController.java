@@ -92,9 +92,9 @@ public class AuthController {
             log.info("Processing Fyers callback with state: {}", state);
 
             // Exchange Auth Code for Access Token
-            String fyersToken;
+            FyersAuthService.FyersTokens fyersTokens;
             try {
-                fyersToken = fyersAuthService.exchangeAuthCodeForToken(authCode);
+                fyersTokens = fyersAuthService.exchangeAuthCodeForToken(authCode);
                 log.info("✅ Successfully obtained Fyers token");
             } catch (Exception e) {
                 log.error("Failed to exchange auth code: {}", e.getMessage());
@@ -104,7 +104,7 @@ public class AuthController {
 
             FyersAuthService.FyersProfile fyersProfile = null;
             try {
-                fyersProfile = fyersAuthService.getUserProfile(fyersToken);
+                fyersProfile = fyersAuthService.getUserProfile(fyersTokens.accessToken());
                 log.info("✅ Fyers profile fetched for fy_id: {}", fyersProfile.getFyId());
             } catch (Exception e) {
                 log.warn("Unable to fetch Fyers profile: {}", e.getMessage());
@@ -135,7 +135,7 @@ public class AuthController {
                             }
                             user.setFyersConnected(true);
                             userRepository.save(user);
-                            fyersAuthService.storeFyersToken(userId, fyersToken);
+                            fyersAuthService.storeFyersTokens(userId, fyersTokens);
                             log.info("✅ Fyers account linked successfully for user ID: {}", userId);
                         }
                     }
@@ -161,7 +161,7 @@ public class AuthController {
                             }
                             user.setFyersConnected(true);
                             userRepository.save(user);
-                            fyersAuthService.storeFyersToken(userId, fyersToken);
+                            fyersAuthService.storeFyersTokens(userId, fyersTokens);
                             log.info("✅ Fyers account linked via state for user ID: {}", userId);
                         }
                     }
@@ -220,7 +220,7 @@ public class AuthController {
                 }
 
                 // Store Fyers token for the new/existing user
-                fyersAuthService.storeFyersToken(user.getId(), fyersToken);
+            fyersAuthService.storeFyersTokens(user.getId(), fyersTokens);
             }
 
             // Generate JWT tokens for frontend login

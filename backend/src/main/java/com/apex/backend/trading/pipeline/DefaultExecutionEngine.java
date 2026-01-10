@@ -28,6 +28,8 @@ public class DefaultExecutionEngine implements ExecutionEngine {
                 orderType == ExecutionPlan.ExecutionOrderType.MARKET ? ExecutionCostModel.OrderType.MARKET : ExecutionCostModel.OrderType.LIMIT,
                 ExecutionSide.BUY,
                 request.candles(),
+                null,
+                null,
                 null
         );
         ExecutionCostModel.ExecutionEstimate estimate = executionCostModel.estimateExecution(execRequest);

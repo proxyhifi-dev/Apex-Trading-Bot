@@ -17,6 +17,29 @@
 
 The application listens on `http://localhost:8080` by default.
 
+## Paper vs Live Trading
+
+**Paper mode (default)** uses simulated fills and paper portfolio balances. You can run in paper mode by keeping:
+
+```properties
+apex.trading.paper-mode=true
+```
+
+**Live mode** requires a linked FYERS account and active OAuth tokens. To enable live mode:
+
+```properties
+apex.trading.paper-mode=false
+```
+
+When running with the `prod` profile, the backend **never** uses the fallback `FYERS_ACCESS_TOKEN`; it relies on user-linked tokens only.
+
+Run profiles:
+
+```bash
+./gradlew bootRunDev   # dev profile
+./gradlew bootRunProd  # prod profile
+```
+
 ## Configuration
 
 Set environment variables to override defaults:
@@ -36,6 +59,9 @@ Set environment variables to override defaults:
 - `FYERS_API_SECRET_KEY` (required for Fyers integration)
 - `FYERS_REDIRECT_URI` (default: `http://localhost:4200/auth/fyers/callback`)
 - `FYERS_ACCESS_TOKEN` (optional; used for system-level market data calls when a user token is not available)
+- `FYERS_REFRESH_URL` (optional; default: `https://api-t1.fyers.in/api/v3/refresh-token`)
+- `FYERS_API_BASE_URL` (optional; default: `https://api-t1.fyers.in/api/v3`)
+- `FYERS_DATA_BASE_URL` (optional; default: `https://api-t1.fyers.in/data`)
 
 ## Migrations
 

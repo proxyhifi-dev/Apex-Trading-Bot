@@ -43,7 +43,9 @@ class ExecutionCostModelTest {
                 OrderType.MARKET,
                 ExecutionSide.BUY,
                 java.util.List.of(),
-                2.0
+                2.0,
+                null,
+                null
         );
         ExecutionEstimate estimate = model.estimateExecution(request);
 
@@ -88,7 +90,9 @@ class ExecutionCostModelTest {
                 OrderType.LIMIT,
                 ExecutionSide.BUY,
                 java.util.List.of(),
-                2.0
+                2.0,
+                null,
+                null
         );
         ExecutionEstimate estimate = model.estimateExecution(request);
 

@@ -67,6 +67,9 @@ public class User {
     @Column(length = 1500)
     private String fyersToken;
 
+    @Column(length = 1500)
+    private String fyersRefreshToken;
+
     @Column(nullable = false)
     @Builder.Default
     private Boolean fyersConnected = false;

@@ -4,10 +4,8 @@ import com.apex.backend.model.PaperOrder;
 import com.apex.backend.model.PaperPosition;
 import com.apex.backend.model.PaperTrade;
 import com.apex.backend.model.TradingMode;
-import com.apex.backend.exception.ConflictException;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.security.UserPrincipal;
-import com.apex.backend.service.FyersAuthService;
 import com.apex.backend.service.FyersService;
 import com.apex.backend.service.PaperTradingService;
 import com.apex.backend.service.SettingsService;
@@ -29,7 +27,6 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class PortfolioController {
 
-    private final FyersAuthService fyersAuthService;
     private final FyersService fyersService;
     private final PaperTradingService paperTradingService;
     private final SettingsService settingsService;
@@ -42,8 +39,7 @@ public class PortfolioController {
             List<PaperPosition> positions = paperTradingService.getOpenPositions(userId);
             return ResponseEntity.ok(positions);
         }
-        String token = resolveFyersToken(userId);
-        List<Map<String, Object>> openPositions = filterPositions(fyersService.getPositions(token), true);
+        List<Map<String, Object>> openPositions = filterPositions(fyersService.getPositionsForUser(userId), true);
         return ResponseEntity.ok(openPositions);
     }
 
@@ -55,8 +51,7 @@ public class PortfolioController {
             List<PaperPosition> positions = paperTradingService.getClosedPositions(userId);
             return ResponseEntity.ok(positions);
         }
-        String token = resolveFyersToken(userId);
-        List<Map<String, Object>> closedPositions = filterPositions(fyersService.getPositions(token), false);
+        List<Map<String, Object>> closedPositions = filterPositions(fyersService.getPositionsForUser(userId), false);
         return ResponseEntity.ok(closedPositions);
     }
 
@@ -68,8 +63,7 @@ public class PortfolioController {
             List<PaperOrder> orders = paperTradingService.getOrders(userId);
             return ResponseEntity.ok(orders);
         }
-        String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(fyersService.getOrders(token));
+        return ResponseEntity.ok(fyersService.getOrdersForUser(userId));
     }
 
     @GetMapping("/trades")
@@ -80,16 +74,7 @@ public class PortfolioController {
             List<PaperTrade> trades = paperTradingService.getTrades(userId);
             return ResponseEntity.ok(trades);
         }
-        String token = resolveFyersToken(userId);
-        return ResponseEntity.ok(fyersService.getTrades(token));
-    }
-
-    private String resolveFyersToken(Long userId) {
-        String token = fyersAuthService.getFyersToken(userId);
-        if (token == null || token.isBlank()) {
-            throw new ConflictException("Fyers account not linked");
-        }
-        return token;
+        return ResponseEntity.ok(fyersService.getTradesForUser(userId));
     }
 
     private Long requireUserId(UserPrincipal principal) {
