@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -38,6 +39,15 @@ public class OrderIntent {
     @Column(nullable = false)
     private String status;
 
+    private String brokerOrderId;
+
+    private Integer filledQuantity;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal averagePrice;
+
     @Column(nullable = false)
     private LocalDateTime createdAt;
+
+    private LocalDateTime updatedAt;
 }

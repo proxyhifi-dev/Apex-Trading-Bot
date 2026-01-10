@@ -3,7 +3,6 @@ package com.apex.backend.service;
 import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.model.StockScreeningResult;
 import com.apex.backend.model.Trade;
-import com.apex.backend.repository.OrderIntentRepository;
 import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.repository.TradeRepository;
@@ -36,12 +35,11 @@ public class TradeExecutionService {
     private final SettingsService settingsService;
     private final StrategyProperties strategyProperties;
     private final HybridPositionSizingService hybridPositionSizingService;
-    private final ExecutionCostModel executionCostModel;
-    private final OrderIntentRepository orderIntentRepository;
     private final MetricsService metricsService;
     private final DecisionAuditService decisionAuditService;
     private final TradeDecisionPipelineService tradeDecisionPipelineService;
     private final TradeFeatureAttributionService tradeFeatureAttributionService;
+    private final ExecutionEngine executionEngine;
 
     @Transactional
     public void executeAutoTrade(Long userId, DecisionResult decision, boolean isPaper, double currentVix) {
@@ -118,67 +116,29 @@ public class TradeExecutionService {
         }
 
         String clientOrderId = "SIG-" + signal.getId() + "-" + java.util.UUID.randomUUID();
-        if (orderIntentRepository.findByClientOrderId(clientOrderId).isPresent()) {
+        ExecutionEngine.ExecutionResult executionResult = executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
+                userId,
+                signal.getSymbol(),
+                qty,
+                ExecutionCostModel.OrderType.MARKET,
+                ExecutionCostModel.ExecutionSide.BUY,
+                null,
+                isPaper,
+                clientOrderId,
+                atr.doubleValue(),
+                candles,
+                entryPrice.doubleValue(),
+                stopLoss.doubleValue(),
+                false
+        ));
+        if (executionResult.status() != ExecutionEngine.ExecutionStatus.FILLED) {
+            dlqService.logFailure("EXECUTE_TRADE", signal.getSymbol(), executionResult.status().name());
+            signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
+            screeningRepo.save(signal);
             return;
         }
-        orderIntentRepository.save(com.apex.backend.model.OrderIntent.builder()
-                .clientOrderId(clientOrderId)
-                .userId(userId)
-                .symbol(signal.getSymbol())
-                .side("BUY")
-                .quantity(qty)
-                .status("PENDING")
-                .createdAt(LocalDateTime.now())
-                .build());
-        var executionCost = executionCostModel.estimateCost(clientOrderId, signal.getSymbol(), qty, entryPrice.doubleValue(), atr.doubleValue());
-
-        if (!isPaper) {
-            try {
-                String entryOrderId = fyersService.placeOrder(signal.getSymbol(), qty, "BUY", "MARKET", 0, clientOrderId);
-
-                if (entryOrderId != null && !entryOrderId.startsWith("ERROR")) {
-                    log.info("✅ Entry Filled: {}", entryOrderId);
-                    orderIntentRepository.findByClientOrderId(clientOrderId).ifPresent(intent -> {
-                        intent.setStatus("PLACED");
-                        orderIntentRepository.save(intent);
-                    });
-                    try {
-                        fyersService.placeOrder(signal.getSymbol(), qty, "SELL", "SL-M", stopLoss.doubleValue(), clientOrderId + "-SL");
-                    } catch (Exception slEx) {
-                        String errorMsg = "SL FAILED for " + signal.getSymbol() + ": " + slEx.getMessage();
-                        log.error(errorMsg);
-                        dlqService.logFailure("PLACE_SL_ORDER", signal.getSymbol(), errorMsg);
-                        fyersService.placeOrder(signal.getSymbol(), qty, "SELL", "MARKET", 0, clientOrderId + "-EXIT");
-                        throw new RuntimeException(errorMsg);
-                    }
-                } else {
-                    throw new RuntimeException("Entry Order Failed");
-                }
-            } catch (Exception e) {
-                dlqService.logFailure("EXECUTE_TRADE", signal.getSymbol(), e.getMessage());
-                signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
-                screeningRepo.save(signal);
-                return;
-            }
-        } else {
-            orderIntentRepository.findByClientOrderId(clientOrderId).ifPresent(intent -> {
-                intent.setStatus("PAPER_FILLED");
-                orderIntentRepository.save(intent);
-            });
-            if (executionCost.getExpectedCost() != null) {
-                executionCostModel.updateRealizedCost(clientOrderId, executionCost.getExpectedCost().doubleValue(), "PAPER");
-            }
-            ExecutionCostModel.ExecutionEstimate estimate = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
-                    signal.getSymbol(),
-                    qty,
-                    entryPrice.doubleValue(),
-                    entryPrice.doubleValue(),
-                    ExecutionCostModel.OrderType.MARKET,
-                    ExecutionCostModel.ExecutionSide.BUY,
-                    candles,
-                    atr.doubleValue()
-            ));
-            entryPrice = MoneyUtils.bd(estimate.effectivePrice());
+        if (executionResult.averagePrice() != null && executionResult.averagePrice().compareTo(BigDecimal.ZERO) > 0) {
+            entryPrice = executionResult.averagePrice();
         }
 
         riskEngine.addOpenPosition(signal.getSymbol(), entryPrice.doubleValue());
@@ -200,7 +160,6 @@ public class TradeExecutionService {
                 .build();
 
         tradeRepo.save(trade);
-        metricsService.incrementOrdersPlaced();
         decisionAuditService.record(signal.getSymbol(), "5m", "SIGNAL_SCORE", Map.of(
                 "score", pipelineDecision.score(),
                 "grade", pipelineDecision.signalScore().grade(),

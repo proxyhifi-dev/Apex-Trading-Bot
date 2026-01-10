@@ -1,6 +1,7 @@
 package com.apex.backend.trading.pipeline;
 
 import com.apex.backend.service.DataQualityGuard;
+import com.apex.backend.service.MetricsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +18,7 @@ public class TradeDecisionPipelineService {
     private final PortfolioEngine portfolioEngine;
     private final StrategyHealthEngine strategyHealthEngine;
     private final DataQualityGuard dataQualityGuard;
+    private final MetricsService metricsService;
 
     public DecisionResult evaluate(PipelineRequest request) {
         List<String> reasons = new ArrayList<>();
@@ -39,6 +41,7 @@ public class TradeDecisionPipelineService {
                 : portfolioEngine.snapshot(request);
 
         SignalScore signalScore = signalEngine.score(request);
+        metricsService.recordStrategySignal(signalScore.reason(), signalScore.score());
         StrategyHealthDecision healthDecision = strategyHealthEngine.evaluate(request.userId());
         if (healthDecision != null && healthDecision.status() == StrategyHealthDecision.StrategyHealthStatus.BROKEN) {
             reasons.addAll(healthDecision.reasons());

@@ -22,10 +22,10 @@ public class ExitManager {
     private final TradeRepository tradeRepository;
     private final PaperTradingService paperTradingService;
     private final FyersService fyersService;
-    private final ExecutionCostModel executionCostModel;
     private final StrategyProperties strategyProperties;
     private final RiskManagementEngine riskManagementEngine;
     private final ExitPriorityEngine exitPriorityEngine;
+    private final ExecutionEngine executionEngine;
 
     public long getOpenTradeCount(Long userId) {
         try {
@@ -122,9 +122,9 @@ public class ExitManager {
                 int barsHeld = calculateBarsHeld(trade);
                 ExitPriorityEngine.ExitDecision decision = exitPriorityEngine.evaluate(trade, currentPrice, barsHeld, false);
                 if (decision.shouldExit()) {
-                    if (executeExitOrder(trade)) {
-                        finalizeTrade(trade, currentPrice, decision.reason(), decision.reasonDetail());
-                    }
+                    executeExitOrder(trade, currentPrice).ifPresent(fillPrice ->
+                            finalizeTrade(trade, fillPrice, decision.reason(), decision.reasonDetail())
+                    );
                     continue;
                 }
 
@@ -245,36 +245,38 @@ public class ExitManager {
         return (int) (minutes / 5);
     }
 
-    private boolean executeExitOrder(Trade trade) {
-        if (trade.isPaperTrade()) {
-            return true;
-        }
+    private java.util.Optional<BigDecimal> executeExitOrder(Trade trade, BigDecimal referencePrice) {
         String side = trade.getTradeType() == Trade.TradeType.LONG ? "SELL" : "BUY";
         try {
-            String orderId = fyersService.placeOrder(trade.getSymbol(), trade.getQuantity(), side, "MARKET", 0);
-            log.info("Exit order placed for trade {}: {}", trade.getId(), orderId);
-            return true;
+            ExecutionEngine.ExecutionResult result = executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
+                    trade.getUserId(),
+                    trade.getSymbol(),
+                    trade.getQuantity(),
+                    ExecutionCostModel.OrderType.MARKET,
+                    ExecutionCostModel.ExecutionSide.valueOf(side),
+                    null,
+                    trade.isPaperTrade(),
+                    "EXIT-" + trade.getId() + "-" + java.util.UUID.randomUUID(),
+                    trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0,
+                    List.of(),
+                    referencePrice.doubleValue(),
+                    trade.getCurrentStopLoss() != null ? trade.getCurrentStopLoss().doubleValue() : null,
+                    true
+            ));
+            if (result.status() == ExecutionEngine.ExecutionStatus.FILLED) {
+                BigDecimal fillPrice = result.averagePrice() != null ? result.averagePrice() : referencePrice;
+                log.info("Exit order filled for trade {}: {}", trade.getId(), result.brokerOrderId());
+                return java.util.Optional.of(fillPrice);
+            }
+            log.warn("Exit order not filled for trade {}: {}", trade.getId(), result.status());
+            return java.util.Optional.empty();
         } catch (Exception e) {
             log.error("Failed to place exit order for trade {}", trade.getId(), e);
-            return false;
+            return java.util.Optional.empty();
         }
     }
 
     private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason, String detail) {
-        if (trade.isPaperTrade() && exitPrice != null) {
-            double atr = trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0;
-            ExecutionCostModel.ExecutionEstimate estimate = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
-                    trade.getSymbol(),
-                    trade.getQuantity(),
-                    exitPrice.doubleValue(),
-                    exitPrice.doubleValue(),
-                    ExecutionCostModel.OrderType.MARKET,
-                    ExecutionCostModel.ExecutionSide.SELL,
-                    List.of(),
-                    atr
-            ));
-            exitPrice = MoneyUtils.bd(estimate.effectivePrice());
-        }
         trade.setExitPrice(exitPrice);
         trade.setExitTime(LocalDateTime.now());
         trade.setStatus(Trade.TradeStatus.CLOSED);
