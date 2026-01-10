@@ -66,10 +66,24 @@ public class Trade {
     @Enumerated(EnumType.STRING)
     private ExitReason exitReason;
 
+    private String exitReasonDetail;
+
     private boolean breakevenMoved;
 
     @Column(precision = 19, scale = 4)
     private BigDecimal realizedPnl;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal initialRiskAmount;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal currentR;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal maxFavorableR;
+
+    @Column(precision = 19, scale = 4)
+    private BigDecimal maxAdverseR;
 
     public enum TradeType { LONG, SHORT }
     public enum TradeStatus { OPEN, CLOSED }

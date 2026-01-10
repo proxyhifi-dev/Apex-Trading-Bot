@@ -56,6 +56,7 @@ public class PaperTradingService {
         PaperOrder order = PaperOrder.builder()
                 .userId(userId)
                 .orderId(orderId)
+                .clientOrderId(orderId)
                 .symbol(trade.getSymbol())
                 .side(trade.getTradeType() == Trade.TradeType.SHORT ? "SELL" : "BUY")
                 .orderType("MARKET")

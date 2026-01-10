@@ -26,10 +26,10 @@ public class ScannerOrchestrator {
     private final StrategyProperties strategyProperties;
     private final StockScreeningService screeningService;
     private final FyersService fyersService;
-    private final IndicatorEngine indicatorEngine;
     private final SmartSignalGenerator signalGenerator;
     private final TradeExecutionService tradeExecutionService;
     private final BotStatusService botStatusService;
+    private final com.apex.backend.service.indicator.MarketRegimeDetector marketRegimeDetector;
 
     // Thread pool for parallel execution
     private final ExecutorService executor = Executors.newFixedThreadPool(10);
@@ -120,9 +120,8 @@ public class ScannerOrchestrator {
         try {
             List<Candle> niftyData = fyersService.getHistoricalData("NSE:NIFTY50-INDEX", 200, "D");
             if (niftyData.isEmpty()) return true;
-            double current = niftyData.get(niftyData.size() - 1).getClose();
-            double ema200 = indicatorEngine.calculateEMA(niftyData, 200);
-            return current > ema200;
+            var regime = marketRegimeDetector.detectAndStore("NSE:NIFTY50-INDEX", "1d", niftyData);
+            return regime == com.apex.backend.model.MarketRegime.TRENDING || regime == com.apex.backend.model.MarketRegime.LOW_VOL;
         } catch (Exception e) {
             return true;
         }

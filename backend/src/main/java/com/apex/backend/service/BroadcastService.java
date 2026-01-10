@@ -9,12 +9,14 @@ import org.springframework.stereotype.Service;
 public class BroadcastService {
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final MetricsService metricsService;
 
     /**
      * Pushes live position updates to the UI
      */
     public void broadcastPositions(Object positions) {
         messagingTemplate.convertAndSend("/topic/positions", positions);
+        metricsService.incrementWebsocketPublishes();
     }
 
     /**
@@ -22,6 +24,7 @@ public class BroadcastService {
      */
     public void broadcastOrders(Object orders) {
         messagingTemplate.convertAndSend("/topic/orders", orders);
+        metricsService.incrementWebsocketPublishes();
     }
 
     /**
@@ -29,6 +32,7 @@ public class BroadcastService {
      */
     public void broadcastSummary(Object summary) {
         messagingTemplate.convertAndSend("/topic/summary", summary);
+        metricsService.incrementWebsocketPublishes();
     }
 
     /**
@@ -36,6 +40,7 @@ public class BroadcastService {
      */
     public void broadcastBotStatus(Object status) {
         messagingTemplate.convertAndSend("/topic/bot-status", status);
+        metricsService.incrementWebsocketPublishes();
     }
 
     /**
@@ -43,5 +48,6 @@ public class BroadcastService {
      */
     public void broadcastSignal(Object signal) {
         messagingTemplate.convertAndSend("/topic/signals", signal);
+        metricsService.incrementWebsocketPublishes();
     }
 }

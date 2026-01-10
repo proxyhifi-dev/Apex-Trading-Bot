@@ -3,8 +3,10 @@ package com.apex.backend.service;
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.CircuitBreakerLog;
+import com.apex.backend.model.CircuitBreakerState;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.CircuitBreakerLogRepository;
+import com.apex.backend.repository.CircuitBreakerStateRepository;
 import com.apex.backend.repository.TradeRepository;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +31,9 @@ public class CircuitBreakerService {
     private final CircuitBreakerLogRepository logRepository;
     private final TradeRepository tradeRepository;
     private final BroadcastService broadcastService;
+    private final CircuitBreakerStateRepository stateRepository;
+    private final AlertService alertService;
+    private final MetricsService metricsService;
 
     @Getter
     private boolean globalHalt = false;
@@ -36,6 +41,19 @@ public class CircuitBreakerService {
     private boolean entryHalt = false;
     private LocalDateTime pauseUntil = null;
     private int consecutiveLosses = 0;
+
+    @jakarta.annotation.PostConstruct
+    public void loadState() {
+        CircuitBreakerState state = stateRepository.findById(1L).orElseGet(() -> CircuitBreakerState.builder()
+                .id(1L)
+                .globalHalt(false)
+                .entryHalt(false)
+                .consecutiveLosses(0)
+                .updatedAt(LocalDateTime.now())
+                .build());
+        applyState(state);
+        stateRepository.save(state);
+    }
 
     public boolean canTrade() {
         if (globalHalt) {
@@ -56,6 +74,8 @@ public class CircuitBreakerService {
         } else {
             consecutiveLosses = 0;
         }
+        metricsService.updatePnl(tradeResult);
+        persistState();
         updateMetrics();
         if (strategyProperties.getCircuit().getAutoPause() && consecutiveLosses >= strategyProperties.getCircuit().getMaxConsecutiveLosses()) {
             pauseTrading("MAX_CONSECUTIVE_LOSSES", null);
@@ -91,6 +111,8 @@ public class CircuitBreakerService {
                     .triggeredValue(null)
                     .actionTaken("HALT_ALL").build());
             broadcastPauseEvent(reason);
+            alertService.sendAlert("KILL_SWITCH", reason);
+            persistState();
         }
     }
 
@@ -104,6 +126,8 @@ public class CircuitBreakerService {
                     .triggeredValue(triggeredValue)
                     .actionTaken("HALT_ENTRIES").build());
             broadcastPauseEvent(reason);
+            alertService.sendAlert("CIRCUIT_BREAKER", reason);
+            persistState();
         }
     }
 
@@ -116,6 +140,7 @@ public class CircuitBreakerService {
         entryHalt = false;
         consecutiveLosses = 0;
         log.info("🔄 Daily Circuit Breaker Reset.");
+        persistState();
     }
 
     private PnlSummary calculatePnl(Long userId) {
@@ -148,4 +173,24 @@ public class CircuitBreakerService {
     private record PnlSummary(double dailyPnl, double weeklyPnl, double monthlyPnl, double startingCapital) {}
 
     public record CircuitPauseEvent(boolean paused, String reason, LocalDateTime timestamp) {}
+
+    private void persistState() {
+        CircuitBreakerState state = CircuitBreakerState.builder()
+                .id(1L)
+                .globalHalt(globalHalt)
+                .entryHalt(entryHalt)
+                .pauseUntil(pauseUntil)
+                .reason(entryHalt || globalHalt ? "ACTIVE" : "OK")
+                .consecutiveLosses(consecutiveLosses)
+                .updatedAt(LocalDateTime.now())
+                .build();
+        stateRepository.save(state);
+    }
+
+    private void applyState(CircuitBreakerState state) {
+        this.globalHalt = state.isGlobalHalt();
+        this.entryHalt = state.isEntryHalt();
+        this.pauseUntil = state.getPauseUntil();
+        this.consecutiveLosses = state.getConsecutiveLosses();
+    }
 }

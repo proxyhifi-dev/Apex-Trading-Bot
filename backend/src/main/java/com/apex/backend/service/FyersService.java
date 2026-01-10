@@ -42,6 +42,9 @@ public class FyersService {
     private String accessToken;
 
     private final Environment environment;
+    private final MetricsService metricsService;
+    private final AlertService alertService;
+    private final BrokerCircuitBreakerService brokerCircuitBreakerService;
 
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
@@ -202,38 +205,63 @@ public class FyersService {
     }
 
     public String placeOrder(String symbol, int qty, String side, String type, double price) {
+        return placeOrder(symbol, qty, side, type, price, UUID.randomUUID().toString());
+    }
+
+    public String placeOrder(String symbol, int qty, String side, String type, double price, String clientOrderId) {
         String resolvedToken = resolveToken(null);
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token");
         }
+        if (!brokerCircuitBreakerService.allowRequest()) {
+            metricsService.incrementBrokerFailures();
+            throw new RuntimeException("Broker circuit breaker open until " + brokerCircuitBreakerService.getOpenUntil());
+        }
 
         String url = "https://api-t1.fyers.in/api/v3/orders";
-        try {
-            Map<String, Object> body = new HashMap<>();
-            body.put("symbol", symbol);
-            body.put("qty", qty);
-            body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
-            body.put("type", type.equalsIgnoreCase("MARKET") ? 2 : 1);
-            body.put("productType", "INTRADAY");
-            body.put("limitPrice", price);
-            body.put("validity", "DAY");
+        int attempts = 0;
+        while (attempts < 3) {
+            try {
+                Map<String, Object> body = new HashMap<>();
+                body.put("symbol", symbol);
+                body.put("qty", qty);
+                body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
+                body.put("type", type.equalsIgnoreCase("MARKET") ? 2 : 1);
+                body.put("productType", "INTRADAY");
+                body.put("limitPrice", price);
+                body.put("validity", "DAY");
+                body.put("clientId", clientOrderId);
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", appId + ":" + resolvedToken);
-            headers.setContentType(MediaType.APPLICATION_JSON);
+                HttpHeaders headers = new HttpHeaders();
+                headers.set("Authorization", appId + ":" + resolvedToken);
+                headers.setContentType(MediaType.APPLICATION_JSON);
 
-            HttpEntity<String> entity = new HttpEntity<>(gson.toJson(body), headers);
-            // ✅ Using configured restTemplate (with timeouts)
-            String response = restTemplate.postForObject(url, entity, String.class);
-
-            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-            if (json.has("id")) return json.get("id").getAsString();
-
-            return "ORD-" + System.currentTimeMillis();
-        } catch (Exception e) {
-            log.error("❌ Order Failed: {}", e.getMessage());
-            throw new RuntimeException("Order placement failed: " + e.getMessage());
+                HttpEntity<String> entity = new HttpEntity<>(gson.toJson(body), headers);
+                String response = restTemplate.postForObject(url, entity, String.class);
+                JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+                if (json.has("id")) {
+                    brokerCircuitBreakerService.recordSuccess();
+                    return json.get("id").getAsString();
+                }
+                return "ORD-" + System.currentTimeMillis();
+            } catch (HttpClientErrorException.TooManyRequests e) {
+                attempts++;
+                sleep(1000L * attempts);
+            } catch (ResourceAccessException | HttpServerErrorException e) {
+                attempts++;
+                sleep(500L * attempts);
+            } catch (Exception e) {
+                metricsService.incrementBrokerFailures();
+                alertService.sendAlert("BROKER_ERROR", e.getMessage());
+                log.error("❌ Order Failed: {}", e.getMessage());
+                brokerCircuitBreakerService.recordFailure();
+                throw new RuntimeException("Order placement failed: " + e.getMessage());
+            }
         }
+        metricsService.incrementBrokerFailures();
+        alertService.sendAlert("BROKER_ERROR", "Order placement retries exhausted");
+        brokerCircuitBreakerService.recordFailure();
+        throw new RuntimeException("Order placement failed after retries");
     }
 
     public String getOrderStatus(String orderId) {

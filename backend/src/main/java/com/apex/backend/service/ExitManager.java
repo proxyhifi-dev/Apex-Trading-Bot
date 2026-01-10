@@ -24,6 +24,7 @@ public class ExitManager {
     private final FyersService fyersService;
     private final StrategyProperties strategyProperties;
     private final RiskManagementEngine riskManagementEngine;
+    private final ExitPriorityEngine exitPriorityEngine;
 
     public long getOpenTradeCount(Long userId) {
         try {
@@ -51,7 +52,7 @@ public class ExitManager {
             log.info("Closing trade {} by target at price {}", tradeId, exitPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
             if (trade != null) {
-                finalizeTrade(trade, exitPrice, Trade.ExitReason.TARGET);
+                finalizeTrade(trade, exitPrice, Trade.ExitReason.TARGET, "TARGET");
             }
         } catch (Exception e) {
             log.error("Failed to close trade by target", e);
@@ -63,7 +64,7 @@ public class ExitManager {
             log.info("Closing trade {} by stop loss at price {}", tradeId, stopLossPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
             if (trade != null) {
-                finalizeTrade(trade, stopLossPrice, Trade.ExitReason.STOP_LOSS);
+                finalizeTrade(trade, stopLossPrice, Trade.ExitReason.STOP_LOSS, "MANUAL_SL");
             }
         } catch (Exception e) {
             log.error("Failed to close trade by stop loss", e);
@@ -115,29 +116,20 @@ public class ExitManager {
 
                 normalizeStops(trade);
                 updateTrailingStop(trade, currentPrice);
+                updateRMetrics(trade, currentPrice);
 
-                boolean stopLossHit = isStopLossHit(trade, currentPrice);
-                boolean targetHit = isTargetHit(trade, currentPrice, strategyProperties.getAtr().getTargetMultiplier());
-                boolean timeExit = isTimeExit(trade);
-
-                if (stopLossHit) {
+                int barsHeld = calculateBarsHeld(trade);
+                ExitPriorityEngine.ExitDecision decision = exitPriorityEngine.evaluate(trade, currentPrice, barsHeld, false);
+                if (decision.shouldExit()) {
                     if (executeExitOrder(trade)) {
-                        finalizeTrade(trade, currentPrice, Trade.ExitReason.STOP_LOSS);
+                        finalizeTrade(trade, currentPrice, decision.reason(), decision.reasonDetail());
                     }
                     continue;
                 }
 
-                if (targetHit) {
-                    if (executeExitOrder(trade)) {
-                        finalizeTrade(trade, currentPrice, Trade.ExitReason.TARGET);
-                    }
-                    continue;
-                }
-
-                if (timeExit) {
-                    if (executeExitOrder(trade)) {
-                        finalizeTrade(trade, currentPrice, Trade.ExitReason.TIME_EXIT);
-                    }
+                if (decision.newStopLoss() != null && trade.getCurrentStopLoss() == null) {
+                    trade.setCurrentStopLoss(decision.newStopLoss());
+                    tradeRepository.save(trade);
                 }
             }
         } catch (Exception e) {
@@ -244,15 +236,12 @@ public class ExitManager {
         }
     }
 
-    private boolean isTimeExit(Trade trade) {
+    private int calculateBarsHeld(Trade trade) {
         if (trade.getEntryTime() == null) {
-            return false;
+            return 0;
         }
         long minutes = Duration.between(trade.getEntryTime(), LocalDateTime.now()).toMinutes();
-        long bars = minutes / 5;
-        int timeStopBars = strategyProperties.getExit().getTimeStopBars();
-        int maxBars = strategyProperties.getExit().getMaxBars();
-        return bars >= maxBars || bars >= timeStopBars;
+        return (int) (minutes / 5);
     }
 
     private boolean executeExitOrder(Trade trade) {
@@ -270,11 +259,12 @@ public class ExitManager {
         }
     }
 
-    private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason) {
+    private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason, String detail) {
         trade.setExitPrice(exitPrice);
         trade.setExitTime(LocalDateTime.now());
         trade.setStatus(Trade.TradeStatus.CLOSED);
         trade.setExitReason(reason);
+        trade.setExitReasonDetail(detail);
         BigDecimal pnl = MoneyUtils.multiply(exitPrice.subtract(trade.getEntryPrice()), trade.getQuantity());
         if (trade.getTradeType() == Trade.TradeType.SHORT) {
             pnl = pnl.negate();
@@ -287,5 +277,30 @@ public class ExitManager {
             paperTradingService.recordExit(trade.getUserId(), trade);
         }
         log.info("Trade {} closed successfully. P&L: {}", trade.getId(), pnl);
+    }
+
+    private void updateRMetrics(Trade trade, BigDecimal currentPrice) {
+        if (trade.getEntryPrice() == null || trade.getStopLoss() == null) {
+            return;
+        }
+        BigDecimal initialRisk = trade.getEntryPrice().subtract(trade.getStopLoss()).abs();
+        if (initialRisk.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        BigDecimal profit = trade.getTradeType() == Trade.TradeType.LONG
+                ? currentPrice.subtract(trade.getEntryPrice())
+                : trade.getEntryPrice().subtract(currentPrice);
+        BigDecimal currentR = profit.divide(initialRisk, MoneyUtils.SCALE, java.math.RoundingMode.HALF_UP);
+        trade.setInitialRiskAmount(initialRisk);
+        trade.setCurrentR(currentR);
+        BigDecimal maxFav = trade.getMaxFavorableR();
+        BigDecimal maxAdv = trade.getMaxAdverseR();
+        if (maxFav == null || currentR.compareTo(maxFav) > 0) {
+            trade.setMaxFavorableR(currentR);
+        }
+        if (maxAdv == null || currentR.compareTo(maxAdv) < 0) {
+            trade.setMaxAdverseR(currentR);
+        }
+        tradeRepository.save(trade);
     }
 }
