@@ -86,7 +86,7 @@ risk:
     spike-threshold: 0.75
     sizing-multiplier-on-spike: 0.5
 
-dataQuality:
+data-quality:
   max-missing-candles: 1
   max-gap-multiplier: 2.0
   outlier-pct: 0.1

@@ -1,8 +1,25 @@
 package com.apex.backend.dto;
 
-public record RiskStatusDto(
-        boolean tradingHalted,
-        double portfolioHeat,
-        int openPositions,
-        int consecutiveLosses
-) {}
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+/**
+ * Comprehensive risk snapshot used by services.
+ */
+@Getter
+@Setter
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RiskStatusDTO {
+    private double dailyPnL;
+    private double dailyLossLimit;
+    private double portfolioValue;
+    private double availableEquity;
+    private int openPositions;
+    private boolean riskExceeded;
+    private double remainingDailyLoss;
+}

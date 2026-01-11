@@ -8,7 +8,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 @Configuration
-@ConfigurationProperties(prefix = "dataQuality")
+@ConfigurationProperties(prefix = "data-quality")
 @Data
 @Validated
 public class DataQualityProperties {

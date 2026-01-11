@@ -20,18 +20,18 @@ public class CorrelationMatrixDetailed {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(nullable = false)
+    @Column(name = "symbol_a", nullable = false, length = 50)
     private String symbolA;
 
-    @Column(nullable = false)
+    @Column(name = "symbol_b", nullable = false, length = 50)
     private String symbolB;
 
-    @Column(nullable = false)
+    @Column(name = "correlation", nullable = false)
     private Double correlation;
 
-    @Column(nullable = false)
+    @Column(name = "calculated_at", nullable = false)
     private LocalDateTime calculatedAt;
 }

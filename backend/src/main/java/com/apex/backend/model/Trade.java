@@ -16,73 +16,76 @@ public class Trade {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id")
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "symbol", nullable = false)
     private String symbol;
 
-    @Column(nullable = false)
+    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "trade_type")
     private TradeType tradeType;
 
-    @Column(nullable = false)
+    @Column(name = "quantity", nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false, precision = 19, scale = 4)
+    @Column(name = "entry_price", nullable = false, precision = 19, scale = 4)
     private BigDecimal entryPrice;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "exit_price", precision = 19, scale = 4)
     private BigDecimal exitPrice;
 
-    @Column(nullable = false)
+    @Column(name = "entry_time", nullable = false)
     private LocalDateTime entryTime;
 
+    @Column(name = "exit_time")
     private LocalDateTime exitTime;
 
-    // ✅ Initial Stop Loss (Fixed at entry)
-    @Column(precision = 19, scale = 4)
+    @Column(name = "stop_loss", precision = 19, scale = 4)
     private BigDecimal stopLoss;
 
-    // ✅ Dynamic Stop Loss (Moves with Trailing)
-    @Column(precision = 19, scale = 4)
+    @Column(name = "current_stop_loss", precision = 19, scale = 4)
     private BigDecimal currentStopLoss;
 
-    // ✅ Stored ATR for dynamic Targets (3xATR)
-    @Column(precision = 19, scale = 4)
+    @Column(name = "atr", precision = 19, scale = 4)
     private BigDecimal atr;
 
-    // ✅ Track Highest Price for Trailing Logic
-    @Column(precision = 19, scale = 4)
+    @Column(name = "highest_price", precision = 19, scale = 4)
     private BigDecimal highestPrice;
 
-    @Column(nullable = false)
+    @Column(name = "is_paper_trade", nullable = false)
     private boolean isPaperTrade;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "status")
     private TradeStatus status;
 
     @Enumerated(EnumType.STRING)
+    @Column(name = "exit_reason")
     private ExitReason exitReason;
 
+    @Column(name = "exit_reason_detail")
     private String exitReasonDetail;
 
+    @Column(name = "breakeven_moved")
     private boolean breakevenMoved;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "realized_pnl", precision = 19, scale = 4)
     private BigDecimal realizedPnl;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "initial_risk_amount", precision = 19, scale = 4)
     private BigDecimal initialRiskAmount;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "current_r", precision = 19, scale = 4)
     private BigDecimal currentR;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "max_favorable_r", precision = 19, scale = 4)
     private BigDecimal maxFavorableR;
 
-    @Column(precision = 19, scale = 4)
+    @Column(name = "max_adverse_r", precision = 19, scale = 4)
     private BigDecimal maxAdverseR;
 
     public enum TradeType { LONG, SHORT }
