@@ -40,6 +40,10 @@ public class TradeExecutionService {
     private final TradeDecisionPipelineService tradeDecisionPipelineService;
     private final TradeFeatureAttributionService tradeFeatureAttributionService;
     private final ExecutionEngine executionEngine;
+    private final StopLossPlacementService stopLossPlacementService;
+    private final FyersAuthService fyersAuthService;
+    private final CircuitBreakerService circuitBreakerService;
+    private final AlertService alertService;
 
     @Transactional
     public void executeAutoTrade(Long userId, DecisionResult decision, boolean isPaper, double currentVix) {
@@ -156,10 +160,56 @@ public class TradeExecutionService {
                 .highestPrice(entryPrice)
                 .isPaperTrade(isPaper)
                 .status(Trade.TradeStatus.OPEN)
+                .positionState(com.apex.backend.model.PositionState.OPENING)
                 .initialRiskAmount(entryPrice.subtract(stopLoss).abs())
                 .build();
 
         tradeRepo.save(trade);
+        
+        // PLACE PROTECTIVE STOP IMMEDIATELY
+        if (!isPaper) {
+            String token = fyersAuthService.getFyersToken(userId);
+            if (token != null && !token.isBlank()) {
+                boolean stopPlaced = stopLossPlacementService.placeProtectiveStop(trade, token).join();
+                
+                if (!stopPlaced) {
+                    // STOP PLACEMENT FAILED - ENTER ERROR STATE
+                    log.error("Stop-loss placement failed for trade: {} symbol: {}", trade.getId(), trade.getSymbol());
+                    trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
+                    tradeRepo.save(trade);
+                    
+                    // Attempt immediate flatten
+                    flattenPosition(trade, token);
+                    
+                    // Halt new trading
+                    circuitBreakerService.triggerGlobalHalt("STOP_LOSS_PLACEMENT_FAILED: " + trade.getSymbol());
+                    
+                    // Emit alert
+                    alertService.sendAlert("STOP_FAILED", "Failed to place stop for " + trade.getSymbol());
+                    
+                    signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
+                    screeningRepo.save(signal);
+                    return;
+                }
+                
+                // Stop placed successfully
+                trade.transitionTo(com.apex.backend.model.PositionState.OPEN);
+                tradeRepo.save(trade);
+                log.info("Protective stop placed for trade: {} symbol: {}", trade.getId(), trade.getSymbol());
+            } else {
+                log.warn("No FYERS token available for stop placement, trade: {}", trade.getId());
+                trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
+                tradeRepo.save(trade);
+            }
+        } else {
+            // Paper mode: simulate stop placement
+            trade.setStopOrderId("PAPER-STOP-" + System.currentTimeMillis());
+            trade.setStopOrderState(com.apex.backend.model.OrderState.ACKED);
+            trade.setStopAckedAt(LocalDateTime.now());
+            trade.transitionTo(com.apex.backend.model.PositionState.OPEN);
+            tradeRepo.save(trade);
+        }
+        
         decisionAuditService.record(signal.getSymbol(), "5m", "SIGNAL_SCORE", Map.of(
                 "score", pipelineDecision.score(),
                 "grade", pipelineDecision.signalScore().grade(),
@@ -175,5 +225,37 @@ public class TradeExecutionService {
 
     public void approveAndExecute(Long userId, Long signalId, boolean isPaper) {
         approveAndExecute(userId, signalId, isPaper, 15.0);
+    }
+    
+    /**
+     * Flatten position immediately (emergency exit)
+     */
+    private void flattenPosition(Trade trade, String token) {
+        try {
+            log.warn("Attempting to flatten position: {} symbol: {}", trade.getId(), trade.getSymbol());
+            ExecutionEngine.ExecutionRequestPayload exitRequest = new ExecutionEngine.ExecutionRequestPayload(
+                trade.getUserId(),
+                trade.getSymbol(),
+                trade.getQuantity(),
+                com.apex.backend.service.ExecutionCostModel.OrderType.MARKET,
+                trade.getTradeType() == Trade.TradeType.LONG 
+                    ? com.apex.backend.service.ExecutionCostModel.ExecutionSide.SELL 
+                    : com.apex.backend.service.ExecutionCostModel.ExecutionSide.BUY,
+                null,
+                false,
+                "FLATTEN-" + trade.getId(),
+                trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0,
+                null,
+                trade.getEntryPrice().doubleValue(),
+                null,
+                true,  // exitOrder = true
+                null   // signalId
+            );
+            executionEngine.execute(exitRequest);
+            log.info("Flatten order executed for trade: {}", trade.getId());
+        } catch (Exception e) {
+            log.error("Failed to flatten position: {} symbol: {}", trade.getId(), trade.getSymbol(), e);
+            alertService.sendAlert("FLATTEN_FAILED", "Failed to flatten " + trade.getSymbol() + ": " + e.getMessage());
+        }
     }
 }

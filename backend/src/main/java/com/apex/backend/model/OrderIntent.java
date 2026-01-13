@@ -37,7 +37,13 @@ public class OrderIntent {
     private Integer quantity;
 
     @Column(nullable = false)
+    @Deprecated // Use orderState instead
     private String status;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "order_state", nullable = false)
+    @Builder.Default
+    private OrderState orderState = OrderState.CREATED;
 
     private String brokerOrderId;
 
@@ -50,4 +56,39 @@ public class OrderIntent {
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
+
+    @Column(name = "last_broker_status")
+    private String lastBrokerStatus;  // Raw FYERS status string
+
+    @Column(name = "sent_at")
+    private LocalDateTime sentAt;
+
+    @Column(name = "acked_at")
+    private LocalDateTime ackedAt;
+
+    @Column(name = "expires_at")
+    private LocalDateTime expiresAt;
+
+    @Column(name = "correlation_id")
+    private String correlationId;  // For audit trail
+
+    @Column(name = "signal_id")
+    private Long signalId;  // Link to StockScreeningResult
+
+    /**
+     * Transition to a new state with validation
+     * @param newState Target state
+     * @throws IllegalStateException if transition is invalid
+     */
+    public void transitionTo(OrderState newState) {
+        if (!orderState.canTransitionTo(newState)) {
+            throw new IllegalStateException(
+                String.format("Invalid state transition: %s -> %s for order %s", 
+                    orderState, newState, clientOrderId)
+            );
+        }
+        this.orderState = newState;
+        this.status = newState.name(); // Keep legacy field in sync
+        this.updatedAt = LocalDateTime.now();
+    }
 }

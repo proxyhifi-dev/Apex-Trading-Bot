@@ -88,6 +88,36 @@ public class Trade {
     @Column(name = "max_adverse_r", precision = 19, scale = 4)
     private BigDecimal maxAdverseR;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "position_state", nullable = false)
+    @Builder.Default
+    private PositionState positionState = PositionState.PLANNED;
+
+    @Column(name = "stop_order_id")
+    private String stopOrderId;  // Broker orderId for stop-loss
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "stop_order_state")
+    private OrderState stopOrderState;  // State of stop-loss order
+
+    @Column(name = "stop_acked_at")
+    private LocalDateTime stopAckedAt;
+
+    /**
+     * Transition to a new position state with validation
+     * @param newState Target state
+     * @throws IllegalStateException if transition is invalid
+     */
+    public void transitionTo(PositionState newState) {
+        if (!positionState.canTransitionTo(newState)) {
+            throw new IllegalStateException(
+                String.format("Invalid position state transition: %s -> %s for trade %d", 
+                    positionState, newState, id)
+            );
+        }
+        this.positionState = newState;
+    }
+
     public enum TradeType { LONG, SHORT }
     public enum TradeStatus { OPEN, CLOSED }
     public enum ExitReason { STOP_LOSS, TARGET, TIME_EXIT, MANUAL, SIGNAL }

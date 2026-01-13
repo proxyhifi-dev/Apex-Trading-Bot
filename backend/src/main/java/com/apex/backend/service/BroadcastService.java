@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
+
 @Service
 @RequiredArgsConstructor
 public class BroadcastService {
@@ -49,5 +51,31 @@ public class BroadcastService {
     public void broadcastSignal(Object signal) {
         messagingTemplate.convertAndSend("/topic/signals", signal);
         metricsService.incrementWebsocketPublishes();
+    }
+
+    /**
+     * Broadcasts risk rejection events with threshold and current values
+     */
+    public void broadcastReject(RejectEvent event) {
+        messagingTemplate.convertAndSend("/topic/rejects", event);
+        metricsService.incrementWebsocketPublishes();
+    }
+
+    /**
+     * Reject event with full details for UI display
+     */
+    public record RejectEvent(
+            String reasonCode,
+            Double threshold,
+            Double currentValue,
+            String symbol,
+            Long signalId,
+            String clientOrderId,
+            LocalDateTime timestamp
+    ) {
+        public RejectEvent(String reasonCode, Double threshold, Double currentValue, 
+                          String symbol, Long signalId, String clientOrderId) {
+            this(reasonCode, threshold, currentValue, symbol, signalId, clientOrderId, LocalDateTime.now());
+        }
     }
 }

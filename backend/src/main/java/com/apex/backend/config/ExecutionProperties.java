@@ -38,4 +38,33 @@ public class ExecutionProperties {
     private double limitFillVolumeFactor = 0.2;
 
     private String defaultOrderType = "MARKET";
+
+    // Partial fill policy
+    private PartialFillProperties partialFill = new PartialFillProperties();
+
+    // Timeout configuration
+    @Min(1)
+    private int entryTimeoutSeconds = 30;
+
+    @Min(1)
+    private int stopAckTimeoutSeconds = 5;
+
+    private boolean cancelOnTimeout = true;
+
+    @Data
+    public static class PartialFillProperties {
+        private PartialFillPolicy policy = PartialFillPolicy.CANCEL_REMAIN;
+        
+        @Positive
+        private double minFillPct = 80.0;
+        
+        @Min(1)
+        private int cancelTimeoutSeconds = 5;
+    }
+
+    public enum PartialFillPolicy {
+        CANCEL_REMAIN,      // Cancel remaining qty immediately
+        KEEP_OPEN,         // Keep order open until timeout
+        CANCEL_AND_FLATTEN // Cancel and flatten position (safe default for low fill %)
+    }
 }

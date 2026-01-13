@@ -56,6 +56,10 @@ public class FyersHttpClient {
         return execute(url, token, HttpMethod.POST, body);
     }
 
+    public String delete(String url, String token) {
+        return execute(url, token, HttpMethod.DELETE, null);
+    }
+
     private String execute(String url, String token, HttpMethod method, String body) {
         Supplier<String> supplier = () -> doRequest(url, token, method, body);
         try {

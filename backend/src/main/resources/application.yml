@@ -69,6 +69,15 @@ execution:
   limit-fill-max-distance-pct: 0.002
   limit-fill-volume-factor: 0.2
   default-order-type: MARKET
+  # Order timeout configuration
+  entry-timeout-seconds: 30
+  stop-ack-timeout-seconds: 5
+  cancel-on-timeout: true
+  # Partial fill policy
+  partial-fill:
+    policy: CANCEL_REMAIN  # CANCEL_REMAIN | KEEP_OPEN | CANCEL_AND_FLATTEN
+    min-fill-pct: 80.0
+    cancel-timeout-seconds: 5
 
 analytics:
   validation:
@@ -90,3 +99,30 @@ data-quality:
   max-missing-candles: 1
   max-gap-multiplier: 2.0
   outlier-pct: 0.1
+  max-stale-seconds: 300  # 5 minutes
+
+# Reconciliation configuration
+reconcile:
+  enabled: true
+  interval-seconds: 300  # 5 minutes
+  safe-mode-on-mismatch: true
+
+# Crisis mode configuration
+crisis:
+  enabled: true
+  index-symbol: NSE:NIFTY50-EQ
+  drop-threshold-pct: 5.0
+  vix-threshold: 30.0
+  halt-duration-minutes: 30
+
+# Risk cooldown configuration
+risk:
+  ruin:
+    risk-per-trade-pct: 0.01
+    bankroll-r: 50
+  correlation:
+    lookback: 50
+    spike-threshold: 0.75
+    sizing-multiplier-on-spike: 0.5
+  trade-cooldown:
+    minutes: 5  # Cooldown period per symbol after trade

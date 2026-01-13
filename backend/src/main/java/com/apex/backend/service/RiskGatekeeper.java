@@ -32,18 +32,41 @@ public class RiskGatekeeper {
 
         double equity = portfolioService.getAvailableEquity(request.paper(), request.userId());
         double dailyLossLimitPct = strategyProperties.getCircuit().getDailyLossLimit() * 100.0;
-        if (riskManagementEngine.getDailyLossPercent(equity) > dailyLossLimitPct) {
-            return RiskGateDecision.reject(RiskRejectCode.DAILY_LOSS_LIMIT, "Daily loss limit breached");
+        double currentDailyLossPct = riskManagementEngine.getDailyLossPercent(equity);
+        if (currentDailyLossPct > dailyLossLimitPct) {
+            return RiskGateDecision.reject(
+                RiskRejectCode.DAILY_LOSS_LIMIT,
+                "Daily loss limit breached",
+                dailyLossLimitPct,
+                currentDailyLossPct,
+                request.symbol(),
+                null
+            );
         }
 
         int openPositions = portfolioService.getOpenPositionCount(request.paper(), request.userId());
-        if (openPositions >= strategyConfig.getRisk().getMaxOpenPositions()) {
-            return RiskGateDecision.reject(RiskRejectCode.MAX_OPEN_POSITIONS, "Max open positions reached");
+        int maxPositions = strategyConfig.getRisk().getMaxOpenPositions();
+        if (openPositions >= maxPositions) {
+            return RiskGateDecision.reject(
+                RiskRejectCode.MAX_OPEN_POSITIONS,
+                "Max open positions reached",
+                (double) maxPositions,
+                (double) openPositions,
+                request.symbol(),
+                null
+            );
         }
 
         boolean correlationOk = portfolioHeatService.passesCorrelationCheck(request.symbol(), request.userId());
         if (!correlationOk) {
-            return RiskGateDecision.reject(RiskRejectCode.CORRELATION_LIMIT, "Correlation limit breached");
+            return RiskGateDecision.reject(
+                RiskRejectCode.CORRELATION_LIMIT,
+                "Correlation limit breached",
+                null,
+                null,
+                request.symbol(),
+                null
+            );
         }
 
         BigDecimal entryPrice = MoneyUtils.bd(request.referencePrice());
@@ -56,7 +79,16 @@ public class RiskGatekeeper {
                 request.quantity()
         );
         if (!heatOk) {
-            return RiskGateDecision.reject(RiskRejectCode.PORTFOLIO_HEAT_LIMIT, "Portfolio heat limit breached");
+            double currentHeat = portfolioHeatService.currentPortfolioHeat(request.userId(), MoneyUtils.bd(equity));
+            double maxHeat = advancedTradingProperties.getRisk().getMaxPortfolioHeatPct() * 100.0;
+            return RiskGateDecision.reject(
+                RiskRejectCode.PORTFOLIO_HEAT_LIMIT,
+                "Portfolio heat limit breached",
+                maxHeat,
+                currentHeat,
+                request.symbol(),
+                null
+            );
         }
 
         return checkLiquidityAndSpread(request);
@@ -66,21 +98,50 @@ public class RiskGatekeeper {
         String token = request.paper() ? null : fyersAuthService.getFyersToken(request.userId());
         Optional<FyersQuote> quote = marketDataClient.getQuote(request.symbol(), token);
         if (quote.isEmpty()) {
-            return RiskGateDecision.reject(RiskRejectCode.LIQUIDITY_DATA_MISSING, "Missing bid/ask data");
+            return RiskGateDecision.reject(
+                RiskRejectCode.LIQUIDITY_DATA_MISSING,
+                "Missing bid/ask data",
+                null,
+                null,
+                request.symbol(),
+                null
+            );
         }
         FyersQuote marketQuote = quote.get();
         if (marketQuote.bidPrice() == null || marketQuote.askPrice() == null) {
-            return RiskGateDecision.reject(RiskRejectCode.LIQUIDITY_DATA_MISSING, "Missing bid/ask data");
+            return RiskGateDecision.reject(
+                RiskRejectCode.LIQUIDITY_DATA_MISSING,
+                "Missing bid/ask data",
+                null,
+                null,
+                request.symbol(),
+                null
+            );
         }
         double bid = marketQuote.bidPrice().doubleValue();
         double ask = marketQuote.askPrice().doubleValue();
         if (bid <= 0 || ask <= 0) {
-            return RiskGateDecision.reject(RiskRejectCode.LIQUIDITY_DATA_MISSING, "Invalid bid/ask data");
+            return RiskGateDecision.reject(
+                RiskRejectCode.LIQUIDITY_DATA_MISSING,
+                "Invalid bid/ask data",
+                null,
+                null,
+                request.symbol(),
+                null
+            );
         }
         double mid = (bid + ask) / 2.0;
         double spreadPct = ((ask - bid) / mid) * 100.0;
-        if (spreadPct > advancedTradingProperties.getLiquidity().getMaxSpreadPct()) {
-            return RiskGateDecision.reject(RiskRejectCode.SPREAD_TOO_WIDE, "Spread too wide: " + spreadPct + "%");
+        double maxSpreadPct = advancedTradingProperties.getLiquidity().getMaxSpreadPct();
+        if (spreadPct > maxSpreadPct) {
+            return RiskGateDecision.reject(
+                RiskRejectCode.SPREAD_TOO_WIDE,
+                "Spread too wide: " + spreadPct + "%",
+                maxSpreadPct,
+                spreadPct,
+                request.symbol(),
+                null
+            );
         }
         return RiskGateDecision.allow();
     }
@@ -95,13 +156,26 @@ public class RiskGatekeeper {
             boolean exitOrder
     ) {}
 
-    public record RiskGateDecision(boolean allowed, RiskRejectCode reason, String message) {
+    public record RiskGateDecision(
+            boolean allowed,
+            RiskRejectCode reason,
+            String message,
+            Double threshold,      // Threshold value that was exceeded
+            Double currentValue,   // Current value that triggered rejection
+            String symbol,         // Symbol associated with rejection
+            Long signalId          // Signal ID if available
+    ) {
         static RiskGateDecision allow() {
-            return new RiskGateDecision(true, null, null);
+            return new RiskGateDecision(true, null, null, null, null, null, null);
         }
 
+        static RiskGateDecision reject(RiskRejectCode reason, String message, Double threshold, Double currentValue, String symbol, Long signalId) {
+            return new RiskGateDecision(false, reason, message, threshold, currentValue, symbol, signalId);
+        }
+        
+        // Backward compatibility
         static RiskGateDecision reject(RiskRejectCode reason, String message) {
-            return new RiskGateDecision(false, reason, message);
+            return reject(reason, message, null, null, null, null);
         }
     }
 
@@ -110,7 +184,17 @@ public class RiskGatekeeper {
         DAILY_LOSS_LIMIT,
         CORRELATION_LIMIT,
         MAX_OPEN_POSITIONS,
+        MAX_POSITIONS,           // Alias for MAX_OPEN_POSITIONS
         SPREAD_TOO_WIDE,
-        LIQUIDITY_DATA_MISSING
+        LIQUIDITY_DATA_MISSING,
+        COOLDOWN,                // Symbol in cooldown period
+        DRAWDOWN_LIMIT,          // Portfolio drawdown exceeded
+        CONSEC_LOSSES,           // Consecutive losses limit
+        CRISIS_MODE,             // Crisis mode active
+        DATA_STALE,              // Market data is stale
+        DATA_GAP,                // Missing candles/gaps in data
+        CORP_ACTION_BLACKOUT,    // Corporate action blackout
+        MARKET_CLOSED,           // Market is closed
+        MANUAL_HALTED            // Trading manually halted
     }
 }

@@ -245,6 +245,59 @@ public class FyersService {
         throw new RuntimeException("Order placement failed after retries");
     }
 
+    public String cancelOrder(String brokerOrderId, String token) {
+        String resolvedToken = resolveToken(token);
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            throw new RuntimeException("No Token for cancel");
+        }
+        if (brokerOrderId == null || brokerOrderId.isBlank()) {
+            throw new IllegalArgumentException("Broker order ID is required");
+        }
+        String url = apiBaseUrl + "/orders/" + brokerOrderId;
+        try {
+            // FYERS uses DELETE method for order cancellation
+            String response = fyersHttpClient.delete(url, resolvedToken);
+            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
+            }
+            log.warn("Cancel order response missing id: {}", response);
+            return brokerOrderId; // Return original ID if response doesn't have new ID
+        } catch (Exception e) {
+            log.error("Failed to cancel order {}: {}", brokerOrderId, e.getMessage());
+            throw new RuntimeException("Order cancellation failed: " + e.getMessage(), e);
+        }
+    }
+
+    public String placeStopLossOrder(String symbol, int qty, String side, double stopPrice, String clientOrderId, String token) {
+        String resolvedToken = resolveToken(token);
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            throw new RuntimeException("No Token for stop-loss");
+        }
+        String url = apiBaseUrl + "/orders";
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("symbol", symbol);
+            body.put("qty", qty);
+            body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
+            body.put("type", 3); // STOP_LOSS order type in FYERS
+            body.put("stopPrice", stopPrice);
+            body.put("productType", "INTRADAY");
+            body.put("validity", "DAY");
+            body.put("clientId", clientOrderId);
+
+            String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
+            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
+            }
+            throw new RuntimeException("Stop-loss order placement failed: " + response);
+        } catch (Exception e) {
+            log.error("Failed to place stop-loss order: {}", e.getMessage());
+            throw new RuntimeException("Stop-loss order placement failed: " + e.getMessage(), e);
+        }
+    }
+
     public String getOrderStatus(String orderId) {
         return getOrderStatus(orderId, null);
     }
