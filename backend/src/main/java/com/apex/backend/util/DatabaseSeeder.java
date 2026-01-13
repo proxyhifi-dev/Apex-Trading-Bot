@@ -24,10 +24,43 @@ public class DatabaseSeeder implements CommandLineRunner {
     @Override
     @Transactional // ✅ FIXED: Keeps entity managed during the entire seeding process
     public void run(String... args) {
-        if (strategyRepo.count() == 0) {
-            seedDatabase();
-        } else {
-            log.info("⏭️ Database already seeded, skipping...");
+        // #region agent log
+        try {
+            java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+            fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seederStart\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:26\",\"message\":\"DatabaseSeeder.run started\",\"data\":{\"strategyRepoPresent\":\"" + (strategyRepo != null) + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+            fw.close();
+        } catch (Exception e) {}
+        // #endregion
+        try {
+            // #region agent log
+            try {
+                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+                long count = strategyRepo.count();
+                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seederCount\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:28\",\"message\":\"Checking strategy count\",\"data\":{\"strategyCount\":\"" + count + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+                fw.close();
+            } catch (Exception e) {}
+            // #endregion
+            if (strategyRepo.count() == 0) {
+                seedDatabase();
+            } else {
+                log.info("⏭️ Database already seeded, skipping...");
+                // #region agent log
+                try {
+                    java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+                    fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seederSkipped\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:31\",\"message\":\"Database seeding skipped (already seeded)\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+                    fw.close();
+                } catch (Exception e) {}
+                // #endregion
+            }
+        } catch (Exception e) {
+            // #region agent log
+            try {
+                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seederError\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:35\",\"message\":\"DatabaseSeeder.run failed\",\"data\":{\"error\":\"" + (e.getMessage() != null ? e.getMessage().replace("\"", "\\\"").replace("\n", " ") : "null") + "\",\"errorType\":\"" + e.getClass().getName() + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+                fw.close();
+            } catch (Exception ex) {}
+            // #endregion
+            log.error("❌ DatabaseSeeder failed: {}", e.getMessage(), e);
         }
     }
 
@@ -105,9 +138,23 @@ public class DatabaseSeeder implements CommandLineRunner {
             screeningRepo.save(signal2);
 
             log.info("✅ Database seeded successfully.");
+            // #region agent log
+            try {
+                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seedSuccess\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:107\",\"message\":\"Database seeding completed successfully\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+                fw.close();
+            } catch (Exception ex) {}
+            // #endregion
 
         } catch (Exception e) {
             log.error("❌ Database seeding failed: {}", e.getMessage(), e);
+            // #region agent log
+            try {
+                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
+                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_seedError\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DatabaseSeeder.java:110\",\"message\":\"Database seeding failed\",\"data\":{\"error\":\"" + (e.getMessage() != null ? e.getMessage().replace("\"", "\\\"").replace("\n", " ") : "null") + "\",\"errorType\":\"" + e.getClass().getName() + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
+                fw.close();
+            } catch (Exception ex) {}
+            // #endregion
         }
     }
 }
