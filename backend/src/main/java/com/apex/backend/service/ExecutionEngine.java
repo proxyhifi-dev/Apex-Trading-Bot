@@ -409,6 +409,7 @@ public class ExecutionEngine {
         FILLED,
         REJECTED,
         CANCELLED,
+        EXPIRED,
         UNKNOWN;
 
         static ExecutionStatus from(String status) {
@@ -425,7 +426,7 @@ public class ExecutionEngine {
         }
 
         boolean isTerminal() {
-            return this == FILLED || this == REJECTED || this == CANCELLED;
+            return this == FILLED || this == REJECTED || this == CANCELLED|| this == EXPIRED;
         }
     }
 }

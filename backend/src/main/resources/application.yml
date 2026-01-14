@@ -5,14 +5,17 @@ apex:
       strong-trend-adx: 30.0
       high-vol-atr-percent: 3.0
       low-vol-atr-percent: 1.0
+
     macd-confirmation:
       divergence-lookback: 30
       histogram-slope-lookback: 3
+
     candle-confirmation:
       required-candles: 3
       volume-confirmation: true
       volume-multiplier: 1.2
       avg-volume-period: 20
+
     multi-timeframe-momentum:
       weights:
         5m: 0.4
@@ -20,6 +23,7 @@ apex:
         1h: 0.2
         1d: 0.1
       conflict-penalty: 0.15
+
     risk:
       max-portfolio-heat-pct: 0.06
       correlation-threshold: 0.7
@@ -29,6 +33,7 @@ apex:
       max-daily-loss-pct: 0.02
       max-weekly-loss-pct: 0.1
       max-monthly-loss-pct: 0.15
+
     execution-cost:
       spread-bps: 5.0
       slippage-atr-pct: 0.1
@@ -37,16 +42,19 @@ apex:
       txn-pct: 0.00003
       sebi-pct: 0.000001
       gst-pct: 0.18
+
     liquidity:
       min-rupee-volume: 2000000.0
       max-spread-pct: 0.3
       max-order-pct-daily-volume: 0.02
       impact-lambda: 0.1
+
     backtest:
       max-bars-in-trade: 50
       in-sample-bars: 200
       out-sample-bars: 100
       decay-lookback-trades: 20
+
     broker:
       failure-threshold: 3
       cool-down-seconds: 120
@@ -69,13 +77,13 @@ execution:
   limit-fill-max-distance-pct: 0.002
   limit-fill-volume-factor: 0.2
   default-order-type: MARKET
-  # Order timeout configuration
+
   entry-timeout-seconds: 30
   stop-ack-timeout-seconds: 5
   cancel-on-timeout: true
-  # Partial fill policy
+
   partial-fill:
-    policy: CANCEL_REMAIN  # CANCEL_REMAIN | KEEP_OPEN | CANCEL_AND_FLATTEN
+    policy: CANCEL_REMAIN   # CANCEL_REMAIN | KEEP_OPEN | CANCEL_AND_FLATTEN
     min-fill-pct: 80.0
     cancel-timeout-seconds: 5
 
@@ -90,39 +98,29 @@ risk:
   ruin:
     risk-per-trade-pct: 0.01
     bankroll-r: 50
+
   correlation:
     lookback: 50
     spike-threshold: 0.75
     sizing-multiplier-on-spike: 0.5
 
+  trade-cooldown:
+    minutes: 5   # Cooldown period per symbol after trade
+
 data-quality:
   max-missing-candles: 1
   max-gap-multiplier: 2.0
   outlier-pct: 0.1
-  max-stale-seconds: 300  # 5 minutes
+  max-stale-seconds: 300   # 5 minutes
 
-# Reconciliation configuration
 reconcile:
   enabled: true
-  interval-seconds: 300  # 5 minutes
+  interval-seconds: 300
   safe-mode-on-mismatch: true
 
-# Crisis mode configuration
 crisis:
   enabled: true
   index-symbol: NSE:NIFTY50-EQ
   drop-threshold-pct: 5.0
   vix-threshold: 30.0
   halt-duration-minutes: 30
-
-# Risk cooldown configuration
-risk:
-  ruin:
-    risk-per-trade-pct: 0.01
-    bankroll-r: 50
-  correlation:
-    lookback: 50
-    spike-threshold: 0.75
-    sizing-multiplier-on-spike: 0.5
-  trade-cooldown:
-    minutes: 5  # Cooldown period per symbol after trade

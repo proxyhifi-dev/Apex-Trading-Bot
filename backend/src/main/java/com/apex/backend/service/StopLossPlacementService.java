@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.List;
+
 
 /**
  * Service responsible for placing and managing protective stop-loss orders
@@ -67,7 +69,8 @@ public class StopLossPlacementService {
                     trade.setStopAckedAt(LocalDateTime.now());
                     tradeRepository.save(trade);
                     log.info("Stop-loss ACKED for trade: {} stopOrderId: {}", trade.getId(), stopOrderId);
-                    broadcastService.broadcastOrders(/* include stop order */);
+                    broadcastService.broadcastOrders(List.of(trade));
+
                     return true;
                 } else {
                     log.error("Stop-loss ACK timeout for trade: {} stopOrderId: {}", trade.getId(), stopOrderId);

@@ -1,0 +1,19 @@
+{"id":"log_1768394375953_main","timestamp":1768394375953,"location":"BackendApplication.java:12","message":"Application startup initiated","data":{"argsCount":"0"},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"id":"log_1768394376895_main_error","timestamp":1768394376895,"location":"BackendApplication.java:30","message":"Application startup failed","data":{"error":"while constructing a mapping
+ in 'reader', line 1, column 1:
+    apex:
+    ^
+found duplicate key risk
+ in 'reader', line 119, column 1:
+    risk:
+    ^
+","errorType":"org.yaml.snakeyaml.constructor.DuplicateKeyException"},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"id":"log_1768394592680_main","timestamp":1768394592680,"location":"BackendApplication.java:12","message":"Application startup initiated","data":{"argsCount":"0"},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
+{"id":"log_1768394598152_jwtValidateStart","timestamp":1768394598152,"location":"JwtTokenProvider.java:29","message":"Validating JWT secret","data":{"jwtSecretPresent":"true","jwtSecretLength":"37"},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"id":"log_1768394598156_jwtValid","timestamp":1768394598156,"location":"JwtTokenProvider.java:36","message":"JWT secret validation passed","data":{},"sessionId":"debug-session","runId":"run1","hypothesisId":"B"}
+{"id":"log_1768394599735_main_error","timestamp":1768394599735,"location":"BackendApplication.java:30","message":"Application startup failed","data":{"error":"Error creating bean with name 'entityManagerFactory' defined in class path resource [org/springframework/boot/autoconfigure/orm/jpa/HibernateJpaConfiguration.class]: Failed to initialize dependency 'flywayInitializer' of LoadTimeWeaverAware bean 'entityManagerFactory': Error creating bean with name 'flywayInitializer' defined in class path resource [org/springframework/boot/autoconfigure/flyway/FlywayAutoConfiguration$FlywayConfiguration.class]: Unable to obtain connection from database: Connection to localhost:5433 refused. Check that the hostname and port are correct and that the postmaster is accepting TCP/IP connections.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+SQL State  : 08001
+Error Code : 0
+Message    : Connection to localhost:5433 refused. Check that the hostname and port are correct and that the postmaster is accepting TCP/IP connections.
+","errorType":"org.springframework.beans.factory.BeanCreationException"},"sessionId":"debug-session","runId":"run1","hypothesisId":"A"}
