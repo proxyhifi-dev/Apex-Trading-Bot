@@ -15,8 +15,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.Executor;
 import java.util.stream.Collectors;
 
 @Service
@@ -32,9 +31,7 @@ public class ScannerOrchestrator {
     private final BotStatusService botStatusService;
     private final com.apex.backend.service.indicator.MarketRegimeDetector marketRegimeDetector;
     private final TradeDecisionPipelineService tradeDecisionPipelineService;
-
-    // Thread pool for parallel execution
-    private final ExecutorService executor = Executors.newFixedThreadPool(10);
+    private final Executor tradingExecutor;
 
     public void runScanner(Long userId) {
         if (!config.getScanner().isEnabled()) return;
@@ -65,7 +62,7 @@ public class ScannerOrchestrator {
                     if (decision != null && decision.action() == DecisionResult.DecisionAction.BUY) {
                         candidates.add(decision);
                     }
-                }, executor))
+                }, tradingExecutor))
                 .toList();
 
         // Wait for all threads

@@ -89,14 +89,22 @@ public class BacktestEngine {
                             null,
                             null
                     ));
-                    current = new BacktestTrade(entryCost.effectivePrice(), stop, target, candle.getTimestamp(), i);
+                    current = new BacktestTrade(entryCost.effectivePrice(), stop, target, candle.getHigh(), candle.getTimestamp(), i);
                     inTrade = true;
                 }
             } else if (current != null) {
+                int barsHeld = i - current.entryIndex;
+                current.highestHigh = Math.max(current.highestHigh, candle.getHigh());
+                double atr = atrService.calculate(window).atr();
+                double chandelier = current.highestHigh - (atr * advancedTradingProperties.getBacktest().getChandelierAtrMult());
+                current.stopLoss = Math.max(current.originalStopLoss, chandelier);
+
                 boolean stopHit = candle.getLow() <= current.stopLoss;
                 boolean targetHit = candle.getHigh() >= current.target;
-                int barsHeld = i - current.entryIndex;
-                if (stopHit || targetHit || barsHeld >= advancedTradingProperties.getBacktest().getMaxBarsInTrade()) {
+                boolean timeStop = shouldTimeStop(current, candle.getClose(), barsHeld);
+                boolean maxBars = barsHeld >= advancedTradingProperties.getBacktest().getMaxBarsInTrade();
+
+                if (stopHit || targetHit || timeStop || maxBars) {
                     double rawExitPrice = stopHit ? current.stopLoss : targetHit ? current.target : candle.getClose();
                     var exitCost = executionCostModel.estimateExecution(new ExecutionCostModel.ExecutionRequest(
                             "BACKTEST",
@@ -118,6 +126,19 @@ public class BacktestEngine {
             }
         }
         return trades;
+    }
+
+    private boolean shouldTimeStop(BacktestTrade trade, double close, int barsHeld) {
+        AdvancedTradingProperties.Backtest cfg = advancedTradingProperties.getBacktest();
+        if (barsHeld < cfg.getTimeStopBars()) {
+            return false;
+        }
+        double risk = Math.abs(trade.entry - trade.originalStopLoss);
+        if (risk <= 0) {
+            return false;
+        }
+        double unrealizedR = (close - trade.entry) / risk;
+        return unrealizedR < cfg.getTimeStopMinMoveR();
     }
 
     private Map<String, Object> calculateTradeMetrics(List<BacktestTrade> trades) {
@@ -201,18 +222,22 @@ public class BacktestEngine {
 
     private static class BacktestTrade {
         private final double entry;
-        private final double stopLoss;
+        private final double originalStopLoss;
         private final double target;
+        private double stopLoss;
+        private double highestHigh;
         private final LocalDateTime entryTime;
         private final int entryIndex;
         private double exit;
         private LocalDateTime exitTime;
         private double rMultiple;
 
-        private BacktestTrade(double entry, double stopLoss, double target, LocalDateTime entryTime, int entryIndex) {
+        private BacktestTrade(double entry, double stopLoss, double target, double highestHigh, LocalDateTime entryTime, int entryIndex) {
             this.entry = entry;
+            this.originalStopLoss = stopLoss;
             this.stopLoss = stopLoss;
             this.target = target;
+            this.highestHigh = highestHigh;
             this.entryTime = entryTime;
             this.entryIndex = entryIndex;
         }
@@ -220,7 +245,7 @@ public class BacktestEngine {
         private void exit(double exitPrice, LocalDateTime exitTime) {
             this.exit = exitPrice;
             this.exitTime = exitTime;
-            double risk = Math.abs(entry - stopLoss);
+            double risk = Math.abs(entry - originalStopLoss);
             this.rMultiple = risk == 0 ? 0 : (exit - entry) / risk;
         }
     }

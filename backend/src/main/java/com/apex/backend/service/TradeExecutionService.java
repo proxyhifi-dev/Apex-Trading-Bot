@@ -9,13 +9,16 @@ import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.trading.pipeline.DecisionResult;
 import com.apex.backend.trading.pipeline.PipelineRequest;
 import com.apex.backend.trading.pipeline.TradeDecisionPipelineService;
+import com.apex.backend.config.AdvancedTradingProperties;
 import com.apex.backend.config.StrategyProperties;
+import com.apex.backend.service.indicator.VolShockService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +37,7 @@ public class TradeExecutionService {
     private final PaperTradingService paperTradingService;
     private final SettingsService settingsService;
     private final StrategyProperties strategyProperties;
+    private final AdvancedTradingProperties advancedTradingProperties;
     private final HybridPositionSizingService hybridPositionSizingService;
     private final MetricsService metricsService;
     private final DecisionAuditService decisionAuditService;
@@ -44,6 +48,13 @@ public class TradeExecutionService {
     private final FyersAuthService fyersAuthService;
     private final CircuitBreakerService circuitBreakerService;
     private final AlertService alertService;
+    private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
+    private final SystemGuardService systemGuardService;
+    private final TradingWindowService tradingWindowService;
+    private final MarketGateService marketGateService;
+    private final LiquidityGateService liquidityGateService;
+    private final VolShockService volShockService;
+    private final BroadcastService broadcastService;
 
     @Transactional
     public void executeAutoTrade(Long userId, DecisionResult decision, boolean isPaper, double currentVix) {
@@ -91,6 +102,31 @@ public class TradeExecutionService {
             screeningRepo.save(signal);
             return;
         }
+        Instant now = Instant.now();
+        GuardBlock guardBlock = evaluateGuards(userId, signal.getSymbol(), candles, pipelineDecision, now);
+        if (guardBlock.blocked()) {
+            metricsService.recordReject(guardBlock.reasonCode());
+            decisionAuditService.record(signal.getSymbol(), "5m", guardBlock.auditType(), Map.of(
+                    "reason", guardBlock.reason(),
+                    "code", guardBlock.reasonCode()
+            ));
+            signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
+            screeningRepo.save(signal);
+            broadcastService.broadcastBotStatus(Map.of(
+                    "status", "BLOCKED",
+                    "reason", guardBlock.reason(),
+                    "timestamp", LocalDateTime.now()
+            ));
+            broadcastService.broadcastReject(new BroadcastService.RejectEvent(
+                    guardBlock.reasonCode(),
+                    null,
+                    null,
+                    signal.getSymbol(),
+                    signal.getId(),
+                    null
+            ));
+            return;
+        }
         BigDecimal equity = MoneyUtils.bd(portfolioService.getAvailableEquity(isPaper, userId));
         BigDecimal stopLoss = MoneyUtils.bd(pipelineDecision.signalScore().suggestedStopLoss());
         BigDecimal entryPrice = MoneyUtils.bd(pipelineDecision.signalScore().entryPrice());
@@ -101,9 +137,16 @@ public class TradeExecutionService {
 
         int qty = pipelineDecision.riskDecision().recommendedQuantity();
         if (qty == 0) {
-            qty = hybridPositionSizingService.calculateQuantity(equity, entryPrice, stopLoss, atr, userId);
+            qty = hybridPositionSizingService.calculateSizing(equity, entryPrice, stopLoss, atr, userId, pipelineDecision.score()).quantity();
         }
         qty = (int) Math.floor(qty * pipelineDecision.riskDecision().sizingMultiplier());
+        double dynamicMultiplier = hybridPositionSizingService.resolveDynamicMultiplier(pipelineDecision.score());
+        if (strategyProperties.getSizing().getDynamic().isEnabled()) {
+            decisionAuditService.record(signal.getSymbol(), "5m", "DYNAMIC_SIZING", Map.of(
+                    "score", pipelineDecision.score(),
+                    "multiplier", dynamicMultiplier
+            ));
+        }
 
         if (qty == 0) {
             metricsService.recordReject("SIZE_ZERO");
@@ -162,6 +205,7 @@ public class TradeExecutionService {
                 .status(Trade.TradeStatus.OPEN)
                 .positionState(com.apex.backend.model.PositionState.OPENING)
                 .initialRiskAmount(entryPrice.subtract(stopLoss).abs())
+                .sizingMultiplier(MoneyUtils.bd(dynamicMultiplier))
                 .build();
 
         tradeRepo.save(trade);
@@ -226,6 +270,45 @@ public class TradeExecutionService {
     public void approveAndExecute(Long userId, Long signalId, boolean isPaper) {
         approveAndExecute(userId, signalId, isPaper, 15.0);
     }
+
+    private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
+        if (systemGuardService.getState().isSafeMode()) {
+            return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
+        }
+        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
+        if (!windowDecision.allowed()) {
+            return new GuardBlock(true, "TIME_FILTER", "TIME_WINDOW", windowDecision.reason());
+        }
+        if (userId != null) {
+            var guardDecision = tradingGuardService.canTrade(userId, now);
+            if (!guardDecision.allowed()) {
+                return new GuardBlock(true, "GUARD", "CIRCUIT_BREAKER", guardDecision.reason());
+            }
+        }
+        if (strategyProperties.getMarketGate().isEnabled()) {
+            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(now);
+            if (!gate.allowed()) {
+                return new GuardBlock(true, "MARKET_GATE", "MARKET_GATE", gate.reason());
+            }
+        }
+        if (strategyProperties.getVolShock().isEnabled()) {
+            var shock = volShockService.evaluate(symbol, candles, strategyProperties.getVolShock().getLookback(),
+                    strategyProperties.getVolShock().getMultiplier(), now);
+            if (shock.shocked()) {
+                return new GuardBlock(true, "VOL_SHOCK", "VOL_SHOCK", shock.reason());
+            }
+        }
+        if (advancedTradingProperties.getLiquidity().isGateEnabled()) {
+            double lastPrice = pipelineDecision.signalScore() != null ? pipelineDecision.signalScore().entryPrice() : 0.0;
+            var liquidityDecision = liquidityGateService.evaluate(symbol, candles, lastPrice);
+            if (!liquidityDecision.allowed()) {
+                return new GuardBlock(true, "LIQUIDITY_GATE", "LIQUIDITY", liquidityDecision.reason());
+            }
+        }
+        return new GuardBlock(false, null, null, null);
+    }
+
+    private record GuardBlock(boolean blocked, String auditType, String reasonCode, String reason) {}
     
     /**
      * Flatten position immediately (emergency exit)

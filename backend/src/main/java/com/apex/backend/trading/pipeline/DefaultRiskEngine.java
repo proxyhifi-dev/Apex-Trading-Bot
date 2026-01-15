@@ -42,7 +42,7 @@ public class DefaultRiskEngine implements RiskEngine {
         if (request.candles() != null && !request.candles().isEmpty()) {
             atr = MoneyUtils.bd(atrService.calculate(request.candles()).atr());
         }
-        int qty = hybridPositionSizingService.calculateQuantity(snapshot.equity(), entry, stop, atr, request.userId());
+        int qty = hybridPositionSizingService.calculateSizing(snapshot.equity(), entry, stop, atr, request.userId(), signalScore.score()).quantity();
         if (qty == 0) {
             reasons.add("Position size is zero");
             return new RiskDecision(false, 0.0, reasons, 1.0, 0);

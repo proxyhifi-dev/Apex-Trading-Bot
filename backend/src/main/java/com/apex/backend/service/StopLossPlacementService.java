@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Executor;
 import java.util.List;
 
 
@@ -23,10 +23,10 @@ import java.util.List;
 @Slf4j
 public class StopLossPlacementService {
     private final FyersService fyersService;
-    private final FyersAuthService fyersAuthService;
     private final TradeRepository tradeRepository;
     private final BroadcastService broadcastService;
     private final AlertService alertService;
+    private final Executor tradingExecutor;
 
     @Value("${execution.stop-ack-timeout-seconds:5}")
     private int stopAckTimeoutSeconds;
@@ -85,7 +85,7 @@ public class StopLossPlacementService {
                 tradeRepository.save(trade);
                 return false;
             }
-        });
+        }, tradingExecutor);
     }
 
     /**
@@ -105,11 +105,13 @@ public class StopLossPlacementService {
                 var orderDetails = fyersService.getOrderDetails(stopOrderId, token);
                 if (orderDetails.isPresent()) {
                     String status = orderDetails.get().status();
-                    // Check if order is ACKED (status might be "ACKED", "PENDING", etc.)
-                    // FYERS typically returns order details immediately if order exists
-                    if (status != null && !status.equalsIgnoreCase("REJECTED")) {
-                        log.debug("Stop-loss order status: {} for orderId: {}", status, stopOrderId);
-                        return true; // Order exists and is not rejected = ACKED
+                    if (status != null && !status.isBlank()) {
+                        OrderState state = OrderState.fromString(status);
+                        log.debug("Stop-loss order status: {} (state: {}) for orderId: {}", status, state, stopOrderId);
+                        if (state == OrderState.REJECTED || state == OrderState.CANCELLED || state == OrderState.EXPIRED) {
+                            return false;
+                        }
+                        return true; // Order exists and is not rejected/cancelled/expired = ACKED
                     }
                 }
                 Thread.sleep(pollIntervalMs);

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ public class ExitManager {
     private final RiskManagementEngine riskManagementEngine;
     private final ExitPriorityEngine exitPriorityEngine;
     private final ExecutionEngine executionEngine;
+    private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
 
     public long getOpenTradeCount(Long userId) {
         try {
@@ -290,6 +292,7 @@ public class ExitManager {
         tradeRepository.save(trade);
         riskManagementEngine.removeOpenPosition(trade.getSymbol());
         riskManagementEngine.updateDailyLoss(pnl.doubleValue());
+        tradingGuardService.onTradeClosed(trade.getUserId(), trade.getRealizedPnl(), Instant.now());
         if (trade.isPaperTrade()) {
             paperTradingService.recordExit(trade.getUserId(), trade);
         }
