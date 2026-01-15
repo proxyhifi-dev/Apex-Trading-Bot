@@ -4,7 +4,6 @@ import com.apex.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -29,7 +28,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
     private final SecurityProperties securityProperties;
-    private final Environment environment;
+    private final AllowedOriginResolver allowedOriginResolver;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -67,7 +66,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        List<String> origins = resolveAllowedOrigins();
+        List<String> origins = allowedOriginResolver.resolveCorsAllowedOrigins();
         configuration.setAllowedOrigins(origins);
         configuration.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
         configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
@@ -79,23 +78,4 @@ public class SecurityConfig {
         return source;
     }
 
-    private boolean isProd() {
-        for (String profile : environment.getActiveProfiles()) {
-            if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private List<String> resolveAllowedOrigins() {
-        List<String> configured = securityProperties.getCors().getAllowedOrigins();
-        if (configured == null || configured.isEmpty()) {
-            if (isProd()) {
-                return List.of();
-            }
-            return List.of("http://localhost:4200", "http://127.0.0.1:4200", "http://localhost:3000");
-        }
-        return configured;
-    }
 }
