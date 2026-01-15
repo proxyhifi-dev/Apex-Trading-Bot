@@ -4,6 +4,7 @@ import com.apex.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -28,7 +29,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
     private final SecurityProperties securityProperties;
-    private final AllowedOriginResolver allowedOriginResolver;
+    private final Environment environment;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -66,10 +67,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        List<String> origins = allowedOriginResolver.resolveCorsAllowedOrigins();
-        configuration.setAllowedOrigins(origins);
+        if (isProd()) {
+            configuration.setAllowedOrigins(securityProperties.getCors().getAllowedOrigins());
+        } else {
+            configuration.setAllowedOriginPatterns(List.of("*"));
+        }
         configuration.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
-        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
@@ -78,4 +82,12 @@ public class SecurityConfig {
         return source;
     }
 
+    private boolean isProd() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -63,9 +63,8 @@ public class VolShockService {
         if (last.getTimestamp() == null || prev.getTimestamp() == null) {
             return DEFAULT_BAR_DURATION;
         }
-        ZoneId zone = ZoneId.of(strategyProperties.getTradingWindow().getTimezone());
-        Instant lastInstant = last.getTimestamp().atZone(zone).toInstant();
-        Instant prevInstant = prev.getTimestamp().atZone(zone).toInstant();
+        Instant lastInstant = last.getTimestamp().atZone(ZoneId.systemDefault()).toInstant();
+        Instant prevInstant = prev.getTimestamp().atZone(ZoneId.systemDefault()).toInstant();
         Duration duration = Duration.between(prevInstant, lastInstant);
         if (duration.isNegative() || duration.isZero()) {
             return DEFAULT_BAR_DURATION;

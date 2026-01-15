@@ -116,7 +116,6 @@ public class ReconciliationService {
         if (hasMismatch && safeModeOnMismatch) {
             String summary = summary(orderMismatches, statusMismatches, positionMismatches);
             state = systemGuardService.setSafeMode(true, summary, now);
-            log.warn("Reconciliation mismatch detected: {}", summary);
         }
         decisionAuditService.record("SYSTEM", "N/A", "RECONCILE", Map.of(
                 "mismatch", hasMismatch,
@@ -192,18 +191,10 @@ public class ReconciliationService {
         if (autoCancelPendingOnMismatch) {
             for (OrderSnapshot dbOrder : dbOrders) {
                 if (dbOrder.open()) {
-                    String orderId = dbOrder.orderId();
-                    if (orderId == null || orderId.isBlank()) {
-                        continue;
-                    }
-                    try {
-                        brokerPort.cancelOrder(userId, orderId);
-                        OrderIntent intent = dbOrder.markCancelRequested();
-                        if (intent != null) {
-                            orderIntentRepository.save(intent);
-                        }
-                    } catch (Exception e) {
-                        log.warn("Failed to cancel broker order {}", orderId, e);
+                    brokerPort.cancelOrder(userId, dbOrder.orderId());
+                    OrderIntent intent = dbOrder.markCancelRequested();
+                    if (intent != null) {
+                        orderIntentRepository.save(intent);
                     }
                 }
             }

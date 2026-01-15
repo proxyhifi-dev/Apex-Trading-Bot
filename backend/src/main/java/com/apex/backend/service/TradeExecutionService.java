@@ -102,8 +102,7 @@ public class TradeExecutionService {
             screeningRepo.save(signal);
             return;
         }
-        Instant now = Instant.now();
-        GuardBlock guardBlock = evaluateGuards(userId, signal.getSymbol(), candles, pipelineDecision, now);
+        GuardBlock guardBlock = evaluateGuards(userId, signal.getSymbol(), candles, pipelineDecision);
         if (guardBlock.blocked()) {
             metricsService.recordReject(guardBlock.reasonCode());
             decisionAuditService.record(signal.getSymbol(), "5m", guardBlock.auditType(), Map.of(
@@ -271,29 +270,29 @@ public class TradeExecutionService {
         approveAndExecute(userId, signalId, isPaper, 15.0);
     }
 
-    private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
+    private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision) {
         if (systemGuardService.getState().isSafeMode()) {
             return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
         }
-        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
+        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(Instant.now());
         if (!windowDecision.allowed()) {
             return new GuardBlock(true, "TIME_FILTER", "TIME_WINDOW", windowDecision.reason());
         }
         if (userId != null) {
-            var guardDecision = tradingGuardService.canTrade(userId, now);
+            var guardDecision = tradingGuardService.canTrade(userId, Instant.now());
             if (!guardDecision.allowed()) {
                 return new GuardBlock(true, "GUARD", "CIRCUIT_BREAKER", guardDecision.reason());
             }
         }
         if (strategyProperties.getMarketGate().isEnabled()) {
-            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(now);
+            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(Instant.now());
             if (!gate.allowed()) {
                 return new GuardBlock(true, "MARKET_GATE", "MARKET_GATE", gate.reason());
             }
         }
         if (strategyProperties.getVolShock().isEnabled()) {
             var shock = volShockService.evaluate(symbol, candles, strategyProperties.getVolShock().getLookback(),
-                    strategyProperties.getVolShock().getMultiplier(), now);
+                    strategyProperties.getVolShock().getMultiplier(), Instant.now());
             if (shock.shocked()) {
                 return new GuardBlock(true, "VOL_SHOCK", "VOL_SHOCK", shock.reason());
             }

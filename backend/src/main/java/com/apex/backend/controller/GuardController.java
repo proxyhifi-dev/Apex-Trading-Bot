@@ -24,7 +24,7 @@ public class GuardController {
     private final SystemGuardService systemGuardService;
     private final Environment environment;
 
-    @Value("${apex.admin-token:}")
+    @Value("${guard.admin-token:}")
     private String adminToken;
 
     @GetMapping("/state")
