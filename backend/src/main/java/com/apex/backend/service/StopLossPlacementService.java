@@ -6,6 +6,7 @@ import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -26,6 +27,7 @@ public class StopLossPlacementService {
     private final TradeRepository tradeRepository;
     private final BroadcastService broadcastService;
     private final AlertService alertService;
+    @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
     @Value("${execution.stop-ack-timeout-seconds:5}")

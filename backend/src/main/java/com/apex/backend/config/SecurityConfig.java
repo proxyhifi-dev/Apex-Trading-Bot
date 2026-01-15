@@ -4,7 +4,6 @@ import com.apex.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -29,7 +28,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
     private final SecurityProperties securityProperties;
-    private final Environment environment;
+    private final AllowedOriginResolver allowedOriginResolver;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -67,11 +66,7 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        if (isProd()) {
-            configuration.setAllowedOrigins(securityProperties.getCors().getAllowedOrigins());
-        } else {
-            configuration.setAllowedOriginPatterns(List.of("*"));
-        }
+        configuration.setAllowedOrigins(allowedOriginResolver.resolveCorsAllowedOrigins());
         configuration.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
@@ -80,14 +75,5 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
 
         return source;
-    }
-
-    private boolean isProd() {
-        for (String profile : environment.getActiveProfiles()) {
-            if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
-                return true;
-            }
-        }
-        return false;
     }
 }

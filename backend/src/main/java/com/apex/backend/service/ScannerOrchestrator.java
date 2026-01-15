@@ -8,6 +8,7 @@ import com.apex.backend.trading.pipeline.PipelineRequest;
 import com.apex.backend.trading.pipeline.TradeDecisionPipelineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,6 +32,7 @@ public class ScannerOrchestrator {
     private final BotStatusService botStatusService;
     private final com.apex.backend.service.indicator.MarketRegimeDetector marketRegimeDetector;
     private final TradeDecisionPipelineService tradeDecisionPipelineService;
+    @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
     public void runScanner(Long userId) {

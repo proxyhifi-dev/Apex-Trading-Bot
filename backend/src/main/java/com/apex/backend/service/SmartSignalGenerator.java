@@ -89,12 +89,13 @@ public class SmartSignalGenerator {
     public SignalDecision generateSignalSmart(String symbol, List<Candle> m5, List<Candle> m15, List<Candle> h1, List<Candle> daily) {
         if (m5.size() < 50) return SignalDecision.builder().hasSignal(false).reason("Insufficient Data").build();
 
+        Instant now = Instant.now();
         if (systemGuardService.getState().isSafeMode()) {
             decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", "SAFE_MODE"));
             return SignalDecision.builder().hasSignal(false).reason("SAFE MODE: reconciliation mismatch").build();
         }
 
-        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(Instant.now());
+        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
         if (!windowDecision.allowed()) {
             decisionAuditService.record(symbol, "5m", "TIME_FILTER", Map.of("reason", windowDecision.reason()));
             return SignalDecision.builder().hasSignal(false).reason("Time filter: " + windowDecision.reason()).build();
@@ -126,7 +127,7 @@ public class SmartSignalGenerator {
 
         Long ownerUserId = strategyConfig.getTrading().getOwnerUserId();
         if (ownerUserId != null) {
-            var guardDecision = circuitBreakerService.canTrade(ownerUserId, Instant.now());
+            var guardDecision = circuitBreakerService.canTrade(ownerUserId, now);
             if (!guardDecision.allowed()) {
                 decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", guardDecision.reason(), "until", guardDecision.until()));
                 return SignalDecision.builder().hasSignal(false).reason("Guard: " + guardDecision.reason()).build();
@@ -134,7 +135,7 @@ public class SmartSignalGenerator {
         }
 
         if (strategyProperties.getMarketGate().isEnabled()) {
-            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(Instant.now());
+            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(now);
             decisionAuditService.record(symbol, "5m", "MARKET_GATE", Map.of(
                     "allowed", gate.allowed(),
                     "reason", gate.reason(),
@@ -149,7 +150,7 @@ public class SmartSignalGenerator {
 
         if (strategyProperties.getVolShock().isEnabled()) {
             var shock = volShockService.evaluate(symbol, m5, strategyProperties.getVolShock().getLookback(),
-                    strategyProperties.getVolShock().getMultiplier(), Instant.now());
+                    strategyProperties.getVolShock().getMultiplier(), now);
             decisionAuditService.record(symbol, "5m", "VOL_SHOCK", Map.of(
                     "shocked", shock.shocked(),
                     "atrPct", shock.atrPct(),

@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -16,12 +17,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class BotScheduler {
     
     private final StrategyConfig config;
-    private final CircuitBreakerService circuitBreakerService;
+    private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
     private final ScannerOrchestrator scannerOrchestrator;
     private final ExitManager exitManager;
-    private final LogBroadcastService logger;
     private final BotStatusService botStatusService;
     private final StrategyHealthService strategyHealthService;
+    private final SystemGuardService systemGuardService;
     
     // Market data connection status
     private final AtomicBoolean marketDataConnected = new AtomicBoolean(true);
@@ -49,34 +50,41 @@ public class BotScheduler {
      */
     @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
     public void runBotCycle() {
-        if (!botReady.get()) {
-            log.warn("⏳ Bot not ready yet");
-            botStatusService.markStopped("Bot not ready");
-            return;
-        }
-
-        if (!isMarketOpen()) {
-            log.debug("Market closed - skipping cycle");
-            botStatusService.markPaused("Market closed");
-            return;
-        }
-        
-        if (circuitBreakerService.isGlobalHalt()) {
-            log.warn("⛔ Circuit Breaker Active. Skipping cycle.");
-            botStatusService.markPaused("Circuit breaker active");
-            return;
-        }
-
         try {
-            log.info("🔄 Running Bot Cycle...");
-            botStatusService.markRunning();
-            botStatusService.setLastScanTime(LocalDateTime.now());
+            if (!botReady.get()) {
+                log.warn("⏳ Bot not ready yet");
+                botStatusService.markStopped("Bot not ready");
+                return;
+            }
+
+            if (!isMarketOpen()) {
+                log.debug("Market closed - skipping cycle");
+                botStatusService.markPaused("Market closed");
+                return;
+            }
+
+            if (systemGuardService.getState().isSafeMode()) {
+                log.warn("⛔ System guard safe mode enabled. Skipping cycle.");
+                botStatusService.markPaused("System guard safe mode");
+                return;
+            }
+
             Long ownerUserId = config.getTrading().getOwnerUserId();
             if (ownerUserId == null) {
                 log.warn("⚠️ Skipping bot cycle because apex.trading.owner-user-id is not configured.");
                 botStatusService.markPaused("Owner user not configured");
                 return;
             }
+            var guardDecision = tradingGuardService.canTrade(ownerUserId, Instant.now());
+            if (!guardDecision.allowed()) {
+                log.warn("⛔ Circuit breaker guard active. Skipping cycle: {}", guardDecision.reason());
+                botStatusService.markPaused("Circuit breaker guard active");
+                return;
+            }
+
+            log.info("🔄 Running Bot Cycle...");
+            botStatusService.markRunning();
+            botStatusService.setLastScanTime(LocalDateTime.now());
             var healthState = strategyHealthService.getLatestState(ownerUserId);
             if (healthState != null && healthState.isPaused()) {
                 botStatusService.markPaused("Strategy health paused");
@@ -89,8 +97,6 @@ public class BotScheduler {
         } catch (Exception e) {
             log.error("❌ Error in bot cycle", e);
             botStatusService.setLastError(e.getMessage());
-            // Update metrics to trigger circuit breaker if needed
-            circuitBreakerService.updateMetrics();
         }
     }
     

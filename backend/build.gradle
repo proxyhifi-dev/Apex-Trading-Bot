@@ -79,19 +79,6 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 
-// Token Generator Task
-task generateToken(type: JavaExec) {
-	group = 'Application'
-	description = 'Generate Fyers API Access Token'
-	classpath = sourceSets.main.runtimeClasspath
-	mainClass = 'com.apex.backend.TokenGenerator'
-	standardInput = System.in
-
-	javaLauncher = javaToolchains.launcherFor {
-		languageVersion = JavaLanguageVersion.of(21)
-	}
-}
-
 // Custom task to run with dev profile
 task bootRunDev(type: JavaExec) {
 	group = 'Application'
