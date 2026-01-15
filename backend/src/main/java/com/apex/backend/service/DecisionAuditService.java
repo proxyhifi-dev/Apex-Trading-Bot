@@ -41,12 +41,12 @@ public class DecisionAuditService {
 
     @Scheduled(cron = "0 30 2 * * *")
     public void cleanupOldAudits() {
-        int retentionDays = advancedTradingProperties.getAudit().getRetentionDays();
-        if (retentionDays <= 0) {
-            return;
-        }
-        LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
         try {
+            int retentionDays = advancedTradingProperties.getAudit().getRetentionDays();
+            if (retentionDays <= 0) {
+                return;
+            }
+            LocalDateTime cutoff = LocalDateTime.now().minusDays(retentionDays);
             long removed = decisionAuditRepository.deleteByDecisionTimeBefore(cutoff);
             if (removed > 0) {
                 log.info("Pruned {} decision audits older than {} days", removed, retentionDays);

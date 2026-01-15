@@ -23,22 +23,50 @@ public class AllowedOriginResolver {
     }
 
     public List<String> resolveCorsAllowedOrigins() {
-        List<String> configured = securityProperties.getCors().getAllowedOrigins();
-        if (configured == null || configured.isEmpty()) {
-            return isProd() ? List.of() : DEFAULT_DEV_ORIGINS;
+        List<String> envOrigins = parseOrigins(environment.getProperty("APEX_ALLOWED_ORIGINS"));
+        if (isProd()) {
+            return envOrigins;
         }
-        return configured;
+        if (!envOrigins.isEmpty()) {
+            return envOrigins;
+        }
+        List<String> configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
+        return configured.isEmpty() ? DEFAULT_DEV_ORIGINS : configured;
     }
 
     public List<String> resolveWebsocketAllowedOrigins() {
-        List<String> configured = securityProperties.getWebsocket().getAllowedOrigins();
-        if (configured == null || configured.isEmpty()) {
-            configured = securityProperties.getCors().getAllowedOrigins();
+        List<String> envOrigins = parseOrigins(environment.getProperty("APEX_ALLOWED_ORIGINS"));
+        if (isProd()) {
+            return envOrigins;
         }
-        if (configured == null || configured.isEmpty()) {
-            return isProd() ? List.of() : DEFAULT_DEV_ORIGINS;
+        if (!envOrigins.isEmpty()) {
+            return envOrigins;
         }
-        return configured;
+        List<String> configured = parseOrigins(securityProperties.getWebsocket().getAllowedOrigins());
+        if (configured.isEmpty()) {
+            configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
+        }
+        return configured.isEmpty() ? DEFAULT_DEV_ORIGINS : configured;
+    }
+
+    private List<String> parseOrigins(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return List.of();
+        }
+        return List.of(raw.split(",")).stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
+    }
+
+    private List<String> parseOrigins(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        return raw.stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
     }
 
     private boolean isProd() {

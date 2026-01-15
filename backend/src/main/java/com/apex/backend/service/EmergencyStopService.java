@@ -16,12 +16,12 @@ import java.util.List;
 public class EmergencyStopService {
 
     private final TradeRepository tradeRepository;
-    private final CircuitBreakerService circuitBreakerService;
     private final PaperTradingService paperTradingService;
+    private final SystemGuardService systemGuardService;
 
     public EmergencyStopResult triggerEmergencyStop(Long userId, boolean isPaper, String reason) {
         int closedTrades = closeOpenTrades(userId, isPaper, reason);
-        return new EmergencyStopResult(closedTrades, circuitBreakerService.isGlobalHalt());
+        return new EmergencyStopResult(closedTrades, systemGuardService.getState().isSafeMode());
     }
 
     private int closeOpenTrades(Long userId, boolean isPaper, String reason) {

@@ -187,16 +187,33 @@ public class ReconciliationService {
         }
     }
 
-    private void handleMismatch(Long userId, BrokerPort brokerPort, List<OrderSnapshot> dbOrders) {
+    void handleMismatch(Long userId, BrokerPort brokerPort, List<OrderSnapshot> dbOrders) {
         if (autoCancelPendingOnMismatch) {
+            int attempted = 0;
+            int skipped = 0;
+            int failed = 0;
             for (OrderSnapshot dbOrder : dbOrders) {
                 if (dbOrder.open()) {
-                    brokerPort.cancelOrder(userId, dbOrder.orderId());
-                    OrderIntent intent = dbOrder.markCancelRequested();
-                    if (intent != null) {
-                        orderIntentRepository.save(intent);
+                    if (dbOrder.orderId() == null || dbOrder.orderId().isBlank()) {
+                        skipped++;
+                        continue;
+                    }
+                    attempted++;
+                    try {
+                        brokerPort.cancelOrder(userId, dbOrder.orderId());
+                        OrderIntent intent = dbOrder.markCancelRequested();
+                        if (intent != null) {
+                            orderIntentRepository.save(intent);
+                        }
+                        log.debug("Cancel requested for orderId={}", dbOrder.orderId());
+                    } catch (Exception ex) {
+                        failed++;
+                        log.debug("Cancel failed for orderId={}: {}", dbOrder.orderId(), ex.getMessage());
                     }
                 }
+            }
+            if (attempted > 0 || skipped > 0 || failed > 0) {
+                log.info("Reconcile cancel summary: attempted={}, skipped={}, failed={}", attempted, skipped, failed);
             }
         }
         if (autoFlattenOnMismatch) {
@@ -271,7 +288,7 @@ public class ReconciliationService {
 
     public record ReconcileReport(boolean mismatch, List<String> orderMismatches, List<String> statusMismatches, List<String> positionMismatches) {}
 
-    private static class OrderSnapshot {
+    static class OrderSnapshot {
         private final String orderId;
         private final String symbol;
         private final String status;

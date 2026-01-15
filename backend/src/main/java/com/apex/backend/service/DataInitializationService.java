@@ -31,33 +31,12 @@ public class DataInitializationService implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        // #region agent log
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-            fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_dataInitStart\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DataInitializationService.java:33\",\"message\":\"DataInitializationService.run started\",\"data\":{\"defaultUsersEnabled\":\"" + defaultUsersEnabled + "\",\"userRepoPresent\":\"" + (userRepository != null) + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\"}\n");
-            fw.close();
-        } catch (Exception e) {}
-        // #endregion
         try {
             if (!defaultUsersEnabled || isProdProfileActive()) {
                 log.info("Default user initialization skipped (production or disabled).");
-                // #region agent log
-                try {
-                    java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                    fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_dataInitSkipped\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DataInitializationService.java:36\",\"message\":\"Data initialization skipped\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\"}\n");
-                    fw.close();
-                } catch (Exception e) {}
-                // #endregion
                 return;
             }
             // Create default admin user if not exists
-            // #region agent log
-            try {
-                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_checkAdmin\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DataInitializationService.java:40\",\"message\":\"Checking if admin user exists\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
-                fw.close();
-            } catch (Exception e) {}
-            // #endregion
             if (!userRepository.existsByUsername("admin")) {
                 User admin = User.builder()
                     .username("admin")
@@ -93,22 +72,8 @@ public class DataInitializationService implements CommandLineRunner {
 
             log.info("✅ Data initialization completed successfully");
             log.info("📊 Total users in database: {}", userRepository.count());
-            // #region agent log
-            try {
-                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_dataInitSuccess\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DataInitializationService.java:74\",\"message\":\"Data initialization completed successfully\",\"data\":{\"userCount\":\"" + userRepository.count() + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"C\"}\n");
-                fw.close();
-            } catch (Exception ex) {}
-            // #endregion
         } catch (Exception e) {
             log.error("❌ Data initialization failed", e);
-            // #region agent log
-            try {
-                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_dataInitError\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"DataInitializationService.java:77\",\"message\":\"Data initialization failed\",\"data\":{\"error\":\"" + (e.getMessage() != null ? e.getMessage().replace("\"", "\\\"").replace("\n", " ") : "null") + "\",\"errorType\":\"" + e.getClass().getName() + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"A\"}\n");
-                fw.close();
-            } catch (Exception ex) {}
-            // #endregion
         }
     }
 

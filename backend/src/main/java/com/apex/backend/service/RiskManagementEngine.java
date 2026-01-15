@@ -5,6 +5,7 @@ import com.apex.backend.config.StrategyProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.HashMap;
@@ -17,8 +18,7 @@ public class RiskManagementEngine {
     private final StrategyConfig config;
     private final StrategyProperties strategyProperties;
     private final SectorService sectorService;
-    private final FyersService fyersService;
-    private final CircuitBreakerService circuitBreakerService;
+    private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
     private final PortfolioHeatService portfolioHeatService;
 
     private int consecutiveLosses = 0;
@@ -30,14 +30,12 @@ public class RiskManagementEngine {
     public RiskManagementEngine(StrategyConfig config,
                                 StrategyProperties strategyProperties,
                                 SectorService sectorService,
-                                FyersService fyersService,
-                                CircuitBreakerService circuitBreakerService,
+                                com.apex.backend.service.risk.CircuitBreakerService tradingGuardService,
                                 PortfolioHeatService portfolioHeatService) {
         this.config = config;
         this.strategyProperties = strategyProperties;
         this.sectorService = sectorService;
-        this.fyersService = fyersService;
-        this.circuitBreakerService = circuitBreakerService;
+        this.tradingGuardService = tradingGuardService;
         this.portfolioHeatService = portfolioHeatService;
     }
 
@@ -49,9 +47,13 @@ public class RiskManagementEngine {
 
     public boolean canExecuteTrade(double currentEquity, String symbol, double entryPrice, double stopLoss, int quantity) {
         // Gate 7: Circuit Breaker
-        if (!circuitBreakerService.canTrade()) {
-            log.warn("❌ Gate 7 Fail: Circuit Breaker Active");
-            return false;
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId != null) {
+            var guardDecision = tradingGuardService.canTrade(ownerUserId, Instant.now());
+            if (!guardDecision.allowed()) {
+                log.warn("❌ Gate 7 Fail: Circuit Breaker Guard Active ({})", guardDecision.reason());
+                return false;
+            }
         }
 
         // Gate 9: Market Hours
@@ -96,7 +98,10 @@ public class RiskManagementEngine {
         if (tradeResult < 0) consecutiveLosses++;
         else consecutiveLosses = 0;
 
-        circuitBreakerService.updateAfterTrade(tradeResult);
+        Long ownerUserId = config.getTrading().getOwnerUserId();
+        if (ownerUserId != null) {
+            tradingGuardService.onTradeClosed(ownerUserId, java.math.BigDecimal.valueOf(tradeResult), Instant.now());
+        }
     }
 
     private boolean isMarketHours() {

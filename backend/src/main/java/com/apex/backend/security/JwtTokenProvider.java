@@ -27,40 +27,12 @@ public class JwtTokenProvider {
 
     @PostConstruct
     public void validateSecret() {
-        // #region agent log
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-            fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_jwtValidateStart\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"JwtTokenProvider.java:29\",\"message\":\"Validating JWT secret\",\"data\":{\"jwtSecretPresent\":\"" + (jwtSecret != null) + "\",\"jwtSecretLength\":\"" + (jwtSecret != null ? jwtSecret.length() : 0) + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\"}\n");
-            fw.close();
-        } catch (Exception e) {}
-        // #endregion
         if (jwtSecret == null || jwtSecret.isBlank()) {
-            // #region agent log
-            try {
-                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_jwtMissing\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"JwtTokenProvider.java:31\",\"message\":\"JWT secret is missing or blank\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\"}\n");
-                fw.close();
-            } catch (Exception e) {}
-            // #endregion
             throw new IllegalStateException("Missing JWT secret. Set JWT_SECRET environment variable.");
         }
         if (jwtSecret.length() < 32) {
-            // #region agent log
-            try {
-                java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-                fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_jwtTooShort\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"JwtTokenProvider.java:34\",\"message\":\"JWT secret is too short\",\"data\":{\"length\":\"" + jwtSecret.length() + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\"}\n");
-                fw.close();
-            } catch (Exception e) {}
-            // #endregion
             throw new IllegalStateException("JWT secret must be at least 32 characters.");
         }
-        // #region agent log
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-            fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_jwtValid\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"JwtTokenProvider.java:36\",\"message\":\"JWT secret validation passed\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"B\"}\n");
-            fw.close();
-        } catch (Exception e) {}
-        // #endregion
     }
 
     private SecretKey getSigningKey() {

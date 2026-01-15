@@ -46,7 +46,6 @@ class GuardEnforcementTest {
         ExecutionEngine executionEngine = mock(ExecutionEngine.class);
         StopLossPlacementService stopLossPlacementService = mock(StopLossPlacementService.class);
         FyersAuthService fyersAuthService = mock(FyersAuthService.class);
-        CircuitBreakerService circuitBreakerService = mock(CircuitBreakerService.class);
         AlertService alertService = mock(AlertService.class);
         com.apex.backend.service.risk.CircuitBreakerService tradingGuardService = mock(com.apex.backend.service.risk.CircuitBreakerService.class);
         SystemGuardService systemGuardService = mock(SystemGuardService.class);
@@ -75,7 +74,6 @@ class GuardEnforcementTest {
                 executionEngine,
                 stopLossPlacementService,
                 fyersAuthService,
-                circuitBreakerService,
                 alertService,
                 tradingGuardService,
                 systemGuardService,

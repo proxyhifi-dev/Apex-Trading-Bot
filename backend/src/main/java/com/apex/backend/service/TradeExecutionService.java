@@ -46,7 +46,6 @@ public class TradeExecutionService {
     private final ExecutionEngine executionEngine;
     private final StopLossPlacementService stopLossPlacementService;
     private final FyersAuthService fyersAuthService;
-    private final CircuitBreakerService circuitBreakerService;
     private final AlertService alertService;
     private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
     private final SystemGuardService systemGuardService;
@@ -102,7 +101,8 @@ public class TradeExecutionService {
             screeningRepo.save(signal);
             return;
         }
-        GuardBlock guardBlock = evaluateGuards(userId, signal.getSymbol(), candles, pipelineDecision);
+        Instant now = Instant.now();
+        GuardBlock guardBlock = evaluateGuards(userId, signal.getSymbol(), candles, pipelineDecision, now);
         if (guardBlock.blocked()) {
             metricsService.recordReject(guardBlock.reasonCode());
             decisionAuditService.record(signal.getSymbol(), "5m", guardBlock.auditType(), Map.of(
@@ -158,6 +158,29 @@ public class TradeExecutionService {
             metricsService.recordReject("RISK_GATE");
             signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
             screeningRepo.save(signal);
+            return;
+        }
+
+        if (systemGuardService.getState().isSafeMode()) {
+            metricsService.recordReject("SAFE_MODE");
+            decisionAuditService.record(signal.getSymbol(), "5m", "GUARD", Map.of(
+                    "reason", "SAFE_MODE_BEFORE_EXECUTION"
+            ));
+            signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
+            screeningRepo.save(signal);
+            broadcastService.broadcastBotStatus(Map.of(
+                    "status", "BLOCKED",
+                    "reason", "SAFE MODE: reconciliation mismatch",
+                    "timestamp", LocalDateTime.now()
+            ));
+            broadcastService.broadcastReject(new BroadcastService.RejectEvent(
+                    "SAFE_MODE",
+                    null,
+                    null,
+                    signal.getSymbol(),
+                    signal.getId(),
+                    null
+            ));
             return;
         }
 
@@ -225,7 +248,7 @@ public class TradeExecutionService {
                     flattenPosition(trade, token);
                     
                     // Halt new trading
-                    circuitBreakerService.triggerGlobalHalt("STOP_LOSS_PLACEMENT_FAILED: " + trade.getSymbol());
+                    systemGuardService.setSafeMode(true, "STOP_LOSS_PLACEMENT_FAILED: " + trade.getSymbol(), Instant.now());
                     
                     // Emit alert
                     alertService.sendAlert("STOP_FAILED", "Failed to place stop for " + trade.getSymbol());
@@ -270,29 +293,29 @@ public class TradeExecutionService {
         approveAndExecute(userId, signalId, isPaper, 15.0);
     }
 
-    private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision) {
+    private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
         if (systemGuardService.getState().isSafeMode()) {
             return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
         }
-        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(Instant.now());
+        TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
         if (!windowDecision.allowed()) {
             return new GuardBlock(true, "TIME_FILTER", "TIME_WINDOW", windowDecision.reason());
         }
         if (userId != null) {
-            var guardDecision = tradingGuardService.canTrade(userId, Instant.now());
+            var guardDecision = tradingGuardService.canTrade(userId, now);
             if (!guardDecision.allowed()) {
                 return new GuardBlock(true, "GUARD", "CIRCUIT_BREAKER", guardDecision.reason());
             }
         }
         if (strategyProperties.getMarketGate().isEnabled()) {
-            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(Instant.now());
+            MarketGateService.MarketGateDecision gate = marketGateService.evaluateForLong(now);
             if (!gate.allowed()) {
                 return new GuardBlock(true, "MARKET_GATE", "MARKET_GATE", gate.reason());
             }
         }
         if (strategyProperties.getVolShock().isEnabled()) {
             var shock = volShockService.evaluate(symbol, candles, strategyProperties.getVolShock().getLookback(),
-                    strategyProperties.getVolShock().getMultiplier(), Instant.now());
+                    strategyProperties.getVolShock().getMultiplier(), now);
             if (shock.shocked()) {
                 return new GuardBlock(true, "VOL_SHOCK", "VOL_SHOCK", shock.reason());
             }
