@@ -22,6 +22,10 @@ public class StrategyProperties {
     private Scoring scoring = new Scoring();
     private Scanner scanner = new Scanner();
     private Health health = new Health();
+    private Breakout breakout = new Breakout();
+    private TradingWindow tradingWindow = new TradingWindow();
+    private MarketGate marketGate = new MarketGate();
+    private VolShock volShock = new VolShock();
 
     @Data
     public static class Macd {
@@ -89,6 +93,7 @@ public class StrategyProperties {
         private double multiplierAaa = 2.0;
         private double multiplierAa = 1.5;
         private double multiplierA = 1.0;
+        private Dynamic dynamic = new Dynamic();
     }
 
     @Data
@@ -122,5 +127,48 @@ public class StrategyProperties {
         private double minSharpe = 0.5;
         private double maxDrawdownPct = 0.1;
         private double maxConsecutiveLossProbability = 0.2;
+    }
+
+    @Data
+    public static class Dynamic {
+        private boolean enabled = false;
+        private double minMultiplier = 0.5;
+        private double maxMultiplier = 1.0;
+        private double scoreFloor = 60.0;
+        private double scoreCeil = 90.0;
+    }
+
+    @Data
+    public static class Breakout {
+        private boolean useDonchian = false;
+        private int donchianPeriod = 20;
+        private boolean requireStructureBreakout = false;
+    }
+
+    @Data
+    public static class TradingWindow {
+        private boolean enabled = false;
+        private String timezone = "Asia/Kolkata";
+        private java.util.List<String> windows = java.util.List.of("09:20-11:30", "13:45-15:10");
+        private java.util.List<String> blackout = java.util.List.of();
+    }
+
+    @Data
+    public static class MarketGate {
+        private boolean enabled = false;
+        private String indexSymbol = "NSE:NIFTY50-EQ";
+        private int emaFast = 50;
+        private int emaSlow = 200;
+        private boolean requirePriceAboveFastEma = true;
+        private boolean blockIfIndexDataStale = true;
+        private int maxStaleSeconds = 300;
+    }
+
+    @Data
+    public static class VolShock {
+        private boolean enabled = false;
+        private int lookback = 50;
+        private double multiplier = 1.8;
+        private int cooldownBars = 6;
     }
 }

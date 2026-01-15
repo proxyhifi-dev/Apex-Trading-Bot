@@ -4,6 +4,7 @@ import com.apex.backend.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,7 +18,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
 import java.util.List;
 
 @Configuration
@@ -28,6 +28,8 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
     private final PasswordEncoder passwordEncoder;
+    private final SecurityProperties securityProperties;
+    private final Environment environment;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -39,13 +41,6 @@ public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        // #region agent log
-        try {
-            java.io.FileWriter fw = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-            fw.write("{\"id\":\"log_" + System.currentTimeMillis() + "_securityConfig\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"SecurityConfig.java:41\",\"message\":\"Creating SecurityFilterChain bean\",\"data\":{\"jwtFilterPresent\":\"" + (jwtAuthFilter != null) + "\",\"userDetailsPresent\":\"" + (userDetailsService != null) + "\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"D\"}\n");
-            fw.close();
-        } catch (Exception e) {}
-        // #endregion
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
@@ -65,14 +60,6 @@ public class SecurityConfig {
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
-
-        // #region agent log
-        try {
-            java.io.FileWriter fw2 = new java.io.FileWriter("c:\\Users\\bollu\\github\\Apex-Trading-Bot\\.cursor\\debug.log", true);
-            fw2.write("{\"id\":\"log_" + System.currentTimeMillis() + "_securityBuilt\",\"timestamp\":" + java.time.Instant.now().toEpochMilli() + ",\"location\":\"SecurityConfig.java:62\",\"message\":\"SecurityFilterChain built successfully\",\"data\":{},\"sessionId\":\"debug-session\",\"runId\":\"run1\",\"hypothesisId\":\"D\"}\n");
-            fw2.close();
-        } catch (Exception e) {}
-        // #endregion
         return http.build();
     }
 
@@ -80,14 +67,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Allow BOTH localhost and 127.0.0.1
-        configuration.setAllowedOrigins(Arrays.asList(
-            "http://localhost:4200",
-            "http://127.0.0.1:4200"
-        ));
-        configuration.setAllowedMethods(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "OPTIONS"
-        ));
+        if (isProd()) {
+            configuration.setAllowedOrigins(securityProperties.getCors().getAllowedOrigins());
+        } else {
+            configuration.setAllowedOriginPatterns(List.of("*"));
+        }
+        configuration.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
         configuration.setAllowedHeaders(List.of("*"));
         configuration.setAllowCredentials(true);
 
@@ -95,5 +80,14 @@ public class SecurityConfig {
         source.registerCorsConfiguration("/**", configuration);
 
         return source;
+    }
+
+    private boolean isProd() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("prod".equalsIgnoreCase(profile) || "production".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

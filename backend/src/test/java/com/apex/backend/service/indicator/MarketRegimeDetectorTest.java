@@ -23,7 +23,8 @@ class MarketRegimeDetectorTest {
         AdvancedTradingProperties advanced = new AdvancedTradingProperties();
         MarketRegimeHistoryRepository repo = mock(MarketRegimeHistoryRepository.class);
         DecisionAuditService auditService = mock(DecisionAuditService.class);
-        MarketRegimeDetector detector = new MarketRegimeDetector(adxService, atrService, advanced, repo, auditService);
+        ChoppinessIndexService choppinessIndexService = new ChoppinessIndexService();
+        MarketRegimeDetector detector = new MarketRegimeDetector(adxService, atrService, choppinessIndexService, advanced, repo, auditService);
 
         List<com.apex.backend.model.Candle> candles = TestCandleFactory.trendingCandles(60, 100, 1.5);
         MarketRegime regime = detector.detectAndStore("TEST", "5m", candles);
