@@ -5,6 +5,9 @@ apex:
       strong-trend-adx: 30.0
       high-vol-atr-percent: 3.0
       low-vol-atr-percent: 1.0
+      chop-filter-enabled: false
+      chop-period: 14
+      choppy-threshold: 61.8
 
     macd-confirmation:
       divergence-lookback: 30
@@ -33,6 +36,10 @@ apex:
       max-daily-loss-pct: 0.02
       max-weekly-loss-pct: 0.1
       max-monthly-loss-pct: 0.15
+      circuit-breakers:
+        enabled: false
+        max-consecutive-losses: 2
+        cooldown-minutes: 45
 
     execution-cost:
       spread-bps: 5.0
@@ -48,16 +55,23 @@ apex:
       max-spread-pct: 0.3
       max-order-pct-daily-volume: 0.02
       impact-lambda: 0.1
+      gate-enabled: false
 
     backtest:
       max-bars-in-trade: 50
       in-sample-bars: 200
       out-sample-bars: 100
       decay-lookback-trades: 20
+      time-stop-bars: 12
+      time-stop-min-move-r: 0.3
+      chandelier-atr-mult: 3.0
 
     broker:
       failure-threshold: 3
       cool-down-seconds: 120
+
+    audit:
+      retention-days: 30
 
 strategy:
   health:
@@ -66,6 +80,37 @@ strategy:
     min-sharpe: 0.5
     max-drawdown-pct: 0.1
     max-consecutive-loss-probability: 0.2
+  breakout:
+    use-donchian: false
+    donchian-period: 20
+    require-structure-breakout: false
+  trading-window:
+    enabled: false
+    timezone: "Asia/Kolkata"
+    windows:
+      - "09:20-11:30"
+      - "13:45-15:10"
+    blackout: []
+  sizing:
+    dynamic:
+      enabled: false
+      min-multiplier: 0.5
+      max-multiplier: 1.0
+      score-floor: 60
+      score-ceil: 90
+  market-gate:
+    enabled: false
+    index-symbol: "NSE:NIFTY50-EQ"
+    ema-fast: 50
+    ema-slow: 200
+    require-price-above-fast-ema: true
+    block-if-index-data-stale: true
+    max-stale-seconds: 300
+  vol-shock:
+    enabled: false
+    lookback: 50
+    multiplier: 1.8
+    cooldown-bars: 6
 
 execution:
   spread-pct: 0.0005
@@ -117,6 +162,10 @@ reconcile:
   enabled: true
   interval-seconds: 300
   safe-mode-on-mismatch: true
+  qty-tolerance: 1
+  price-tolerance-pct: 0.25
+  auto-cancel-pending-on-mismatch: true
+  auto-flatten-on-mismatch: false
 
 crisis:
   enabled: true

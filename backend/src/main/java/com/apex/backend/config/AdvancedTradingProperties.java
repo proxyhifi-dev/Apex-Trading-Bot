@@ -20,6 +20,7 @@ public class AdvancedTradingProperties {
     private Liquidity liquidity = new Liquidity();
     private Backtest backtest = new Backtest();
     private Broker broker = new Broker();
+    private Audit audit = new Audit();
 
     @Data
     public static class MarketRegime {
@@ -27,6 +28,9 @@ public class AdvancedTradingProperties {
         private double strongTrendAdx = 30.0;
         private double highVolAtrPercent = 3.0;
         private double lowVolAtrPercent = 1.0;
+        private boolean chopFilterEnabled = false;
+        private int chopPeriod = 14;
+        private double choppyThreshold = 61.8;
     }
 
     @Data
@@ -64,6 +68,14 @@ public class AdvancedTradingProperties {
         private double maxDailyLossPct = 0.02;
         private double maxWeeklyLossPct = 0.10;
         private double maxMonthlyLossPct = 0.15;
+        private CircuitBreakers circuitBreakers = new CircuitBreakers();
+    }
+
+    @Data
+    public static class CircuitBreakers {
+        private boolean enabled = false;
+        private int maxConsecutiveLosses = 2;
+        private int cooldownMinutes = 45;
     }
 
     @Data
@@ -83,6 +95,7 @@ public class AdvancedTradingProperties {
         private double maxSpreadPct = 0.3;
         private double maxOrderPctDailyVolume = 0.02;
         private double impactLambda = 0.1;
+        private boolean gateEnabled = false;
     }
 
     @Data
@@ -91,11 +104,19 @@ public class AdvancedTradingProperties {
         private int inSampleBars = 200;
         private int outSampleBars = 100;
         private int decayLookbackTrades = 20;
+        private int timeStopBars = 12;
+        private double timeStopMinMoveR = 0.3;
+        private double chandelierAtrMult = 3.0;
     }
 
     @Data
     public static class Broker {
         private int failureThreshold = 3;
         private int coolDownSeconds = 120;
+    }
+
+    @Data
+    public static class Audit {
+        private int retentionDays = 30;
     }
 }

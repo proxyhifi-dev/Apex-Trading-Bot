@@ -19,6 +19,7 @@ public class MarketRegimeDetector {
 
     private final AdxService adxService;
     private final AtrService atrService;
+    private final ChoppinessIndexService choppinessIndexService;
     private final AdvancedTradingProperties advancedTradingProperties;
     private final MarketRegimeHistoryRepository marketRegimeHistoryRepository;
     private final DecisionAuditService decisionAuditService;
@@ -27,9 +28,14 @@ public class MarketRegimeDetector {
         AdxService.AdxResult adx = adxService.calculate(candles);
         AtrService.AtrResult atr = atrService.calculate(candles);
         AdvancedTradingProperties.MarketRegime config = advancedTradingProperties.getMarketRegime();
+        ChoppinessIndexService.ChopResult chopResult = choppinessIndexService.calculate(candles, config.getChopPeriod());
 
         MarketRegime regime;
-        if (atr.atrPercent() >= config.getHighVolAtrPercent()) {
+        if (config.isChopFilterEnabled()
+                && chopResult.chop() >= config.getChoppyThreshold()
+                && adx.adx() < config.getTrendingAdxThreshold()) {
+            regime = MarketRegime.RANGE;
+        } else if (atr.atrPercent() >= config.getHighVolAtrPercent()) {
             regime = MarketRegime.HIGH_VOL;
         } else if (atr.atrPercent() <= config.getLowVolAtrPercent()) {
             regime = MarketRegime.LOW_VOL;
@@ -54,6 +60,13 @@ public class MarketRegimeDetector {
                 "adx", adx.adx(),
                 "atrPercent", atr.atrPercent()
         ));
+        if (config.isChopFilterEnabled()) {
+            decisionAuditService.record(symbol, timeframe, "CHOP_FILTER", Map.of(
+                    "chop", chopResult.chop(),
+                    "threshold", config.getChoppyThreshold(),
+                    "adx", adx.adx()
+            ));
+        }
 
         return regime;
     }

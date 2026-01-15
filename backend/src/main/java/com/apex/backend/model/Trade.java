@@ -88,6 +88,9 @@ public class Trade {
     @Column(name = "max_adverse_r", precision = 19, scale = 4)
     private BigDecimal maxAdverseR;
 
+    @Column(name = "sizing_multiplier", precision = 10, scale = 4)
+    private BigDecimal sizingMultiplier;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "position_state", nullable = false)
     @Builder.Default

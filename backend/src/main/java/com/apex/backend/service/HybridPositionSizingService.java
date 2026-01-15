@@ -25,26 +25,47 @@ public class HybridPositionSizingService {
     private final TradeRepository tradeRepository;
 
     public int calculateQuantity(BigDecimal equity, BigDecimal entryPrice, BigDecimal stopLoss, BigDecimal atr, Long userId) {
+        return calculateSizing(equity, entryPrice, stopLoss, atr, userId, null).quantity();
+    }
+
+    public SizingResult calculateSizing(BigDecimal equity, BigDecimal entryPrice, BigDecimal stopLoss, BigDecimal atr, Long userId, Double score) {
         if (equity == null || equity.compareTo(BigDecimal.ZERO) <= 0) {
-            return 0;
+            return new SizingResult(0, 1.0);
         }
         BigDecimal riskPerShare = entryPrice.subtract(stopLoss).abs();
         if (riskPerShare.compareTo(BigDecimal.ZERO) == 0 && atr != null) {
             riskPerShare = atr.multiply(BigDecimal.valueOf(strategyProperties.getAtr().getStopMultiplier()));
         }
         if (riskPerShare.compareTo(BigDecimal.ZERO) == 0) {
-            return 0;
+            return new SizingResult(0, 1.0);
         }
         BigDecimal baseRisk = equity.multiply(BigDecimal.valueOf(strategyProperties.getSizing().getBaseRisk()));
         int atrSize = baseRisk.divide(riskPerShare, 0, RoundingMode.DOWN).intValue();
 
         int kellySize = calculateKellySize(equity, riskPerShare, userId);
-        int size = Math.min(atrSize, kellySize);
+        int baseSize = Math.min(atrSize, kellySize);
+        double multiplier = resolveDynamicMultiplier(score);
+        int scaledSize = (int) Math.floor(baseSize * multiplier);
 
         BigDecimal maxCapital = equity.multiply(BigDecimal.valueOf(strategyConfig.getRisk().getMaxSingleTradeCapitalPct()));
         int maxByCapital = maxCapital.divide(entryPrice, 0, RoundingMode.DOWN).intValue();
-        size = Math.min(size, maxByCapital);
-        return Math.max(size, 0);
+        int size = Math.min(scaledSize, maxByCapital);
+        return new SizingResult(Math.max(size, 0), multiplier);
+    }
+
+    public double resolveDynamicMultiplier(Double score) {
+        StrategyProperties.Dynamic cfg = strategyProperties.getSizing().getDynamic();
+        if (!cfg.isEnabled() || score == null) {
+            return 1.0;
+        }
+        if (score <= cfg.getScoreFloor()) {
+            return cfg.getMinMultiplier();
+        }
+        if (score >= cfg.getScoreCeil()) {
+            return cfg.getMaxMultiplier();
+        }
+        double ratio = (score - cfg.getScoreFloor()) / (cfg.getScoreCeil() - cfg.getScoreFloor());
+        return cfg.getMinMultiplier() + (ratio * (cfg.getMaxMultiplier() - cfg.getMinMultiplier()));
     }
 
     private int calculateKellySize(BigDecimal equity, BigDecimal riskPerShare, Long userId) {
@@ -88,4 +109,6 @@ public class HybridPositionSizingService {
         log.info("Kelly sizing: winRate={}, payoffRatio={}, kellyFraction={}, size={}", winRate, payoffRatio, kellyFraction, size);
         return size;
     }
+
+    public record SizingResult(int quantity, double dynamicMultiplier) {}
 }

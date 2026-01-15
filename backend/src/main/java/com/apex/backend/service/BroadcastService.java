@@ -46,6 +46,14 @@ public class BroadcastService {
     }
 
     /**
+     * Pushes reconciliation updates
+     */
+    public void broadcastReconcile(Object report) {
+        messagingTemplate.convertAndSend("/topic/reconcile", report);
+        metricsService.incrementWebsocketPublishes();
+    }
+
+    /**
      * Pushes new signals directly to the "Scanner Output" widget
      */
     public void broadcastSignal(Object signal) {
