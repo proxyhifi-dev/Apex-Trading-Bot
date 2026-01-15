@@ -14,7 +14,7 @@ import lombok.Setter;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class RiskStatusDTO {
+public class RiskStatusDto {
     private double dailyPnL;
     private double dailyLossLimit;
     private double portfolioValue;

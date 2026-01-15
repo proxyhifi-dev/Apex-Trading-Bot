@@ -1,6 +1,6 @@
 package com.apex.backend.service;
 
-import com.apex.backend.dto.RiskStatusDTO;
+import com.apex.backend.dto.RiskStatusDto;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import lombok.RequiredArgsConstructor;
@@ -30,7 +30,7 @@ public class RiskManagementService {
     /**
      * Get comprehensive risk status
      */
-    public RiskStatusDTO getRiskStatus() {
+    public RiskStatusDto getRiskStatus() {
         try {
             double totalRealizedPnl = getTodaysPnL();
             double portfolioValue = portfolioService.getPortfolioValue(true);
@@ -42,7 +42,7 @@ public class RiskManagementService {
             log.debug("Risk status calculated - PnL: {}, Portfolio: {}, Positions: {}", 
                 totalRealizedPnl, portfolioValue, openPositions);
             
-            return RiskStatusDTO.builder()
+            return RiskStatusDto.builder()
                 .dailyPnL(totalRealizedPnl)
                 .dailyLossLimit(dailyLossLimit)
                 .portfolioValue(portfolioValue)
@@ -53,7 +53,7 @@ public class RiskManagementService {
                 .build();
         } catch (Exception e) {
             log.error("Failed to calculate risk status", e);
-            return RiskStatusDTO.builder()
+            return RiskStatusDto.builder()
                 .riskExceeded(true)
                 .build();
         }
