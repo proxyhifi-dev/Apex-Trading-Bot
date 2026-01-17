@@ -1,0 +1,4 @@
+symbol,name,exchange,segment,tickSize,lotSize,isin
+NSE:INFY-EQ,Infosys,NSE,EQ,0.05,1,INE009A01021
+NSE:TCS-EQ,Tata Consultancy Services,NSE,EQ,0.05,1,INE467B01029
+NSE:RELIANCE-EQ,Reliance Industries,NSE,EQ,0.05,1,INE002A01018

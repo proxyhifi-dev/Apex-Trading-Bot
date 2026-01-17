@@ -24,8 +24,11 @@ public class GuardController {
     private final SystemGuardService systemGuardService;
     private final Environment environment;
 
-    @Value("${guard.admin-token:}")
+    @Value("${apex.admin.token:}")
     private String adminToken;
+
+    @Value("${guard.admin-token:}")
+    private String legacyAdminToken;
 
     @GetMapping("/state")
     public ResponseEntity<?> getState() {
@@ -38,9 +41,15 @@ public class GuardController {
         ));
     }
 
+    @GetMapping("/status")
+    public ResponseEntity<?> getStatusAlias() {
+        return getState();
+    }
+
     @PostMapping("/clear")
     public ResponseEntity<?> clearSafeMode(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
-        if (!isDevProfile() && (adminToken == null || adminToken.isBlank() || !adminToken.equals(token))) {
+        String expected = (adminToken != null && !adminToken.isBlank()) ? adminToken : legacyAdminToken;
+        if (!isDevProfile() && (expected == null || expected.isBlank() || !expected.equals(token))) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                     .body(Map.of("error", "Not authorized to clear safe mode"));
         }

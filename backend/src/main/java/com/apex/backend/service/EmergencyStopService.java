@@ -18,9 +18,11 @@ public class EmergencyStopService {
     private final TradeRepository tradeRepository;
     private final PaperTradingService paperTradingService;
     private final SystemGuardService systemGuardService;
+    private final RiskEventService riskEventService;
 
     public EmergencyStopResult triggerEmergencyStop(Long userId, boolean isPaper, String reason) {
         int closedTrades = closeOpenTrades(userId, isPaper, reason);
+        riskEventService.record(userId, "EMERGENCY_STOP", reason, "closedTrades=" + closedTrades);
         return new EmergencyStopResult(closedTrades, systemGuardService.getState().isSafeMode());
     }
 

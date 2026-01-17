@@ -15,6 +15,7 @@ public class SystemGuardService {
     private static final long SINGLETON_ID = 1L;
 
     private final SystemGuardStateRepository systemGuardStateRepository;
+    private final RiskEventService riskEventService;
 
     @Transactional
     public SystemGuardState getState() {
@@ -33,6 +34,7 @@ public class SystemGuardService {
         if (safeMode) {
             state.setLastMismatchAt(mismatchAt != null ? mismatchAt : Instant.now());
             state.setLastMismatchReason(reason);
+            riskEventService.record(0L, "GUARD_SAFE_MODE", reason, "enteredAt=" + state.getLastMismatchAt());
         }
         state.setUpdatedAt(Instant.now());
         return systemGuardStateRepository.save(state);
@@ -44,6 +46,7 @@ public class SystemGuardService {
         state.setSafeMode(false);
         state.setLastMismatchReason(null);
         state.setUpdatedAt(Instant.now());
+        riskEventService.record(0L, "GUARD_SAFE_MODE_EXIT", "Safe mode cleared", null);
         return systemGuardStateRepository.save(state);
     }
 

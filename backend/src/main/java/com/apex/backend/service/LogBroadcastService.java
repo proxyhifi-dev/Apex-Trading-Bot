@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
@@ -15,6 +16,9 @@ public class LogBroadcastService {
     private final SimpMessagingTemplate messagingTemplate;
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("HH:mm:ss");
 
+    @Value("${apex.ws.broadcastTopics:false}")
+    private boolean broadcastTopics;
+
     /**
      * Sends a log message to the frontend logs widget.
      * @param level INFO, WARN, ERROR, TRADE
@@ -27,7 +31,22 @@ public class LogBroadcastService {
         logEntry.put("message", message);
 
         // Push to the WebSocket topic the frontend is listening to
-        messagingTemplate.convertAndSend("/topic/logs", logEntry);
+        if (broadcastTopics) {
+            messagingTemplate.convertAndSend("/topic/logs", logEntry);
+        }
+    }
+
+    public void broadcastLog(Long userId, String level, String message) {
+        Map<String, String> logEntry = new HashMap<>();
+        logEntry.put("timestamp", LocalDateTime.now().format(formatter));
+        logEntry.put("level", level);
+        logEntry.put("message", message);
+        if (userId != null) {
+            messagingTemplate.convertAndSendToUser(userId.toString(), "/queue/logs", logEntry);
+        }
+        if (broadcastTopics) {
+            messagingTemplate.convertAndSend("/topic/logs", logEntry);
+        }
     }
 
     // Convenience methods

@@ -60,6 +60,10 @@ public class FyersHttpClient {
         return execute(url, token, HttpMethod.DELETE, null);
     }
 
+    public String put(String url, String token, String body) {
+        return execute(url, token, HttpMethod.PUT, body);
+    }
+
     private String execute(String url, String token, HttpMethod method, String body) {
         Supplier<String> supplier = () -> doRequest(url, token, method, body);
         try {
@@ -86,9 +90,9 @@ public class FyersHttpClient {
             if (token != null && !token.isBlank()) {
                 headers.set("Authorization", appId + ":" + token);
             }
-            if (method == HttpMethod.POST) {
-                headers.setContentType(MediaType.APPLICATION_JSON);
-            }
+        if (method == HttpMethod.POST || method == HttpMethod.PUT) {
+            headers.setContentType(MediaType.APPLICATION_JSON);
+        }
             HttpEntity<String> entity = new HttpEntity<>(body, headers);
             ResponseEntity<String> response = fyersRestTemplate.exchange(url, method, entity, String.class);
             return response.getBody();
