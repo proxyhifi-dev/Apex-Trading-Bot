@@ -66,7 +66,7 @@ public class PaperTradingService {
                 .createdAt(LocalDateTime.now())
                 .build();
         orderRepository.save(order);
-        broadcastService.broadcastOrders(orderRepository.findByUserId(userId));
+        broadcastService.broadcastOrders(userId, orderRepository.findByUserId(userId));
 
         PaperTrade paperTrade = PaperTrade.builder()
                 .userId(userId)
@@ -91,7 +91,7 @@ public class PaperTradingService {
                 .entryTime(trade.getEntryTime())
                 .build();
         positionRepository.save(position);
-        broadcastService.broadcastPositions(positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN));
+        broadcastService.broadcastPositions(userId, positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN));
         updateAccountForEntry(userId, trade);
     }
 
@@ -135,7 +135,7 @@ public class PaperTradingService {
 
     public List<PaperPosition> getOpenPositions(Long userId) {
         List<PaperPosition> positions = positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN);
-        refreshPositionsWithMarketData(positions);
+        refreshPositionsWithMarketData(userId, positions);
         updateAccountUnrealized(userId, positions);
         return positions;
     }
@@ -223,11 +223,11 @@ public class PaperTradingService {
     @Transactional
     public void refreshLtp(Long userId) {
         List<PaperPosition> positions = positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN);
-        refreshPositionsWithMarketData(positions);
+        refreshPositionsWithMarketData(userId, positions);
         updateAccountUnrealized(userId, positions);
     }
 
-    private void refreshPositionsWithMarketData(List<PaperPosition> positions) {
+    private void refreshPositionsWithMarketData(Long userId, List<PaperPosition> positions) {
         if (positions.isEmpty()) {
             return;
         }
@@ -247,7 +247,7 @@ public class PaperTradingService {
             }
         });
         positionRepository.saveAll(positions);
-        broadcastService.broadcastPositions(positions);
+        broadcastService.broadcastPositions(userId, positions);
     }
 
     private void updateStats(Long userId) {

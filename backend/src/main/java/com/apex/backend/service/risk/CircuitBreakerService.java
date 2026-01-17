@@ -28,6 +28,7 @@ public class CircuitBreakerService {
     private final SettingsService settingsService;
     private final PaperTradingService paperTradingService;
     private final StrategyConfig strategyConfig;
+    private final com.apex.backend.service.RiskEventService riskEventService;
 
     public record GuardDecision(boolean allowed, String reason, Instant until) {}
 
@@ -50,10 +51,12 @@ public class CircuitBreakerService {
         BigDecimal dayPnl = state.getDayPnl() != null ? state.getDayPnl() : MoneyUtils.ZERO;
         if (dayPnl.compareTo(maxLoss) <= 0) {
             Instant endOfDay = endOfTradingDay(nowUtc);
+            riskEventService.record(userId, "CIRCUIT_DAILY_LOSS", "Daily loss limit reached", "dayPnl=" + dayPnl);
             return new GuardDecision(false, "Daily loss limit reached", endOfDay);
         }
         if (state.getConsecutiveLosses() >= cfg.getMaxConsecutiveLosses()) {
             Instant until = state.getCooldownUntil() != null ? state.getCooldownUntil() : nowUtc;
+            riskEventService.record(userId, "CIRCUIT_CONSECUTIVE_LOSS", "Max consecutive losses", "count=" + state.getConsecutiveLosses());
             return new GuardDecision(false, "Max consecutive losses", until);
         }
         return new GuardDecision(true, "Allowed", null);
