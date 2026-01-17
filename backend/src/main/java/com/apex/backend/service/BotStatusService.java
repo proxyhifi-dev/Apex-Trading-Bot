@@ -97,6 +97,11 @@ public class BotStatusService {
     }
 
     public void broadcast() {
-        broadcastService.broadcastBotStatus(getStatus());
+        Long ownerUserId = strategyConfig.getTrading().getOwnerUserId();
+        if (ownerUserId != null) {
+            broadcastService.broadcastBotStatus(ownerUserId, getStatus());
+        } else {
+            broadcastService.broadcastBotStatus(getStatus());
+        }
     }
 }

@@ -269,6 +269,46 @@ public class FyersService {
         }
     }
 
+    public String modifyOrder(String orderId, com.apex.backend.dto.OrderModifyRequest request) {
+        String resolvedToken = resolveToken(null);
+        if (resolvedToken == null || resolvedToken.isBlank()) {
+            throw new RuntimeException("No Token");
+        }
+        if (orderId == null || orderId.isBlank()) {
+            throw new IllegalArgumentException("Order ID is required");
+        }
+        String url = apiBaseUrl + "/orders";
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("id", orderId);
+            if (request.getQty() != null) {
+                body.put("qty", request.getQty());
+            }
+            if (request.getPrice() != null) {
+                body.put("limitPrice", request.getPrice());
+            }
+            if (request.getTriggerPrice() != null) {
+                body.put("stopPrice", request.getTriggerPrice());
+            }
+            if (request.getOrderType() != null) {
+                body.put("type", request.getOrderType() == com.apex.backend.dto.PlaceOrderRequest.OrderType.MARKET ? 2 : 1);
+            }
+            if (request.getValidity() != null) {
+                body.put("validity", request.getValidity().name());
+            }
+            String response = fyersHttpClient.put(url, resolvedToken, gson.toJson(body));
+            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
+            }
+            log.warn("Modify order response missing id: {}", response);
+            return orderId;
+        } catch (Exception e) {
+            log.error("Failed to modify order {}: {}", orderId, e.getMessage());
+            throw new RuntimeException("Order modification failed: " + e.getMessage(), e);
+        }
+    }
+
     public String placeStopLossOrder(String symbol, int qty, String side, double stopPrice, String clientOrderId, String token) {
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null || resolvedToken.isBlank()) {

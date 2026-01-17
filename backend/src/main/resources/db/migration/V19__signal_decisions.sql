@@ -1,0 +1,5 @@
+ALTER TABLE stock_screening_results
+    ADD COLUMN IF NOT EXISTS decision_reason VARCHAR(1000),
+    ADD COLUMN IF NOT EXISTS decision_notes VARCHAR(2000),
+    ADD COLUMN IF NOT EXISTS decided_by VARCHAR(100),
+    ADD COLUMN IF NOT EXISTS decision_at TIMESTAMP WITH TIME ZONE;

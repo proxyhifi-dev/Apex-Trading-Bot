@@ -49,6 +49,17 @@ public class StockScreeningResult {
     @Column(length = 1000)
     private String analysisReason;
 
+    @Column(length = 1000)
+    private String decisionReason;
+
+    @Column(length = 2000)
+    private String decisionNotes;
+
+    @Column(length = 100)
+    private String decidedBy;
+
+    private LocalDateTime decisionAt;
+
     // Indicators snapshot
     private Double macdValue;
     private Double rsiValue;

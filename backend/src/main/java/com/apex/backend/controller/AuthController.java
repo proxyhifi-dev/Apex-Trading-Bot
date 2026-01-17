@@ -1,16 +1,22 @@
 package com.apex.backend.controller;
 
+import com.apex.backend.dto.ChangePasswordRequest;
+import com.apex.backend.dto.LogoutRequest;
 import com.apex.backend.dto.UserProfileDTO;
 import com.apex.backend.util.MoneyUtils;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.security.JwtTokenProvider;
+import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.FyersAuthService;
+import com.apex.backend.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 import java.time.LocalDateTime;
@@ -23,12 +29,14 @@ import java.util.concurrent.ConcurrentHashMap;
 @RestController
 @RequestMapping(value = "/api/auth", produces = MediaType.APPLICATION_JSON_VALUE)
 @RequiredArgsConstructor
+@Tag(name = "Auth")
 public class AuthController {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final FyersAuthService fyersAuthService;
+    private final RefreshTokenService refreshTokenService;
     
     // Temporary storage for Fyers tokens before user links account
     private static final Map<String, String> tempFyersTokens = new ConcurrentHashMap<>();
@@ -226,6 +234,7 @@ public class AuthController {
             // Generate JWT tokens for frontend login
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+            refreshTokenService.storeToken(user.getId(), refreshToken);
 
             UserProfileDTO userProfile = UserProfileDTO.builder()
                     .name(user.getUsername())
@@ -317,6 +326,7 @@ public class AuthController {
 
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+            refreshTokenService.storeToken(user.getId(), refreshToken);
 
             UserProfileDTO userProfile = UserProfileDTO.builder()
                     .name(user.getUsername())
@@ -343,6 +353,7 @@ public class AuthController {
             User user = userOptional.get();
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String refreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+            refreshTokenService.storeToken(user.getId(), refreshToken);
 
             UserProfileDTO userProfile = UserProfileDTO.builder()
                     .name(user.getUsername())
@@ -368,6 +379,7 @@ public class AuthController {
             }
 
             Long userId = jwtTokenProvider.getUserIdFromToken(refreshToken);
+            refreshTokenService.ensureActive(refreshToken, userId);
             Optional<User> userOptional = userRepository.findById(userId);
             if (userOptional.isEmpty()) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("User not found"));
@@ -376,12 +388,53 @@ public class AuthController {
             User user = userOptional.get();
             String accessToken = jwtTokenProvider.generateToken(user.getUsername(), user.getId(), user.getRole());
             String newRefreshToken = jwtTokenProvider.generateRefreshToken(user.getUsername(), user.getId());
+            refreshTokenService.rotateToken(userId, refreshToken, newRefreshToken);
 
             return ResponseEntity.ok(new RefreshResponse(accessToken, newRefreshToken));
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(new ErrorResponse("Token refresh failed"));
         }
+    }
+
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(@RequestBody @jakarta.validation.Valid LogoutRequest request) {
+        if (!jwtTokenProvider.validateToken(request.getRefreshToken())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid refresh token"));
+        }
+        refreshTokenService.revokeToken(request.getRefreshToken());
+        return ResponseEntity.ok(new MessageResponse("Logged out"));
+    }
+
+    @PostMapping("/change-password")
+    public ResponseEntity<?> changePassword(@AuthenticationPrincipal UserPrincipal principal,
+                                            @RequestBody @jakarta.validation.Valid ChangePasswordRequest request) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new com.apex.backend.exception.UnauthorizedException("Missing authentication");
+        }
+        User user = userRepository.findById(principal.getUserId())
+                .orElseThrow(() -> new com.apex.backend.exception.NotFoundException("User not found"));
+        if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPasswordHash())) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(new ErrorResponse("Invalid password"));
+        }
+        if (!isStrongPassword(request.getNewPassword())) {
+            return ResponseEntity.badRequest().body(new ErrorResponse("Password does not meet strength requirements"));
+        }
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+        refreshTokenService.revokeAll(user.getId());
+        return ResponseEntity.ok(new MessageResponse("Password updated"));
+    }
+
+    private boolean isStrongPassword(String password) {
+        if (password == null || password.length() < 12) {
+            return false;
+        }
+        boolean upper = password.chars().anyMatch(Character::isUpperCase);
+        boolean lower = password.chars().anyMatch(Character::isLowerCase);
+        boolean digit = password.chars().anyMatch(Character::isDigit);
+        boolean symbol = password.chars().anyMatch(ch -> !Character.isLetterOrDigit(ch));
+        return upper && lower && digit && symbol;
     }
 
     // DTO Classes
