@@ -7,6 +7,9 @@ import com.apex.backend.model.Trade;
 import com.apex.backend.repository.PaperTradeRepository;
 import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.security.UserPrincipal;
+import com.apex.backend.dto.PnlSeriesPoint;
+import com.apex.backend.dto.PnlSeriesResponse;
+import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.service.PerformanceService;
 import com.apex.backend.service.SettingsService;
 import lombok.RequiredArgsConstructor;
@@ -14,14 +17,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.YearMonth;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -294,6 +300,67 @@ public class PerformanceController {
         }
     }
 
+    /**
+     * Get daily realized P&L series for closed trades.
+     */
+    @GetMapping("/daily-pnl")
+    public ResponseEntity<PnlSeriesResponse> getDailyPnL(
+            @RequestParam("from") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam("to") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(value = "type", required = false) String type,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
+        boolean isPaper = resolvePaperMode(userId, type);
+        if (from.isAfter(to)) {
+            throw new BadRequestException("from date must be on or before to date");
+        }
+        Map<LocalDate, Double> pnlByDate = new TreeMap<>();
+        resolveClosedTrades(userId, isPaper).forEach(trade -> {
+            LocalDate exitDate = trade.getExitTime().toLocalDate();
+            if (!exitDate.isBefore(from) && !exitDate.isAfter(to)) {
+                double pnl = trade.getRealizedPnl() != null ? trade.getRealizedPnl().doubleValue() : 0.0;
+                pnlByDate.merge(exitDate, pnl, Double::sum);
+            }
+        });
+        LocalDate cursor = from;
+        while (!cursor.isAfter(to)) {
+            pnlByDate.putIfAbsent(cursor, 0.0);
+            cursor = cursor.plusDays(1);
+        }
+        List<PnlSeriesPoint> series = pnlByDate.entrySet().stream()
+                .map(entry -> new PnlSeriesPoint(entry.getKey().toString(), entry.getValue()))
+                .toList();
+        return ResponseEntity.ok(new PnlSeriesResponse(isPaper ? "PAPER" : "LIVE", "DAILY", series));
+    }
+
+    /**
+     * Get monthly realized P&L series for closed trades.
+     */
+    @GetMapping("/monthly-pnl")
+    public ResponseEntity<PnlSeriesResponse> getMonthlyPnL(
+            @RequestParam("year") int year,
+            @RequestParam(value = "type", required = false) String type,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
+        boolean isPaper = resolvePaperMode(userId, type);
+        Map<YearMonth, Double> pnlByMonth = new TreeMap<>();
+        resolveClosedTrades(userId, isPaper).forEach(trade -> {
+            LocalDateTime exitTime = trade.getExitTime();
+            if (exitTime != null && exitTime.getYear() == year) {
+                YearMonth month = YearMonth.from(exitTime);
+                double pnl = trade.getRealizedPnl() != null ? trade.getRealizedPnl().doubleValue() : 0.0;
+                pnlByMonth.merge(month, pnl, Double::sum);
+            }
+        });
+        for (int month = 1; month <= 12; month++) {
+            pnlByMonth.putIfAbsent(YearMonth.of(year, month), 0.0);
+        }
+        List<PnlSeriesPoint> series = pnlByMonth.entrySet().stream()
+                .map(entry -> new PnlSeriesPoint(entry.getKey().toString(), entry.getValue()))
+                .toList();
+        return ResponseEntity.ok(new PnlSeriesResponse(isPaper ? "PAPER" : "LIVE", "MONTHLY", series));
+    }
+
     private List<Trade> resolveTrades(Long userId, boolean isPaper) {
         if (isPaper) {
             return paperTradeRepository.findByUserId(userId).stream()
@@ -301,6 +368,25 @@ public class PerformanceController {
                     .collect(Collectors.toList());
         }
         return tradeRepository.findByUserIdAndIsPaperTrade(userId, false);
+    }
+
+    private List<Trade> resolveClosedTrades(Long userId, boolean isPaper) {
+        return resolveTrades(userId, isPaper).stream()
+                .filter(trade -> trade.getExitTime() != null)
+                .collect(Collectors.toList());
+    }
+
+    private boolean resolvePaperMode(Long userId, String type) {
+        if (type == null || type.isBlank()) {
+            return settingsService.isPaperModeForUser(userId);
+        }
+        if ("PAPER".equalsIgnoreCase(type)) {
+            return true;
+        }
+        if ("LIVE".equalsIgnoreCase(type)) {
+            return false;
+        }
+        throw new BadRequestException("type must be PAPER or LIVE");
     }
 
     private Trade mapPaperTrade(PaperTrade paperTrade) {

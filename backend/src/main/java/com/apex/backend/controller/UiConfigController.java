@@ -40,6 +40,7 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("GET").path("/api/account/profile").description("Profile snapshot").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/summary?type=PAPER|LIVE").description("Summary snapshot").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/capital").description("Capital info").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/account/overview").description("Full account overview").build(),
             UiEndpointDTO.builder().method("GET").path("/api/settings").description("UI settings").build(),
             UiEndpointDTO.builder().method("GET").path("/api/trades/history").description("All trades").build(),
             UiEndpointDTO.builder().method("GET").path("/api/trades/performance").description("Performance metrics").build(),
@@ -64,9 +65,16 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("GET").path("/api/performance/sharpe-ratio").description("Sharpe ratio").build(),
             UiEndpointDTO.builder().method("GET").path("/api/performance/roi").description("ROI").build(),
             UiEndpointDTO.builder().method("GET").path("/api/performance/equity-curve?type=PAPER|LIVE").description("Equity curve").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/performance/daily-pnl?from=YYYY-MM-DD&to=YYYY-MM-DD&type=PAPER|LIVE").description("Daily realized P&L").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/performance/monthly-pnl?year=YYYY&type=PAPER|LIVE").description("Monthly realized P&L").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/backtest/runs?page=0&size=20").description("Backtest runs list").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/backtest/runs/{id}").description("Backtest run details").build(),
             UiEndpointDTO.builder().method("GET").path("/api/risk/status").description("Risk status").build(),
             UiEndpointDTO.builder().method("POST").path("/api/risk/emergency-stop").description("Emergency stop").build(),
-            UiEndpointDTO.builder().method("GET").path("/api/risk/correlation-matrix").description("Correlation matrix").build()
+            UiEndpointDTO.builder().method("GET").path("/api/risk/correlation-matrix").description("Correlation matrix").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/guard/state").description("Guard safe mode state").build(),
+            UiEndpointDTO.builder().method("GET").path("/api/guard/status").description("Guard safe mode status alias").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/guard/clear").description("Clear guard safe mode").build()
         );
 
         Map<String, List<String>> entityFields = new LinkedHashMap<>();
@@ -95,6 +103,10 @@ public class UiConfigController {
             "averageLoss", "profitFactor", "expectancy", "maxDrawdown", "longestWinStreak",
             "longestLossStreak", "lastTradeTime", "lastTradeSymbol"
         ));
+        entityFields.put("PnlSeriesResponse", List.of("type", "granularity", "series"));
+        entityFields.put("PnlSeriesPoint", List.of("period", "pnl"));
+        entityFields.put("BacktestRunSummary", List.of("id", "symbol", "timeframe", "startTime", "endTime", "createdAt"));
+        entityFields.put("BacktestRunsResponse", List.of("runs", "page", "size", "totalElements"));
         entityFields.put("RiskStatus", List.of("equity", "openPositions"));
         entityFields.put("EmergencyStopResponse", List.of("message", "closedTrades", "globalHalt", "timestamp"));
 
