@@ -173,3 +173,6 @@ crisis:
   drop-threshold-pct: 5.0
   vix-threshold: 30.0
   halt-duration-minutes: 30
+
+security:
+  token-encryption-key: ${SECURITY_TOKEN_ENCRYPTION_KEY:}

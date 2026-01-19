@@ -29,9 +29,14 @@ public class OrderExecutionController {
     @PostMapping("/orders")
     @Operation(summary = "Place order")
     public ResponseEntity<OrderResponse> placeOrder(@AuthenticationPrincipal UserPrincipal principal,
+                                                    @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                     @Valid @RequestBody PlaceOrderRequest request) {
         Long userId = requireUserId(principal);
         log.info("Placing order for user {} symbol {}", userId, request.getSymbol());
+        if ((request.getClientOrderId() == null || request.getClientOrderId().isBlank())
+                && idempotencyKey != null && !idempotencyKey.isBlank()) {
+            request.setClientOrderId(idempotencyKey);
+        }
         return ResponseEntity.ok(orderExecutionService.placeOrder(userId, request));
     }
 
@@ -56,10 +61,15 @@ public class OrderExecutionController {
     @Operation(summary = "Close position", tags = {"Positions"})
     public ResponseEntity<OrderResponse> closePosition(@AuthenticationPrincipal UserPrincipal principal,
                                                        @PathVariable String symbol,
+                                                       @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
                                                        @Valid @RequestBody(required = false) ClosePositionRequest request) {
         Long userId = requireUserId(principal);
         Integer qty = request != null ? request.getQty() : null;
-        return ResponseEntity.ok(orderExecutionService.closePosition(userId, symbol, qty));
+        String clientOrderId = request != null ? request.getClientOrderId() : null;
+        if ((clientOrderId == null || clientOrderId.isBlank()) && idempotencyKey != null && !idempotencyKey.isBlank()) {
+            clientOrderId = idempotencyKey;
+        }
+        return ResponseEntity.ok(orderExecutionService.closePosition(userId, symbol, qty, clientOrderId));
     }
 
     @PostMapping("/orders/validate")

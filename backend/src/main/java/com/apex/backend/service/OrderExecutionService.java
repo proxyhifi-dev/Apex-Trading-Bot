@@ -7,6 +7,7 @@ import com.apex.backend.dto.OrderValidationResult;
 import com.apex.backend.dto.PlaceOrderRequest;
 import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.exception.ConflictException;
+import com.apex.backend.exception.FyersCircuitOpenException;
 import com.apex.backend.model.InstrumentDefinition;
 import com.apex.backend.model.OrderAudit;
 import com.apex.backend.repository.OrderAuditRepository;
@@ -34,6 +35,8 @@ public class OrderExecutionService {
     private final InstrumentCacheService instrumentCacheService;
     private final TradingWindowService tradingWindowService;
     private final OrderAuditRepository orderAuditRepository;
+    private final IdempotencyService idempotencyService;
+    private final MetricsService metricsService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -96,38 +99,48 @@ public class OrderExecutionService {
 
     @Transactional
     public OrderResponse placeOrder(Long userId, PlaceOrderRequest request) {
-        OrderValidationResult validation = validate(userId, request);
-        if (!validation.isValid()) {
-            throw new BadRequestException(String.join("; ", validation.getErrors()));
-        }
-        boolean isPaper = settingsService.isPaperModeForUser(userId);
-        List<String> warnings = validation.getWarnings();
-        if (isPaper) {
-            var paperOrder = paperOrderExecutionService.placeOrder(userId, request);
-            OrderResponse response = OrderResponse.builder()
-                    .status(paperOrder.getStatus())
-                    .paperOrderId(paperOrder.getOrderId())
-                    .submittedAt(Instant.now())
-                    .warnings(warnings)
-                    .build();
-            recordAudit(userId, "PLACE", "SUCCESS", null, paperOrder.getOrderId(), request, response);
-            return response;
-        }
-        String brokerOrderId = null;
-        try {
-            brokerOrderId = placeLiveOrder(request);
-            OrderResponse response = OrderResponse.builder()
-                    .status("SUBMITTED")
-                    .brokerOrderId(brokerOrderId)
-                    .submittedAt(Instant.now())
-                    .warnings(warnings)
-                    .build();
-            recordAudit(userId, "PLACE", "SUCCESS", brokerOrderId, null, request, response);
-            return response;
-        } catch (Exception ex) {
-            recordAudit(userId, "PLACE", "FAILED", brokerOrderId, null, request, ex.getMessage());
-            throw new ConflictException("Live order failed: " + ex.getMessage());
-        }
+        String idempotencyKey = request.getClientOrderId();
+        return idempotencyService.execute(userId, idempotencyKey, request, OrderResponse.class, () -> {
+            OrderValidationResult validation = validate(userId, request);
+            if (!validation.isValid()) {
+                throw new BadRequestException(String.join("; ", validation.getErrors()));
+            }
+            boolean isPaper = settingsService.isPaperModeForUser(userId);
+            List<String> warnings = validation.getWarnings();
+            if (isPaper) {
+                var paperOrder = paperOrderExecutionService.placeOrder(userId, request);
+                OrderResponse response = OrderResponse.builder()
+                        .status(paperOrder.getStatus())
+                        .paperOrderId(paperOrder.getOrderId())
+                        .submittedAt(Instant.now())
+                        .warnings(warnings)
+                        .build();
+                metricsService.incrementOrdersPlaced();
+                recordAudit(userId, "PLACE", "SUCCESS", null, paperOrder.getOrderId(), request, response);
+                return response;
+            }
+            String brokerOrderId = null;
+            try {
+                brokerOrderId = placeLiveOrder(request);
+                OrderResponse response = OrderResponse.builder()
+                        .status("SUBMITTED")
+                        .brokerOrderId(brokerOrderId)
+                        .submittedAt(Instant.now())
+                        .warnings(warnings)
+                        .build();
+                metricsService.incrementOrdersPlaced();
+                recordAudit(userId, "PLACE", "SUCCESS", brokerOrderId, null, request, response);
+                return response;
+            } catch (FyersCircuitOpenException ex) {
+                recordAudit(userId, "PLACE", "FAILED", brokerOrderId, null, request, ex.getMessage());
+                metricsService.recordReject("BROKER_CIRCUIT_OPEN");
+                throw ex;
+            } catch (Exception ex) {
+                recordAudit(userId, "PLACE", "FAILED", brokerOrderId, null, request, ex.getMessage());
+                metricsService.recordReject("BROKER_REJECTED");
+                throw new ConflictException("Live order failed: " + ex.getMessage());
+            }
+        });
     }
 
     @Transactional
@@ -191,30 +204,46 @@ public class OrderExecutionService {
     }
 
     @Transactional
-    public OrderResponse closePosition(Long userId, String symbol, Integer qty) {
-        if (!settingsService.isPaperModeForUser(userId)) {
-            if (qty == null || qty <= 0) {
-                throw new BadRequestException("Quantity is required for live square-off");
+    public OrderResponse closePosition(Long userId, String symbol, Integer qty, String clientOrderId) {
+        return idempotencyService.execute(userId, clientOrderId, symbol + ":" + qty, OrderResponse.class, () -> {
+            if (!settingsService.isPaperModeForUser(userId)) {
+                if (qty == null || qty <= 0) {
+                    throw new BadRequestException("Quantity is required for live square-off");
+                }
+                String brokerOrderId = null;
+                try {
+                    brokerOrderId = fyersService.placeOrder(symbol, qty, "SELL", "MARKET", 0.0,
+                            clientOrderId != null && !clientOrderId.isBlank() ? clientOrderId : java.util.UUID.randomUUID().toString());
+                    OrderResponse response = OrderResponse.builder()
+                            .status("SUBMITTED")
+                            .brokerOrderId(brokerOrderId)
+                            .submittedAt(Instant.now())
+                            .warnings(List.of("Assumed SELL to close position"))
+                            .build();
+                    metricsService.incrementOrdersPlaced();
+                    recordAudit(userId, "CLOSE", "SUCCESS", brokerOrderId, null, symbol, response);
+                    return response;
+                } catch (FyersCircuitOpenException ex) {
+                    recordAudit(userId, "CLOSE", "FAILED", brokerOrderId, null, symbol, ex.getMessage());
+                    metricsService.recordReject("BROKER_CIRCUIT_OPEN");
+                    throw ex;
+                } catch (Exception ex) {
+                    recordAudit(userId, "CLOSE", "FAILED", brokerOrderId, null, symbol, ex.getMessage());
+                    metricsService.recordReject("BROKER_REJECTED");
+                    throw new ConflictException("Order close failed: " + ex.getMessage());
+                }
             }
-            String brokerOrderId = fyersService.placeOrder(symbol, qty, "SELL", "MARKET", 0.0);
+            var order = paperOrderExecutionService.closePosition(userId, symbol, qty == null ? 0 : qty);
             OrderResponse response = OrderResponse.builder()
-                    .status("SUBMITTED")
-                    .brokerOrderId(brokerOrderId)
+                    .status(order.getStatus())
+                    .paperOrderId(order.getOrderId())
                     .submittedAt(Instant.now())
-                    .warnings(List.of("Assumed SELL to close position"))
+                    .warnings(List.of())
                     .build();
-            recordAudit(userId, "CLOSE", "SUCCESS", brokerOrderId, null, symbol, response);
+            metricsService.incrementOrdersPlaced();
+            recordAudit(userId, "CLOSE", "SUCCESS", null, order.getOrderId(), symbol, response);
             return response;
-        }
-        var order = paperOrderExecutionService.closePosition(userId, symbol, qty == null ? 0 : qty);
-        OrderResponse response = OrderResponse.builder()
-                .status(order.getStatus())
-                .paperOrderId(order.getOrderId())
-                .submittedAt(Instant.now())
-                .warnings(List.of())
-                .build();
-        recordAudit(userId, "CLOSE", "SUCCESS", null, order.getOrderId(), symbol, response);
-        return response;
+        });
     }
 
     private String placeLiveOrder(PlaceOrderRequest request) {

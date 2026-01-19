@@ -15,6 +15,8 @@ public class ClosePositionRequest {
     @Positive
     private Integer qty;
 
+    private String clientOrderId;
+
     @Builder.Default
     private PlaceOrderRequest.OrderType orderType = PlaceOrderRequest.OrderType.MARKET;
 }

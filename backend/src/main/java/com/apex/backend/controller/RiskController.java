@@ -20,6 +20,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.*;
 
 @Slf4j
@@ -98,6 +99,7 @@ public class RiskController {
     @PostMapping("/emergency-stop")
     public ResponseEntity<?> triggerEmergencyStop(@AuthenticationPrincipal UserPrincipal principal) {
         try {
+            requireAdmin(principal);
             Long userId = requireUserId(principal);
             boolean isPaper = settingsService.isPaperModeForUser(userId);
             log.info("Emergency stop triggered");
@@ -146,6 +148,15 @@ public class RiskController {
             throw new UnauthorizedException("Missing authentication");
         }
         return principal.getUserId();
+    }
+
+    private void requireAdmin(UserPrincipal principal) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        if (principal.getRole() == null || !principal.getRole().equalsIgnoreCase("ADMIN")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role required");
+        }
     }
     
     // ==================== INNER CLASSES ====================

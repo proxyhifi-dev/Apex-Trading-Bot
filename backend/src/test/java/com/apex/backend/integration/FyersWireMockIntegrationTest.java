@@ -212,6 +212,48 @@ class FyersWireMockIntegrationTest {
     }
 
     @Test
+    void orderLifecycleTransitionsToFilled() {
+        User user = userRepository.save(User.builder()
+                .username("fyers_lifecycle")
+                .passwordHash("hash")
+                .email("life@example.com")
+                .availableFunds(MoneyUtils.bd(100000.0))
+                .totalInvested(MoneyUtils.ZERO)
+                .currentValue(MoneyUtils.bd(100000.0))
+                .fyersConnected(true)
+                .fyersToken("live-token-3")
+                .createdAt(LocalDateTime.now())
+                .build());
+
+        stubQuote("NSE:INFY-EQ");
+        stubFor(post(urlEqualTo("/api/v3/orders"))
+                .willReturn(okJson("{\"id\":\"ORD-LIFECYCLE\"}")));
+        stubFor(get(urlEqualTo("/api/v3/orders?id=ORD-LIFECYCLE"))
+                .willReturn(okJson("{\"data\":{\"id\":\"ORD-LIFECYCLE\",\"status\":\"FILLED\",\"filledQty\":1,\"avgPrice\":100.0}}")));
+
+        ExecutionResult result = executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
+                user.getId(),
+                "NSE:INFY-EQ",
+                1,
+                ExecutionCostModel.OrderType.MARKET,
+                ExecutionCostModel.ExecutionSide.BUY,
+                null,
+                false,
+                "ORD-TEST-LIFECYCLE",
+                1.0,
+                List.of(),
+                100.0,
+                95.0,
+                false
+        ));
+
+        assertThat(result.status()).isEqualTo(ExecutionStatus.FILLED);
+        OrderIntent intent = orderIntentRepository.findByClientOrderId("ORD-TEST-LIFECYCLE").orElseThrow();
+        assertThat(intent.getOrderState()).isEqualTo(com.apex.backend.model.OrderState.FILLED);
+        assertThat(intent.getAckedAt()).isNotNull();
+    }
+
+    @Test
     void rateLimitBackoffRetriesSuccessfully() {
         stubFor(get(urlEqualTo("/data/quotes?symbols=NSE:RATE-EQ"))
                 .inScenario("rate-limit")

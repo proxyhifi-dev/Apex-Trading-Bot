@@ -1,12 +1,17 @@
 package com.apex.backend.service;
 
 import com.apex.backend.exception.FyersApiException;
+import com.apex.backend.exception.FyersCircuitOpenException;
 import com.apex.backend.exception.FyersRateLimitException;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.retry.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -32,6 +37,7 @@ public class FyersHttpClient {
     private final Retry fyersRetry;
     private final BrokerStatusService brokerStatusService;
     private final MetricsService metricsService;
+    private final MeterRegistry meterRegistry;
 
     @org.springframework.beans.factory.annotation.Value("${fyers.api.app-id:}")
     private String appId;
@@ -46,6 +52,9 @@ public class FyersHttpClient {
                 }
             }
         });
+        Gauge.builder("broker_circuit_state", fyersCircuitBreaker, breaker -> mapState(breaker.getState()))
+                .tag("broker", "FYERS")
+                .register(meterRegistry);
     }
 
     public String get(String url, String token) {
@@ -65,6 +74,8 @@ public class FyersHttpClient {
     }
 
     private String execute(String url, String token, HttpMethod method, String body) {
+        Timer.Sample sample = Timer.start(meterRegistry);
+        boolean success = false;
         Supplier<String> supplier = () -> doRequest(url, token, method, body);
         try {
             Supplier<String> decorated = Retry.decorateSupplier(fyersRetry, supplier);
@@ -72,7 +83,12 @@ public class FyersHttpClient {
             decorated = RateLimiter.decorateSupplier(fyersRateLimiter, decorated);
             String response = decorated.get();
             brokerStatusService.markNormal("FYERS");
+            success = true;
             return response;
+        } catch (CallNotPermittedException e) {
+            brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
+            metricsService.incrementBrokerFailures();
+            throw new FyersCircuitOpenException("FYERS circuit breaker open", e);
         } catch (FyersRateLimitException e) {
             brokerStatusService.markDegraded("FYERS", "RATE_LIMIT");
             metricsService.incrementBrokerFailures();
@@ -81,6 +97,12 @@ public class FyersHttpClient {
             brokerStatusService.markDegraded("FYERS", "HTTP_ERROR");
             metricsService.incrementBrokerFailures();
             throw e;
+        } finally {
+            sample.stop(Timer.builder("broker_call_latency")
+                    .tag("broker", "FYERS")
+                    .tag("method", method.name())
+                    .tag("status", success ? "success" : "error")
+                    .register(meterRegistry));
         }
     }
 
@@ -90,9 +112,9 @@ public class FyersHttpClient {
             if (token != null && !token.isBlank()) {
                 headers.set("Authorization", appId + ":" + token);
             }
-        if (method == HttpMethod.POST || method == HttpMethod.PUT) {
-            headers.setContentType(MediaType.APPLICATION_JSON);
-        }
+            if (method == HttpMethod.POST || method == HttpMethod.PUT) {
+                headers.setContentType(MediaType.APPLICATION_JSON);
+            }
             HttpEntity<String> entity = new HttpEntity<>(body, headers);
             ResponseEntity<String> response = fyersRestTemplate.exchange(url, method, entity, String.class);
             return response.getBody();
@@ -105,5 +127,14 @@ public class FyersHttpClient {
         } catch (HttpClientErrorException e) {
             throw new FyersApiException("FYERS API error (" + e.getStatusCode().value() + "): " + e.getResponseBodyAsString(), e.getStatusCode().value(), e);
         }
+    }
+
+    private int mapState(CircuitBreaker.State state) {
+        return switch (state) {
+            case CLOSED -> 0;
+            case OPEN -> 1;
+            case HALF_OPEN -> 2;
+            default -> 3;
+        };
     }
 }

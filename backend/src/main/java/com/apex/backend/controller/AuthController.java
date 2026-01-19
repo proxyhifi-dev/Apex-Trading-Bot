@@ -13,6 +13,7 @@ import com.apex.backend.service.RefreshTokenService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.swagger.v3.oas.annotations.media.Schema;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -439,13 +440,18 @@ public class AuthController {
 
     // DTO Classes
     public static class RegisterRequest {
-        private String username; private String password; private String email;
+        private String username;
+        @Schema(accessMode = Schema.AccessMode.WRITE_ONLY)
+        private String password;
+        private String email;
         public String getUsername() { return username; } public void setUsername(String u) { username = u; }
         public String getPassword() { return password; } public void setPassword(String p) { password = p; }
         public String getEmail() { return email; } public void setEmail(String e) { email = e; }
     }
     public static class LoginRequest {
-        private String username; private String password;
+        private String username;
+        @Schema(accessMode = Schema.AccessMode.WRITE_ONLY)
+        private String password;
         public String getUsername() { return username; } public void setUsername(String u) { username = u; }
         public String getPassword() { return password; } public void setPassword(String p) { password = p; }
     }
@@ -454,6 +460,7 @@ public class AuthController {
         public LoginResponse(UserProfileDTO u, String a, String r) { user = u; accessToken = a; refreshToken = r; }
     }
     public static class RefreshRequest {
+        @Schema(accessMode = Schema.AccessMode.WRITE_ONLY)
         private String refreshToken;
         public String getRefreshToken() { return refreshToken; }
         public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }

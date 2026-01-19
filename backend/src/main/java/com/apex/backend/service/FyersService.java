@@ -11,9 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
-import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.util.UriComponentsBuilder;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -120,7 +117,7 @@ public class FyersService {
 
         try {
             rateLimiter.acquire();
-            List<Candle> data = fetchWithRetry(symbol, count, resolution, resolvedToken);
+            List<Candle> data = fetchHistoryInternal(symbol, count, resolution, resolvedToken);
             if (!data.isEmpty()) {
                 candleCache.put(cacheKey, new CacheEntry(data, System.currentTimeMillis()));
             }
@@ -128,40 +125,14 @@ public class FyersService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return Collections.emptyList();
+        } catch (com.apex.backend.exception.FyersCircuitOpenException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("Failed to fetch historical data for {}: {}", symbol, e.getMessage());
+            return Collections.emptyList();
         } finally {
             rateLimiter.release();
         }
-    }
-
-    // ✅ CHECKLIST: API rate limit handling (429 errors) & Retry Logic
-    private List<Candle> fetchWithRetry(String symbol, int count, String resolution, String token) {
-        int attempts = 0;
-        int maxRetries = 3;
-
-        while (attempts < maxRetries) {
-            try {
-                return fetchHistoryInternal(symbol, count, resolution, token);
-            } catch (HttpClientErrorException.TooManyRequests e) {
-                // Handle 429 specifically
-                attempts++;
-                log.warn("⚠️ Rate Limit 429 Hit for {}. Cooling down 5s...", symbol);
-                sleep(5000);
-            } catch (ResourceAccessException | HttpServerErrorException e) {
-                // Network/Server Errors
-                attempts++;
-                long backoff = 500L * attempts;
-                log.warn("⚠️ Network Error for {} ({}): {}. Retrying in {}ms...", symbol, attempts, e.getMessage(), backoff);
-                sleep(backoff);
-            } catch (Exception e) {
-                log.error("❌ Unrecoverable Error for {}: {}", symbol, e.getMessage());
-                break; // Don't retry logic errors
-            }
-        }
-        return Collections.emptyList();
-    }
-
-    private void sleep(long ms) {
-        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
     }
 
     private List<Candle> fetchHistoryInternal(String symbol, int count, String resolution, String token) {
@@ -208,41 +179,29 @@ public class FyersService {
             throw new RuntimeException("No Token");
         }
         String url = apiBaseUrl + "/orders";
-        int attempts = 0;
-        while (attempts < 3) {
-            try {
-                Map<String, Object> body = new HashMap<>();
-                body.put("symbol", symbol);
-                body.put("qty", qty);
-                body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
-                body.put("type", type.equalsIgnoreCase("MARKET") ? 2 : 1);
-                body.put("productType", "INTRADAY");
-                body.put("limitPrice", price);
-                body.put("validity", "DAY");
-                body.put("clientId", clientOrderId);
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("symbol", symbol);
+            body.put("qty", qty);
+            body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
+            body.put("type", type.equalsIgnoreCase("MARKET") ? 2 : 1);
+            body.put("productType", "INTRADAY");
+            body.put("limitPrice", price);
+            body.put("validity", "DAY");
+            body.put("clientId", clientOrderId);
 
-                String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
-                JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-                if (json.has("id")) {
-                    return json.get("id").getAsString();
-                }
-                return "ORD-" + System.currentTimeMillis();
-            } catch (HttpClientErrorException.TooManyRequests e) {
-                attempts++;
-                sleep(1000L * attempts);
-            } catch (ResourceAccessException | HttpServerErrorException e) {
-                attempts++;
-                sleep(500L * attempts);
-            } catch (Exception e) {
-                metricsService.incrementBrokerFailures();
-                alertService.sendAlert("BROKER_ERROR", e.getMessage());
-                log.error("❌ Order Failed: {}", e.getMessage());
-                throw new RuntimeException("Order placement failed: " + e.getMessage());
+            String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
+            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
             }
+            return "ORD-" + System.currentTimeMillis();
+        } catch (Exception e) {
+            metricsService.incrementBrokerFailures();
+            alertService.sendAlert("BROKER_ERROR", e.getMessage());
+            log.error("❌ Order Failed: {}", e.getMessage());
+            throw new RuntimeException("Order placement failed: " + e.getMessage());
         }
-        metricsService.incrementBrokerFailures();
-        alertService.sendAlert("BROKER_ERROR", "Order placement retries exhausted");
-        throw new RuntimeException("Order placement failed after retries");
     }
 
     public String cancelOrder(String brokerOrderId, String token) {

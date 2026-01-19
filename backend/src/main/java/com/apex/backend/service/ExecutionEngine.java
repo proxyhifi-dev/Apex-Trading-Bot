@@ -327,6 +327,7 @@ public class ExecutionEngine {
         intent.transitionTo(OrderState.FILLED);
         intent.setLastBrokerStatus(status.status());
         orderIntentRepository.save(intent);
+        metricsService.recordOrderFilled();
         log.info("Order filled: {} filledQty: {} avgPrice: {} correlationId: {}", 
             intent.getClientOrderId(), intent.getFilledQuantity(), intent.getAveragePrice(), intent.getCorrelationId());
     }
