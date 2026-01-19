@@ -89,6 +89,8 @@ public class PaperTradingService {
                 .unrealizedPnl(MoneyUtils.ZERO)
                 .status(STATUS_OPEN)
                 .entryTime(trade.getEntryTime())
+                .createdAt(trade.getEntryTime())
+                .updatedAt(LocalDateTime.now())
                 .build();
         positionRepository.save(position);
         broadcastService.broadcastPositions(userId, positionRepository.findByUserIdAndStatus(userId, STATUS_OPEN));
@@ -138,6 +140,21 @@ public class PaperTradingService {
         refreshPositionsWithMarketData(userId, positions);
         updateAccountUnrealized(userId, positions);
         return positions;
+    }
+
+    public BigDecimal getOpenPositionsMarketValue(Long userId) {
+        return getOpenPositions(userId).stream()
+                .map(position -> MoneyUtils.multiply(
+                        position.getLastPrice() != null ? position.getLastPrice() : position.getAveragePrice(),
+                        position.getQuantity()))
+                .reduce(MoneyUtils.ZERO, MoneyUtils::add);
+    }
+
+    public BigDecimal getOpenPositionsUnrealizedPnl(Long userId) {
+        return getOpenPositions(userId).stream()
+                .map(PaperPosition::getUnrealizedPnl)
+                .filter(Objects::nonNull)
+                .reduce(MoneyUtils.ZERO, MoneyUtils::add);
     }
 
     public List<PaperPosition> getClosedPositions(Long userId) {

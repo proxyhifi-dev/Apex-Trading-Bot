@@ -10,6 +10,7 @@ import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.TradingMode;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.FyersService;
+import com.apex.backend.service.AccountOverviewService;
 import com.apex.backend.service.PaperTradingService;
 import com.apex.backend.service.SettingsService;
 import com.apex.backend.repository.UserRepository;
@@ -36,6 +37,7 @@ public class AccountController {
     private final PaperTradingService paperTradingService;
     private final SettingsService settingsService;
     private final UserRepository userRepository;
+    private final AccountOverviewService accountOverviewService;
     
     /**
      * Get user profile
@@ -75,16 +77,15 @@ public class AccountController {
         if (mode == TradingMode.PAPER) {
             PaperPortfolioStats stats = paperTradingService.getStats(userId);
             PaperAccount account = paperTradingService.getAccount(userId);
-            BigDecimal totalValue = MoneyUtils.add(
-                    MoneyUtils.add(account.getCashBalance(), account.getReservedMargin()),
-                    account.getUnrealizedPnl()
-            );
+            BigDecimal positionValue = paperTradingService.getOpenPositionsMarketValue(userId);
+            BigDecimal unrealized = paperTradingService.getOpenPositionsUnrealizedPnl(userId);
+            BigDecimal totalValue = MoneyUtils.add(account.getCashBalance(), positionValue);
             UserProfileDTO summary = UserProfileDTO.builder()
                     .name(resolveUserName(userId))
                     .availableFunds(account.getCashBalance())
-                    .totalInvested(account.getReservedMargin())
+                    .totalInvested(positionValue)
                     .currentValue(totalValue)
-                    .todaysPnl(stats.getNetPnl() != null ? stats.getNetPnl() : MoneyUtils.ZERO)
+                    .todaysPnl(stats.getNetPnl() != null ? stats.getNetPnl() : MoneyUtils.add(account.getRealizedPnl(), unrealized))
                     .holdings(new ArrayList<>())
                     .build();
             return ResponseEntity.ok(summary);
@@ -115,7 +116,8 @@ public class AccountController {
         TradingMode mode = settingsService.getTradingMode(userId);
         if (mode == TradingMode.PAPER) {
             PaperAccount account = paperTradingService.getAccount(userId);
-            return ResponseEntity.ok(new CapitalInfo(account.getStartingCapital(), account.getCashBalance(), account.getReservedMargin()));
+            BigDecimal positionValue = paperTradingService.getOpenPositionsMarketValue(userId);
+            return ResponseEntity.ok(new CapitalInfo(account.getStartingCapital(), account.getCashBalance(), positionValue));
         }
         return ResponseEntity.ok(fyersService.getFundsForUser(userId));
     }
@@ -123,60 +125,7 @@ public class AccountController {
     @GetMapping("/overview")
     public ResponseEntity<?> getOverview(@AuthenticationPrincipal UserPrincipal principal) throws Exception {
         Long userId = requireUserId(principal);
-        TradingMode mode = settingsService.getTradingMode(userId);
-        if (mode == TradingMode.PAPER) {
-            PaperAccount account = paperTradingService.getAccount(userId);
-            BigDecimal pnl = MoneyUtils.add(account.getRealizedPnl(), account.getUnrealizedPnl());
-            List<com.apex.backend.model.PaperPosition> openPositions = paperTradingService.getOpenPositions(userId);
-            List<AccountOverviewDTO.PositionDTO> positions = openPositions.stream()
-                    .map(this::toPositionDto)
-                    .toList();
-            return ResponseEntity.ok(AccountOverviewDTO.builder()
-                    .mode("PAPER")
-                    .profile(AccountOverviewDTO.ProfileDTO.builder()
-                            .name(resolveUserName(userId))
-                            .brokerId("PAPER")
-                            .email(resolveUserEmail(userId))
-                            .build())
-                    .funds(AccountOverviewDTO.FundsDTO.builder()
-                            .cash(account.getCashBalance())
-                            .used(account.getReservedMargin())
-                            .free(account.getCashBalance())
-                            .totalPnl(pnl)
-                            .dayPnl(pnl)
-                            .build())
-                    .holdings(Collections.emptyList())
-                    .positions(positions)
-                    .recentTrades(Collections.emptyList())
-                    .lastUpdatedAt(account.getUpdatedAt())
-                    .dataSource("PAPER")
-                    .build());
-        }
-
-        Map<String, Object> profile = fyersService.getProfileForUser(userId);
-        Map<String, Object> funds = fyersService.getFundsForUser(userId);
-        Map<String, Object> holdings = fyersService.getHoldingsForUser(userId);
-        Map<String, Object> positions = fyersService.getPositionsForUser(userId);
-        return ResponseEntity.ok(AccountOverviewDTO.builder()
-                .mode("LIVE")
-                .profile(AccountOverviewDTO.ProfileDTO.builder()
-                        .name(extractProfileName(profile))
-                        .brokerId(extractProfileId(profile))
-                        .email(extractProfileEmail(profile))
-                        .build())
-                .funds(AccountOverviewDTO.FundsDTO.builder()
-                        .cash(extractFundValue(funds, "cash"))
-                        .used(extractFundValue(funds, "used"))
-                        .free(extractFundValue(funds, "available"))
-                        .totalPnl(extractFundValue(funds, "pnl"))
-                        .dayPnl(extractFundValue(funds, "day_pnl"))
-                        .build())
-                .holdings(mapHoldings(holdings))
-                .positions(mapPositions(positions))
-                .recentTrades(Collections.emptyList())
-                .lastUpdatedAt(java.time.LocalDateTime.now())
-                .dataSource("FYERS")
-                .build());
+        return ResponseEntity.ok(accountOverviewService.buildOverview(userId));
     }
     
     // ==================== INNER CLASSES ====================

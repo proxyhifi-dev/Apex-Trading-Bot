@@ -180,6 +180,8 @@ public class PaperOrderExecutionService {
                     .unrealizedPnl(MoneyUtils.ZERO)
                     .status(STATUS_OPEN)
                     .entryTime(LocalDateTime.now())
+                    .createdAt(LocalDateTime.now())
+                    .updatedAt(LocalDateTime.now())
                     .build();
         } else {
             int newQty = position.getQuantity() + order.getQuantity();

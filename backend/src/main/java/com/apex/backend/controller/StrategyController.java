@@ -257,6 +257,7 @@ public class StrategyController {
                 .scanTime(signal.getScanTime())
                 .approvalStatus(signal.getApprovalStatus().name())
                 .analysisReason(signal.getAnalysisReason())
+                .scoreBreakdown(signal.getScoreBreakdown())
                 .decisionReason(signal.getDecisionReason())
                 .decisionNotes(signal.getDecisionNotes())
                 .decidedBy(signal.getDecidedBy())

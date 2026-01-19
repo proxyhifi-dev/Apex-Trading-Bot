@@ -1,6 +1,8 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.model.User;
+import com.apex.backend.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -9,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 @Service
@@ -23,6 +26,8 @@ public class BotScheduler {
     private final BotStatusService botStatusService;
     private final StrategyHealthService strategyHealthService;
     private final SystemGuardService systemGuardService;
+    private final UserRepository userRepository;
+    private final WatchlistService watchlistService;
     
     // Market data connection status
     private final AtomicBoolean marketDataConnected = new AtomicBoolean(true);
@@ -69,29 +74,33 @@ public class BotScheduler {
                 return;
             }
 
-            Long ownerUserId = config.getTrading().getOwnerUserId();
-            if (ownerUserId == null) {
-                log.warn("⚠️ Skipping bot cycle because apex.trading.owner-user-id is not configured.");
-                botStatusService.markPaused("Owner user not configured");
-                return;
-            }
-            var guardDecision = tradingGuardService.canTrade(ownerUserId, Instant.now());
-            if (!guardDecision.allowed()) {
-                log.warn("⛔ Circuit breaker guard active. Skipping cycle: {}", guardDecision.reason());
-                botStatusService.markPaused("Circuit breaker guard active");
-                return;
-            }
-
             log.info("🔄 Running Bot Cycle...");
             botStatusService.markRunning();
             botStatusService.setLastScanTime(LocalDateTime.now());
-            var healthState = strategyHealthService.getLatestState(ownerUserId);
-            if (healthState != null && healthState.isPaused()) {
-                botStatusService.markPaused("Strategy health paused");
+            List<User> users = userRepository.findAll().stream()
+                    .filter(user -> Boolean.TRUE.equals(user.getEnabled()))
+                    .toList();
+            if (users.isEmpty()) {
+                botStatusService.markPaused("No active users");
                 return;
             }
-            exitManager.manageExits(ownerUserId);
-            scannerOrchestrator.runScanner(ownerUserId);
+            for (User user : users) {
+                Long userId = user.getId();
+                if (watchlistService.isWatchlistEmpty(userId)) {
+                    continue;
+                }
+                var guardDecision = tradingGuardService.canTrade(userId, Instant.now());
+                if (!guardDecision.allowed()) {
+                    log.warn("⛔ Circuit breaker guard active for user {}. Skipping scan: {}", userId, guardDecision.reason());
+                    continue;
+                }
+                var healthState = strategyHealthService.getLatestState(userId);
+                if (healthState != null && healthState.isPaused()) {
+                    continue;
+                }
+                exitManager.manageExits(userId);
+                scannerOrchestrator.runScanner(userId);
+            }
             botStatusService.setNextScanTime(LocalDateTime.now().plusSeconds(config.getScanner().getInterval()));
             log.info("✅ Bot Cycle Complete");
         } catch (Exception e) {
@@ -123,12 +132,7 @@ public class BotScheduler {
     }
 
     public void forceScan() {
-        Long ownerUserId = config.getTrading().getOwnerUserId();
-        if (ownerUserId == null) {
-            log.warn("⚠️ Skipping manual scan because apex.trading.owner-user-id is not configured.");
-            return;
-        }
-        forceScan(ownerUserId);
+        log.warn("⚠️ Skipping manual scan without user context. Use /api/signals/scan-now instead.");
     }
     
     /**
