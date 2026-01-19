@@ -15,6 +15,9 @@ import com.apex.backend.service.BroadcastService;
 import com.apex.backend.service.DecisionAuditService;
 import com.apex.backend.service.SettingsService;
 import com.apex.backend.service.SystemGuardService;
+import com.apex.backend.service.AuditEventService;
+import com.apex.backend.service.ExecutionCostModel;
+import com.apex.backend.service.ExecutionEngine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -48,6 +52,11 @@ public class ReconciliationService {
     private final DecisionAuditService decisionAuditService;
     private final FyersBrokerPort fyersBrokerPort;
     private final PaperBrokerPort paperBrokerPort;
+    private final ExecutionEngine executionEngine;
+    private final AuditEventService auditEventService;
+
+    private final java.util.concurrent.atomic.AtomicReference<ReconcileReport> lastReport =
+            new java.util.concurrent.atomic.AtomicReference<>(new ReconcileReport(false, List.of(), List.of(), List.of()));
 
     @Value("${reconcile.enabled:true}")
     private boolean enabled;
@@ -124,8 +133,120 @@ public class ReconciliationService {
                 "positions", positionMismatches.size()
         ));
         broadcastReport(hasMismatch, orderMismatches, statusMismatches, positionMismatches, state);
-        return new ReconcileReport(hasMismatch, orderMismatches, statusMismatches, positionMismatches);
+        ReconcileReport report = new ReconcileReport(hasMismatch, orderMismatches, statusMismatches, positionMismatches);
+        lastReport.set(report);
+        return report;
     }
+
+    public ReconcileReport getLastReport() {
+        return lastReport.get();
+    }
+
+    @Transactional
+    public ReconcileRepairReport repair(ReconcileRepairRequest request) {
+        boolean cancelOrders = request.cancelStuckOrders();
+        boolean quarantineTrades = request.quarantineTrades();
+        boolean flatten = request.flattenPositions();
+        List<Long> userIds = request.userId() != null
+                ? List.of(request.userId())
+                : userRepository.findAll().stream().map(user -> user.getId()).toList();
+
+        int cancelRequested = 0;
+        int cancelFailed = 0;
+        int tradesQuarantined = 0;
+        int tradesFlattened = 0;
+        List<String> notes = new ArrayList<>();
+
+        for (Long userId : userIds) {
+            boolean paperMode = settingsService.isPaperModeForUser(userId);
+            BrokerPort brokerPort = paperMode ? paperBrokerPort : fyersBrokerPort;
+
+            if (cancelOrders) {
+                List<OrderSnapshot> dbOrders = loadDbOrders(userId, paperMode);
+                for (OrderSnapshot dbOrder : dbOrders) {
+                    if (!dbOrder.open()) {
+                        continue;
+                    }
+                    if (dbOrder.orderId() == null || dbOrder.orderId().isBlank()) {
+                        continue;
+                    }
+                    try {
+                        brokerPort.cancelOrder(userId, dbOrder.orderId());
+                        OrderIntent intent = dbOrder.markCancelRequested();
+                        if (intent != null) {
+                            orderIntentRepository.save(intent);
+                        }
+                        cancelRequested++;
+                    } catch (Exception e) {
+                        cancelFailed++;
+                        notes.add("Cancel failed user=" + userId + " order=" + dbOrder.orderId() + " reason=" + e.getMessage());
+                    }
+                }
+            }
+
+            if (quarantineTrades) {
+                List<Trade> trades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
+                for (Trade trade : trades) {
+                    if (trade.getPositionState() != com.apex.backend.model.PositionState.ERROR) {
+                        trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
+                        trade.setExitReasonDetail("RECONCILE_QUARANTINE");
+                        tradeRepository.save(trade);
+                        tradesQuarantined++;
+                    }
+                }
+            }
+
+            if (flatten) {
+                List<Trade> trades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
+                for (Trade trade : trades) {
+                    try {
+                        executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
+                                trade.getUserId(),
+                                trade.getSymbol(),
+                                trade.getQuantity(),
+                                ExecutionCostModel.OrderType.MARKET,
+                                trade.getTradeType() == Trade.TradeType.LONG
+                                        ? ExecutionCostModel.ExecutionSide.SELL
+                                        : ExecutionCostModel.ExecutionSide.BUY,
+                                null,
+                                trade.isPaperTrade(),
+                                "RECON-FLATTEN-" + trade.getId(),
+                                trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0,
+                                List.of(),
+                                trade.getEntryPrice().doubleValue(),
+                                null,
+                                true,
+                                null
+                        ));
+                        tradesFlattened++;
+                    } catch (Exception e) {
+                        notes.add("Flatten failed user=" + userId + " trade=" + trade.getId() + " reason=" + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        ReconcileRepairReport report = new ReconcileRepairReport(true, userIds.size(), cancelRequested, cancelFailed,
+                tradesQuarantined, tradesFlattened, LocalDateTime.now(), notes);
+        auditEventService.recordEvent(null, "RECONCILE", "REPAIR",
+                "Reconciliation repair executed",
+                Map.of(
+                        "usersProcessed", userIds.size(),
+                        "cancelRequested", cancelRequested,
+                        "cancelFailed", cancelFailed,
+                        "tradesQuarantined", tradesQuarantined,
+                        "tradesFlattened", tradesFlattened,
+                        "flatten", flatten,
+                        "quarantineTrades", quarantineTrades,
+                        "cancelStuckOrders", cancelOrders
+                ));
+        return report;
+    }
+
+    public record ReconcileRepairRequest(Long userId, boolean cancelStuckOrders, boolean quarantineTrades, boolean flattenPositions) {}
+    public record ReconcileRepairReport(boolean success, int usersProcessed, int cancelRequested, int cancelFailed,
+                                        int tradesQuarantined, int tradesFlattened, LocalDateTime timestamp,
+                                        List<String> notes) {}
 
     private void compareOrders(List<OrderSnapshot> dbOrders, List<BrokerPort.BrokerOrder> brokerOrders,
                                List<String> orderMismatches, List<String> statusMismatches) {

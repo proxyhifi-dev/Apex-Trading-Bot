@@ -32,11 +32,17 @@ public class MetricsService {
 
     private Counter ordersPlacedCounter;
     private Counter brokerErrorsCounter;
+    private Counter ordersFilledCounter;
+    private Counter stopLossFailuresCounter;
+    private Counter emergencyFlattensCounter;
 
     @jakarta.annotation.PostConstruct
     void init() {
         ordersPlacedCounter = Counter.builder("orders_placed_total").register(meterRegistry);
         brokerErrorsCounter = Counter.builder("broker_errors_total").register(meterRegistry);
+        ordersFilledCounter = Counter.builder("orders_filled_total").register(meterRegistry);
+        stopLossFailuresCounter = Counter.builder("stop_loss_failures_total").register(meterRegistry);
+        emergencyFlattensCounter = Counter.builder("emergency_flattens_total").register(meterRegistry);
         Gauge.builder("pnl_daily", pnlDaily, value -> value.get()).register(meterRegistry);
         Gauge.builder("drawdown_current", drawdownCurrent, value -> value.get()).register(meterRegistry);
     }
@@ -56,6 +62,24 @@ public class MetricsService {
         brokerFailures.incrementAndGet();
         if (brokerErrorsCounter != null) {
             brokerErrorsCounter.increment();
+        }
+    }
+
+    public void recordOrderFilled() {
+        if (ordersFilledCounter != null) {
+            ordersFilledCounter.increment();
+        }
+    }
+
+    public void recordStopLossFailure() {
+        if (stopLossFailuresCounter != null) {
+            stopLossFailuresCounter.increment();
+        }
+    }
+
+    public void recordEmergencyFlatten() {
+        if (emergencyFlattensCounter != null) {
+            emergencyFlattensCounter.increment();
         }
     }
 

@@ -45,8 +45,8 @@ public class TradeExecutionService {
     private final TradeFeatureAttributionService tradeFeatureAttributionService;
     private final ExecutionEngine executionEngine;
     private final StopLossPlacementService stopLossPlacementService;
+    private final StopLossEnforcementService stopLossEnforcementService;
     private final FyersAuthService fyersAuthService;
-    private final AlertService alertService;
     private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
     private final SystemGuardService systemGuardService;
     private final TradingWindowService tradingWindowService;
@@ -241,17 +241,7 @@ public class TradeExecutionService {
                 if (!stopPlaced) {
                     // STOP PLACEMENT FAILED - ENTER ERROR STATE
                     log.error("Stop-loss placement failed for trade: {} symbol: {}", trade.getId(), trade.getSymbol());
-                    trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
-                    tradeRepo.save(trade);
-                    
-                    // Attempt immediate flatten
-                    flattenPosition(trade, token);
-                    
-                    // Halt new trading
-                    systemGuardService.setSafeMode(true, "STOP_LOSS_PLACEMENT_FAILED: " + trade.getSymbol(), Instant.now());
-                    
-                    // Emit alert
-                    alertService.sendAlert("STOP_FAILED", "Failed to place stop for " + trade.getSymbol());
+                    stopLossEnforcementService.enforce(trade, "STOP_PLACEMENT_FAILED");
                     
                     signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
                     screeningRepo.save(signal);
@@ -264,8 +254,7 @@ public class TradeExecutionService {
                 log.info("Protective stop placed for trade: {} symbol: {}", trade.getId(), trade.getSymbol());
             } else {
                 log.warn("No FYERS token available for stop placement, trade: {}", trade.getId());
-                trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
-                tradeRepo.save(trade);
+                stopLossEnforcementService.enforce(trade, "STOP_PLACEMENT_TOKEN_MISSING");
             }
         } else {
             // Paper mode: simulate stop placement
@@ -332,35 +321,5 @@ public class TradeExecutionService {
 
     private record GuardBlock(boolean blocked, String auditType, String reasonCode, String reason) {}
     
-    /**
-     * Flatten position immediately (emergency exit)
-     */
-    private void flattenPosition(Trade trade, String token) {
-        try {
-            log.warn("Attempting to flatten position: {} symbol: {}", trade.getId(), trade.getSymbol());
-            ExecutionEngine.ExecutionRequestPayload exitRequest = new ExecutionEngine.ExecutionRequestPayload(
-                trade.getUserId(),
-                trade.getSymbol(),
-                trade.getQuantity(),
-                com.apex.backend.service.ExecutionCostModel.OrderType.MARKET,
-                trade.getTradeType() == Trade.TradeType.LONG 
-                    ? com.apex.backend.service.ExecutionCostModel.ExecutionSide.SELL 
-                    : com.apex.backend.service.ExecutionCostModel.ExecutionSide.BUY,
-                null,
-                false,
-                "FLATTEN-" + trade.getId(),
-                trade.getAtr() != null ? trade.getAtr().doubleValue() : 0.0,
-                null,
-                trade.getEntryPrice().doubleValue(),
-                null,
-                true,  // exitOrder = true
-                null   // signalId
-            );
-            executionEngine.execute(exitRequest);
-            log.info("Flatten order executed for trade: {}", trade.getId());
-        } catch (Exception e) {
-            log.error("Failed to flatten position: {} symbol: {}", trade.getId(), trade.getSymbol(), e);
-            alertService.sendAlert("FLATTEN_FAILED", "Failed to flatten " + trade.getSymbol() + ": " + e.getMessage());
-        }
-    }
+    
 }

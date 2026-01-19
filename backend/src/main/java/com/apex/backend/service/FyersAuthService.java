@@ -85,8 +85,6 @@ public class FyersAuthService {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body().string();
-            // Log exactly what Fyers says so we can debug
-            log.info("Fyers Token Exchange Response: {}", responseBody);
 
             if (!response.isSuccessful()) {
                 throw new Exception("Fyers API Error (" + response.code() + "): " + responseBody);

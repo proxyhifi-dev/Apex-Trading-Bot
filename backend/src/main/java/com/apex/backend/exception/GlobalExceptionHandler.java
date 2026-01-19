@@ -66,6 +66,11 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT, ex.getMessage(), List.of(), request, ex);
     }
 
+    @ExceptionHandler(FyersCircuitOpenException.class)
+    public ResponseEntity<ApiError> handleCircuitOpen(FyersCircuitOpenException ex, HttpServletRequest request) {
+        return buildError(HttpStatus.SERVICE_UNAVAILABLE, "Broker circuit open", List.of(), request, ex);
+    }
+
     @ExceptionHandler({RiskLimitExceededException.class, TradingException.class})
     public ResponseEntity<ApiError> handleUnprocessable(RuntimeException ex, HttpServletRequest request) {
         return buildError(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), List.of(), request, ex);

@@ -16,8 +16,10 @@ import com.apex.backend.util.MoneyUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -109,6 +111,7 @@ public class PaperPortfolioController {
     @PostMapping("/account/reset")
     public ResponseEntity<?> resetAccount(@AuthenticationPrincipal UserPrincipal principal,
                                           @RequestBody(required = false) PaperAccountResetRequest request) {
+        requireAdmin(principal);
         Long userId = requireUserId(principal);
         BigDecimal startingCapital = request != null ? request.getBalance() : null;
         if (startingCapital == null || startingCapital.compareTo(BigDecimal.ZERO) <= 0) {
@@ -171,5 +174,14 @@ public class PaperPortfolioController {
             throw new UnauthorizedException("Missing authentication");
         }
         return principal.getUserId();
+    }
+
+    private void requireAdmin(UserPrincipal principal) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        if (principal.getRole() == null || !principal.getRole().equalsIgnoreCase("ADMIN")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role required");
+        }
     }
 }

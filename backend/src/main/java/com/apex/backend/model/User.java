@@ -1,6 +1,7 @@
 package com.apex.backend.model;
 
 import jakarta.persistence.*;
+import com.apex.backend.security.TokenEncryptionConverter;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -65,9 +66,11 @@ public class User {
     private String fyersId;
 
     @Column(length = 1500)
+    @Convert(converter = TokenEncryptionConverter.class)
     private String fyersToken;
 
     @Column(length = 1500)
+    @Convert(converter = TokenEncryptionConverter.class)
     private String fyersRefreshToken;
 
     @Column(nullable = false)
