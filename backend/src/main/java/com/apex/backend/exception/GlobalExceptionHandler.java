@@ -86,6 +86,7 @@ public class GlobalExceptionHandler {
     private ResponseEntity<ApiError> buildError(HttpStatus status, String message, List<ApiErrorDetail> details,
                                                 HttpServletRequest request, Exception ex) {
         String requestId = MDC.get("requestId");
+        String correlationId = MDC.get("correlationId");
         ApiError error = ApiError.builder()
                 .timestamp(Instant.now())
                 .path(request.getRequestURI())
@@ -93,6 +94,7 @@ public class GlobalExceptionHandler {
                 .error(status.getReasonPhrase())
                 .message(message)
                 .requestId(requestId)
+                .correlationId(correlationId)
                 .details(details)
                 .build();
         log.warn("{} {} -> {} {}", request.getMethod(), request.getRequestURI(), status.value(), message, ex);
