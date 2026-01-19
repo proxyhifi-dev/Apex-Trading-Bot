@@ -15,24 +15,27 @@ import java.util.Base64;
 /**
  * AES-GCM token encryption helper.
  *
- * - Uses env var: SECURITY_TOKEN_ENCRYPTION_KEY (Base64) OR spring property: security.token-encryption-key
- * - Prefixes encrypted values with: enc:v1:
- * - Safe for DB storage (Base64 payload)
+ * Expected by other classes in this repo:
+ * - TokenEncryptionConverter calls encrypt(...) and decrypt(...)
+ * - TokenReEncryptionService calls looksEncrypted(...)
  *
- * IMPORTANT:
- * - Provide 32 bytes key (AES-256) encoded as Base64.
+ * Key source:
+ * - ENV: SECURITY_TOKEN_ENCRYPTION_KEY (Base64, 32 bytes)
+ * - or property: security.token-encryption-key
+ *
+ * Encrypted format:
+ * - "enc:v1:" + Base64(iv + ciphertext)
  */
 @Service
 public class TokenEncryptionService {
 
     private static final String PREFIX = "enc:v1:";
-    private static final int GCM_IV_BYTES = 12;          // recommended IV length for GCM
-    private static final int GCM_TAG_BITS = 128;         // 16 bytes auth tag
+    private static final int GCM_IV_BYTES = 12;
+    private static final int GCM_TAG_BITS = 128;
     private static final SecureRandom RNG = new SecureRandom();
 
     private final Environment environment;
 
-    // resolved at startup
     private volatile SecretKey secretKey;
 
     public TokenEncryptionService(Environment environment) {
@@ -41,7 +44,6 @@ public class TokenEncryptionService {
 
     @PostConstruct
     public void init() {
-        // Prefer env var, fallback to property
         String keyB64 = firstNonBlank(
                 environment.getProperty("SECURITY_TOKEN_ENCRYPTION_KEY"),
                 environment.getProperty("security.token-encryption-key")
@@ -50,14 +52,12 @@ public class TokenEncryptionService {
         boolean isProd = isProdProfileActive();
 
         if (isBlank(keyB64)) {
-            // In prod we should fail fast
             if (isProd) {
                 throw new IllegalStateException(
                         "SECURITY_TOKEN_ENCRYPTION_KEY is required in production to encrypt broker tokens at rest."
                 );
             }
-            // In non-prod we allow null key (encryption disabled), but we keep app running.
-            this.secretKey = null;
+            this.secretKey = null; // encryption disabled in dev if key missing
             return;
         }
 
@@ -78,59 +78,17 @@ public class TokenEncryptionService {
     }
 
     /**
-     * Encrypts a value only if:
-     * - not null/blank
-     * - not already encrypted
-     * - secret key is configured
+     * Repo-compat: TokenEncryptionConverter expects this to exist and be callable.
+     * Encrypts plain text and returns PREFIX + Base64(iv+ciphertext).
+     *
+     * If key is missing (dev), returns input as-is to avoid breaking local usage.
+     * If already encrypted, returns as-is.
      */
-    public String encryptIfNeeded(String plain) {
+    public String encrypt(String plain) {
         if (isBlank(plain)) return plain;
-        if (isEncrypted(plain)) return plain;
-
-        // if key not configured (dev/local without key), do nothing
+        if (looksEncrypted(plain)) return plain;
         if (secretKey == null) return plain;
 
-        return encrypt(plain);
-    }
-
-    /**
-     * Decrypts a value only if:
-     * - it is encrypted (enc:v1:...)
-     * - secret key is configured
-     *
-     * If the value is NOT encrypted, returns as-is.
-     */
-    public String decryptIfNeeded(String value) {
-        if (isBlank(value)) return value;
-        if (!isEncrypted(value)) return value;
-
-        if (secretKey == null) {
-            // If value is encrypted but key is missing, we cannot decrypt — fail clearly.
-            throw new IllegalStateException("Encrypted token present but SECURITY_TOKEN_ENCRYPTION_KEY is not configured.");
-        }
-
-        return decrypt(value);
-    }
-
-    public boolean isEncrypted(String value) {
-        return value != null && value.startsWith(PREFIX);
-    }
-
-    /**
-     * Optional helper if you ever want to detect JSON-ish strings.
-     * This is safe and DOES NOT contain invalid escapes.
-     */
-    public boolean looksLikeJson(String value) {
-        if (value == null) return false;
-        String v = value.trim();
-        if ((v.startsWith("{") && v.endsWith("}")) || (v.startsWith("[") && v.endsWith("]"))) return true;
-        // Lightweight heuristic
-        return v.contains("\":"); // ✅ FIXED: valid Java string
-    }
-
-    // -------------------- internal crypto --------------------
-
-    private String encrypt(String plain) {
         try {
             byte[] iv = new byte[GCM_IV_BYTES];
             RNG.nextBytes(iv);
@@ -140,7 +98,6 @@ public class TokenEncryptionService {
 
             byte[] ciphertext = cipher.doFinal(plain.getBytes(StandardCharsets.UTF_8));
 
-            // payload = iv + ciphertext
             byte[] payload = new byte[iv.length + ciphertext.length];
             System.arraycopy(iv, 0, payload, 0, iv.length);
             System.arraycopy(ciphertext, 0, payload, iv.length, ciphertext.length);
@@ -151,9 +108,23 @@ public class TokenEncryptionService {
         }
     }
 
-    private String decrypt(String encrypted) {
+    /**
+     * Repo-compat: TokenEncryptionConverter expects this to exist and be callable.
+     * Decrypts only if value is encrypted (enc:v1:...).
+     *
+     * If value is NOT encrypted, returns as-is.
+     * If value IS encrypted but key is missing => throw (cannot decrypt).
+     */
+    public String decrypt(String value) {
+        if (isBlank(value)) return value;
+        if (!looksEncrypted(value)) return value;
+
+        if (secretKey == null) {
+            throw new IllegalStateException("Encrypted token present but SECURITY_TOKEN_ENCRYPTION_KEY is not configured.");
+        }
+
         try {
-            String b64 = encrypted.substring(PREFIX.length());
+            String b64 = value.substring(PREFIX.length());
             byte[] payload = Base64.getDecoder().decode(b64);
 
             if (payload.length < GCM_IV_BYTES + 16) {
@@ -174,6 +145,23 @@ public class TokenEncryptionService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to decrypt token. Check SECURITY_TOKEN_ENCRYPTION_KEY.", e);
         }
+    }
+
+    /**
+     * Repo-compat: TokenReEncryptionService calls looksEncrypted(...).
+     */
+    public boolean looksEncrypted(String value) {
+        return value != null && value.startsWith(PREFIX);
+    }
+
+    /**
+     * Optional helper (safe string literal).
+     */
+    public boolean looksLikeJson(String value) {
+        if (value == null) return false;
+        String v = value.trim();
+        if ((v.startsWith("{") && v.endsWith("}")) || (v.startsWith("[") && v.endsWith("]"))) return true;
+        return v.contains("\":");
     }
 
     // -------------------- helpers --------------------
