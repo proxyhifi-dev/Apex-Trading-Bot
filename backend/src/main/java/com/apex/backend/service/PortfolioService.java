@@ -39,14 +39,12 @@ public class PortfolioService {
     public double getPortfolioValue(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount(userId);
-                if (account == null) {
+                if (userId == null) {
                     return 0.0;
                 }
-                BigDecimal total = MoneyUtils.add(
-                        MoneyUtils.add(account.getCashBalance(), account.getReservedMargin()),
-                        account.getUnrealizedPnl()
-                );
+                PaperAccount account = resolvePaperAccount(userId);
+                BigDecimal positionValue = paperTradingService.getOpenPositionsMarketValue(userId);
+                BigDecimal total = MoneyUtils.add(account.getCashBalance(), positionValue);
                 return total.doubleValue();
             }
             if (userId == null) {
@@ -96,6 +94,14 @@ public class PortfolioService {
 
     public double getAvailableEquity(boolean isPaper, Long userId) {
         try {
+            if (isPaper) {
+                PaperAccount account = resolvePaperAccount(userId);
+                if (account == null) {
+                    return 0.0;
+                }
+                BigDecimal positionValue = paperTradingService.getOpenPositionsMarketValue(userId);
+                return MoneyUtils.add(account.getCashBalance(), positionValue).doubleValue();
+            }
             return getAvailableCash(isPaper, userId);
         } catch (Exception e) {
             log.error("Failed to get available equity", e);
@@ -110,8 +116,10 @@ public class PortfolioService {
     public double getTotalInvested(boolean isPaper, Long userId) {
         try {
             if (isPaper) {
-                PaperAccount account = resolvePaperAccount(userId);
-                return account != null ? account.getReservedMargin().doubleValue() : 0.0;
+                if (userId == null) {
+                    return 0.0;
+                }
+                return paperTradingService.getOpenPositionsMarketValue(userId).doubleValue();
             }
             if (userId == null) {
                 return 0;

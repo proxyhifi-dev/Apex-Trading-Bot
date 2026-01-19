@@ -48,7 +48,11 @@ public class ScannerOrchestrator {
 
         log.info("🌍 Market: {} | VIX: {}", isMarketBullish ? "BULL" : "BEAR", currentVix);
 
-        List<String> universe = screeningService.getUniverse();
+        List<String> universe = screeningService.getUniverse(userId);
+        if (universe.isEmpty()) {
+            log.info("📭 Watchlist empty for user {}. Skipping scan.", userId);
+            return;
+        }
         log.info("🔭 Parallel Scanning {} symbols...", universe.size());
         botStatusService.resetScanProgress();
         botStatusService.setTotalStocks(universe.size());

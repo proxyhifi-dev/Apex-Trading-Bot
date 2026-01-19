@@ -12,6 +12,7 @@ import com.apex.backend.trading.pipeline.TradeDecisionPipelineService;
 import com.apex.backend.config.AdvancedTradingProperties;
 import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.service.indicator.VolShockService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -54,6 +55,7 @@ public class TradeExecutionService {
     private final LiquidityGateService liquidityGateService;
     private final VolShockService volShockService;
     private final BroadcastService broadcastService;
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public void executeAutoTrade(Long userId, DecisionResult decision, boolean isPaper, double currentVix) {
@@ -74,6 +76,7 @@ public class TradeExecutionService {
                 .scanTime(LocalDateTime.now())
                 .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
                 .analysisReason(decision.signalScore().reason())
+                .scoreBreakdown(serializeScoreBreakdown(decision))
                 .build();
 
         signal = screeningRepo.save(signal);
@@ -276,6 +279,18 @@ public class TradeExecutionService {
         tradeFeatureAttributionService.saveAttributions(trade.getId(), userId, signal.getSymbol(), pipelineDecision.signalScore().featureContributions());
         signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.EXECUTED);
         screeningRepo.save(signal);
+    }
+
+    private String serializeScoreBreakdown(DecisionResult decision) {
+        if (decision == null || decision.signalScore() == null || decision.signalScore().featureContributions() == null) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(decision.signalScore().featureContributions());
+        } catch (Exception e) {
+            log.warn("Failed to serialize score breakdown for {}", decision.symbol(), e);
+            return null;
+        }
     }
 
     public void approveAndExecute(Long userId, Long signalId, boolean isPaper) {

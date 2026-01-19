@@ -1,25 +1,23 @@
 package com.apex.backend.util;
 
-import com.apex.backend.model.*;
-import com.apex.backend.repository.*;
+import com.apex.backend.model.TradingStrategy;
+import com.apex.backend.repository.TradingStrategyRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 
 @Component
 @RequiredArgsConstructor
 @Slf4j
+@ConditionalOnProperty(value = "apex.seed-demo-data", havingValue = "true")
 public class DatabaseSeeder implements CommandLineRunner {
 
     private final TradingStrategyRepository strategyRepo;
-    private final WatchlistStockRepository watchlistRepo;
-    private final StockScreeningResultRepository screeningRepo;
-    private final UserRepository userRepository;
 
     @Override
     @Transactional // ✅ FIXED: Keeps entity managed during the entire seeding process
@@ -56,59 +54,8 @@ public class DatabaseSeeder implements CommandLineRunner {
             strategy.setBollingerPeriod(20);
             strategy.setBollingerStdDev(2.0);
             strategy.setSqueezeWeight(20);
-
-            strategy = strategyRepo.save(strategy);
-
-            // Add Nifty 50 sample
-            String[] symbols = {
-                    "NSE:RELIANCE-EQ", "NSE:TCS-EQ", "NSE:INFY-EQ",
-                    "NSE:HDFCBANK-EQ", "NSE:ICICIBANK-EQ"
-            };
-
-            for (String symbol : symbols) {
-                WatchlistStock stock = new WatchlistStock();
-                stock.setSymbol(symbol);
-                stock.setStrategy(strategy);
-                stock.setActive(true);
-                watchlistRepo.save(stock);
-            }
-
-            Long ownerUserId = userRepository.findTopByOrderByIdAsc()
-                    .map(User::getId)
-                    .orElse(null);
-            if (ownerUserId == null) {
-                log.warn("⚠️ Skipping signal seeding because no users exist yet.");
-                return;
-            }
-
-            // Seed Sample Signals
-            StockScreeningResult signal1 = StockScreeningResult.builder()
-                    .strategy(strategy)
-                    .userId(ownerUserId)
-                    .symbol("NSE:RELIANCE-EQ")
-                    .scanTime(LocalDateTime.now())
-                    .entryPrice(BigDecimal.valueOf(2450.50))
-                    .signalScore(88)
-                    .grade("A+")
-                    .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
-                    .analysisReason("Breakout")
-                    .build();
-            screeningRepo.save(signal1);
-
-            StockScreeningResult signal2 = StockScreeningResult.builder()
-                    .strategy(strategy)
-                    .userId(ownerUserId)
-                    .symbol("NSE:TCS-EQ")
-                    .scanTime(LocalDateTime.now())
-                    .entryPrice(BigDecimal.valueOf(3520.75))
-                    .signalScore(76)
-                    .grade("B")
-                    .approvalStatus(StockScreeningResult.ApprovalStatus.PENDING)
-                    .analysisReason("RSI Divergence")
-                    .build();
-            screeningRepo.save(signal2);
-
-            log.info("✅ Database seeded successfully.");
+            strategyRepo.save(strategy);
+            log.info("✅ Strategy seeded successfully.");
 
         } catch (Exception e) {
             log.error("❌ Database seeding failed: {}", e.getMessage(), e);

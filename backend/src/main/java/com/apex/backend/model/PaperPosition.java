@@ -27,10 +27,10 @@ public class PaperPosition {
     @Column(nullable = false)
     private String side;
 
-    @Column(nullable = false)
+    @Column(name = "qty", nullable = false)
     private Integer quantity;
 
-    @Column(nullable = false, precision = 19, scale = 4)
+    @Column(name = "avg_price", nullable = false, precision = 19, scale = 4)
     private BigDecimal averagePrice;
 
     @Column(precision = 19, scale = 4)
@@ -46,4 +46,25 @@ public class PaperPosition {
     private LocalDateTime entryTime;
 
     private LocalDateTime exitTime;
+
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    void onCreate() {
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now();
+        }
+        if (updatedAt == null) {
+            updatedAt = LocalDateTime.now();
+        }
+    }
+
+    @PreUpdate
+    void onUpdate() {
+        updatedAt = LocalDateTime.now();
+    }
 }

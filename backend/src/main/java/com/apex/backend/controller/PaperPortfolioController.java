@@ -13,6 +13,8 @@ import com.apex.backend.model.PaperPosition;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.PaperTradingService;
 import com.apex.backend.util.MoneyUtils;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +31,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/paper")
 @RequiredArgsConstructor
+@Tag(name = "Paper Trading")
 public class PaperPortfolioController {
     
     private final PaperTradingService paperTradingService;
@@ -37,6 +40,7 @@ public class PaperPortfolioController {
      * Get open paper trading positions
      */
     @GetMapping("/positions/open")
+    @Operation(summary = "Get open paper trading positions")
     public ResponseEntity<?> getOpenPositions(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Fetching open paper positions");
         Long userId = requireUserId(principal);
@@ -46,11 +50,18 @@ public class PaperPortfolioController {
         log.info("Retrieved {} open positions", positions.size());
         return ResponseEntity.ok(positions);
     }
+
+    @GetMapping("/positions")
+    @Operation(summary = "Get paper trading positions")
+    public ResponseEntity<?> getPositions(@AuthenticationPrincipal UserPrincipal principal) {
+        return getOpenPositions(principal);
+    }
     
     /**
      * Get closed paper trading positions
      */
     @GetMapping("/positions/closed")
+    @Operation(summary = "Get closed paper trading positions")
     public ResponseEntity<?> getClosedPositions(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Fetching closed paper positions");
         Long userId = requireUserId(principal);
@@ -65,6 +76,7 @@ public class PaperPortfolioController {
      * Get paper trading statistics
      */
     @GetMapping("/stats")
+    @Operation(summary = "Get paper trading stats")
     public ResponseEntity<?> getStats(@AuthenticationPrincipal UserPrincipal principal) {
         log.info("Fetching paper trading stats");
         Long userId = requireUserId(principal);
@@ -83,13 +95,16 @@ public class PaperPortfolioController {
      * Get paper trading summary (cash/used/free/pnl/positions)
      */
     @GetMapping("/summary")
+    @Operation(summary = "Get paper trading summary")
     public ResponseEntity<?> getSummary(@AuthenticationPrincipal UserPrincipal principal) {
         Long userId = requireUserId(principal);
         List<PaperPosition> openPositions = paperTradingService.getOpenPositions(userId);
         PaperAccount account = paperTradingService.getAccount(userId);
-        BigDecimal pnl = MoneyUtils.add(account.getRealizedPnl(), account.getUnrealizedPnl());
+        BigDecimal positionValue = paperTradingService.getOpenPositionsMarketValue(userId);
+        BigDecimal unrealized = paperTradingService.getOpenPositionsUnrealizedPnl(userId);
+        BigDecimal pnl = MoneyUtils.add(account.getRealizedPnl(), unrealized);
         BigDecimal cash = account.getCashBalance();
-        BigDecimal used = account.getReservedMargin();
+        BigDecimal used = positionValue;
         BigDecimal free = cash;
         PaperSummaryDTO summary = PaperSummaryDTO.builder()
                 .cash(cash)

@@ -23,6 +23,7 @@ public class SignalDetailDTO {
     private LocalDateTime scanTime;
     private String approvalStatus;
     private String analysisReason;
+    private String scoreBreakdown;
     private String decisionReason;
     private String decisionNotes;
     private String decidedBy;

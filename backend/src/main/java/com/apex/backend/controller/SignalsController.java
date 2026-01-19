@@ -6,6 +6,9 @@ import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.repository.StockScreeningResultRepository;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.BotScheduler;
+import com.apex.backend.service.WatchlistService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -24,15 +27,21 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/signals")
 @RequiredArgsConstructor
+@Tag(name = "Signals")
 public class SignalsController {
 
     private final BotScheduler botScheduler;
     private final StockScreeningResultRepository screeningRepository;
+    private final WatchlistService watchlistService;
 
     @PostMapping("/scan-now")
+    @Operation(summary = "Trigger a scan to generate signals")
     public ResponseEntity<?> scanNow(@AuthenticationPrincipal UserPrincipal principal) {
         try {
             Long userId = requireUserId(principal);
+            if (watchlistService.isWatchlistEmpty(userId)) {
+                return ResponseEntity.ok(new MessageResponse("Watchlist empty"));
+            }
             new Thread(() -> botScheduler.forceScan(userId)).start();
             return ResponseEntity.ok(new MessageResponse("Scan triggered"));
         } catch (Exception e) {
@@ -43,6 +52,7 @@ public class SignalsController {
     }
 
     @GetMapping("/recent")
+    @Operation(summary = "Get recent signals for the authenticated user")
     public ResponseEntity<?> recentSignals(@AuthenticationPrincipal UserPrincipal principal) {
         try {
             Long userId = requireUserId(principal);

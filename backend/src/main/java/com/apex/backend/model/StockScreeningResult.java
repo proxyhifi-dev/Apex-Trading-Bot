@@ -49,6 +49,9 @@ public class StockScreeningResult {
     @Column(length = 1000)
     private String analysisReason;
 
+    @Column(length = 4000)
+    private String scoreBreakdown;
+
     @Column(length = 1000)
     private String decisionReason;
 
