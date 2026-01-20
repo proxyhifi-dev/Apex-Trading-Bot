@@ -55,6 +55,8 @@ public class TradeExecutionService {
     private final LiquidityGateService liquidityGateService;
     private final VolShockService volShockService;
     private final BroadcastService broadcastService;
+    private final CrisisModeService crisisModeService;
+    private final TradeCooldownService tradeCooldownService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
@@ -279,6 +281,7 @@ public class TradeExecutionService {
         tradeFeatureAttributionService.saveAttributions(trade.getId(), userId, signal.getSymbol(), pipelineDecision.signalScore().featureContributions());
         signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.EXECUTED);
         screeningRepo.save(signal);
+        tradeCooldownService.recordTrade(signal.getSymbol(), userId);
     }
 
     private String serializeScoreBreakdown(DecisionResult decision) {
@@ -300,6 +303,9 @@ public class TradeExecutionService {
     private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
         if (systemGuardService.getState().isSafeMode()) {
             return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
+        }
+        if (crisisModeService.isCrisisModeActive()) {
+            return new GuardBlock(true, "GUARD", "CRISIS_MODE", "CRISIS MODE active");
         }
         TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
         if (!windowDecision.allowed()) {

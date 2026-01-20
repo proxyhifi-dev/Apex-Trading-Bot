@@ -23,6 +23,7 @@ public class SystemGuardService {
                 .orElseGet(() -> systemGuardStateRepository.save(SystemGuardState.builder()
                         .id(SINGLETON_ID)
                         .safeMode(false)
+                        .crisisMode(false)
                         .updatedAt(Instant.now())
                         .build()));
     }
@@ -56,5 +57,55 @@ public class SystemGuardService {
         state.setLastReconcileAt(reconcileAt != null ? reconcileAt : Instant.now());
         state.setUpdatedAt(Instant.now());
         return systemGuardStateRepository.save(state);
+    }
+
+    @Transactional
+    public SystemGuardState setCrisisMode(boolean crisisMode, String reason, String detail, Instant startedAt, Instant until) {
+        SystemGuardState state = getState();
+        state.setCrisisMode(crisisMode);
+        if (crisisMode) {
+            state.setCrisisReason(reason);
+            state.setCrisisDetail(detail);
+            state.setCrisisStartedAt(startedAt != null ? startedAt : Instant.now());
+            state.setCrisisUntil(until);
+        } else {
+            state.setCrisisReason(null);
+            state.setCrisisDetail(null);
+            state.setCrisisStartedAt(null);
+            state.setCrisisUntil(null);
+        }
+        state.setUpdatedAt(Instant.now());
+        return systemGuardStateRepository.save(state);
+    }
+
+    @Transactional
+    public SystemGuardState clearCrisisModeIfExpired() {
+        SystemGuardState state = getState();
+        if (!state.isCrisisMode()) {
+            return state;
+        }
+        Instant now = Instant.now();
+        if (state.getCrisisUntil() != null && now.isAfter(state.getCrisisUntil())) {
+            state.setCrisisMode(false);
+            state.setCrisisReason(null);
+            state.setCrisisDetail(null);
+            state.setCrisisStartedAt(null);
+            state.setCrisisUntil(null);
+            state.setUpdatedAt(now);
+            return systemGuardStateRepository.save(state);
+        }
+        return state;
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isCrisisModeActive() {
+        SystemGuardState state = getState();
+        if (!state.isCrisisMode()) {
+            return false;
+        }
+        if (state.getCrisisUntil() != null && Instant.now().isAfter(state.getCrisisUntil())) {
+            return false;
+        }
+        return true;
     }
 }

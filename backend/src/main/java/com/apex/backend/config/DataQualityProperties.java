@@ -21,4 +21,7 @@ public class DataQualityProperties {
 
     @Positive
     private double outlierPct = 0.1;
+
+    @Min(0)
+    private long maxStaleSeconds = 300;
 }
