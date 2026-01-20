@@ -1,4 +1,93 @@
+spring:
+  application:
+    name: apex-trading-bot
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: validate
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy
+        implicit-strategy: org.hibernate.boot.model.naming.ImplicitNamingStrategyJpaCompliantImpl
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: ${PORT:8080}
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 3600000
+  refresh-expiration: 604800000
+
+fyers:
+  api:
+    app-id: ${FYERS_API_APP_ID:${FYERS_APP_ID:}}
+    secret-key: ${FYERS_API_SECRET_KEY:${FYERS_SECRET_KEY:}}
+    access-token: ${FYERS_ACCESS_TOKEN:}
+    base-url: ${FYERS_API_BASE_URL:https://api-t1.fyers.in/api/v3}
+    refresh-url: ${FYERS_REFRESH_URL:https://api-t1.fyers.in/api/v3/refresh-token}
+  redirect-uri: ${FYERS_REDIRECT_URI:http://localhost:4200/auth/fyers/callback}
+  data:
+    base-url: ${FYERS_DATA_BASE_URL:https://api-t1.fyers.in/data}
+  resilience:
+    circuit:
+      failure-rate-threshold: 50
+      wait-open-seconds: 30
+      sliding-window-size: 20
+    rate:
+      limit-per-second: 8
+      timeout-ms: 0
+    retry:
+      max-attempts: 4
+      base-delay-ms: 500
+      jitter-factor: 0.2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  level:
+    com.apex.backend: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    com.zaxxer.hikari: DEBUG
+    org.flywaydb: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [cid=%X{correlationId} oid=%X{orderId}] - %msg%n"
+
 apex:
+  scanner:
+    interval: 60
+  ui:
+    api-base-url: ${APEX_UI_API_BASE_URL:http://127.0.0.1:8080/api}
+    ws-url: ${APEX_UI_WS_URL:ws://127.0.0.1:8080/ws}
+  bootstrap:
+    default-users: true
+  security:
+    cors:
+      allowed-origins: ${APEX_ALLOWED_ORIGINS:}
+    websocket:
+      allowed-origins: ${APEX_ALLOWED_ORIGINS:}
+  admin:
+    token: ${APEX_ADMIN_TOKEN:}
+  ws:
+    broadcastTopics: ${APEX_WS_BROADCAST_TOPICS:false}
   advanced:
     market-regime:
       trending-adx-threshold: 25.0
@@ -74,6 +163,68 @@ apex:
       retention-days: 30
 
 strategy:
+  macd:
+    fast-period: 12
+    slow-period: 26
+    signal-period: 9
+    min-momentum-score: 6.0
+  adx:
+    period: 14
+    threshold: 25.0
+    strong: 30.0
+  rsi:
+    period: 14
+    goldilocks-min: 45.0
+    goldilocks-max: 65.0
+    overbought: 70.0
+    oversold: 30.0
+  atr:
+    period: 14
+    min-percent: 0.5
+    max-percent: 5.0
+    stop-multiplier: 1.5
+    target-multiplier: 3.0
+  bollinger:
+    period: 20
+    deviation: 2.0
+  keltner:
+    period: 20
+    atr-multiplier: 1.5
+  squeeze:
+    min-bars: 5
+    tight-threshold: 0.8
+  exit:
+    breakeven-threshold: 0.5
+    trailing-threshold: 1.5
+    trailing-multiplier: 1.5
+    time-stop-bars: 20
+    max-bars: 50
+  sizing:
+    base-risk: 0.01
+    multiplier-aaa: 2.0
+    multiplier-aa: 1.5
+    multiplier-a: 1.0
+    dynamic:
+      enabled: false
+      min-multiplier: 0.5
+      max-multiplier: 1.0
+      score-floor: 60
+      score-ceil: 90
+  circuit:
+    daily-loss-limit: 0.02
+    weekly-loss-limit: 0.10
+    monthly-loss-limit: 0.15
+    max-consecutive-losses: 3
+    auto-pause: true
+  scoring:
+    momentum-weight: 20.0
+    trend-weight: 20.0
+    rsi-weight: 20.0
+    volatility-weight: 20.0
+    squeeze-weight: 20.0
+  scanner:
+    max-candidates: 5
+    require-manual-approval: false
   health:
     rolling-trades: 30
     min-expectancy: 0.1
@@ -91,13 +242,6 @@ strategy:
       - "09:20-11:30"
       - "13:45-15:10"
     blackout: []
-  sizing:
-    dynamic:
-      enabled: false
-      min-multiplier: 0.5
-      max-multiplier: 1.0
-      score-floor: 60
-      score-ceil: 90
   market-gate:
     enabled: false
     index-symbol: "NSE:NIFTY50-EQ"
@@ -173,6 +317,10 @@ crisis:
   drop-threshold-pct: 5.0
   vix-threshold: 30.0
   halt-duration-minutes: 30
+  check-interval-ms: 60000
 
 security:
   token-encryption-key: ${SECURITY_TOKEN_ENCRYPTION_KEY:}
+
+guard:
+  admin-token: ${GUARD_ADMIN_TOKEN:}

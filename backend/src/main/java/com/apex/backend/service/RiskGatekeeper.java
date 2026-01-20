@@ -24,8 +24,20 @@ public class RiskGatekeeper {
     private final FyersAuthService fyersAuthService;
     private final FyersMarketDataClient marketDataClient;
     private final AdvancedTradingProperties advancedTradingProperties;
+    private final TradeCooldownService tradeCooldownService;
+    private final CrisisModeService crisisModeService;
 
     public RiskGateDecision evaluate(RiskGateRequest request) {
+        if (crisisModeService.isCrisisModeActive()) {
+            return RiskGateDecision.reject(
+                RiskRejectCode.CRISIS_MODE,
+                "Crisis mode active",
+                null,
+                null,
+                request.symbol(),
+                null
+            );
+        }
         if (request.exitOrder()) {
             return checkLiquidityAndSpread(request);
         }
@@ -52,6 +64,18 @@ public class RiskGatekeeper {
                 "Max open positions reached",
                 (double) maxPositions,
                 (double) openPositions,
+                request.symbol(),
+                null
+            );
+        }
+
+        if (tradeCooldownService.isInCooldown(request.symbol(), request.userId())) {
+            long remainingSeconds = tradeCooldownService.getRemainingCooldown(request.symbol(), request.userId());
+            return RiskGateDecision.reject(
+                RiskRejectCode.COOLDOWN,
+                "Symbol in cooldown",
+                null,
+                (double) remainingSeconds,
                 request.symbol(),
                 null
             );

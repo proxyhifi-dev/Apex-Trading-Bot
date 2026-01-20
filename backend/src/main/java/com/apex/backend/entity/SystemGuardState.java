@@ -25,6 +25,17 @@ public class SystemGuardState {
     @Column(nullable = false)
     private boolean safeMode;
 
+    @Column(nullable = false)
+    private boolean crisisMode;
+
+    private String crisisReason;
+
+    private String crisisDetail;
+
+    private Instant crisisStartedAt;
+
+    private Instant crisisUntil;
+
     private Instant lastReconcileAt;
 
     private Instant lastMismatchAt;

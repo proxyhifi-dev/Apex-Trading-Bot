@@ -20,7 +20,16 @@ public class DataQualityGuard {
         List<String> reasons = new ArrayList<>();
         if (candles == null || candles.size() < 2) {
             reasons.add("Insufficient candles for data quality validation");
-            return new DataQualityResult(false, reasons);
+            return new DataQualityResult(false, reasons, DataQualityIssue.INSUFFICIENT);
+        }
+
+        LocalDateTime latest = candles.get(candles.size() - 1).getTimestamp();
+        if (latest != null) {
+            long ageSeconds = Duration.between(latest, LocalDateTime.now()).getSeconds();
+            if (ageSeconds > properties.getMaxStaleSeconds()) {
+                reasons.add("DATA_STALE: " + ageSeconds + "s old");
+                return new DataQualityResult(false, reasons, DataQualityIssue.STALE);
+            }
         }
 
         long expectedMinutes = parseTimeframeMinutes(timeframe);
@@ -38,7 +47,8 @@ public class DataQualityGuard {
             }
         }
         if (missingCount > properties.getMaxMissingCandles()) {
-            reasons.add("Missing or gapped candles detected");
+            reasons.add("DATA_GAP: " + missingCount + " missing candles");
+            return new DataQualityResult(false, reasons, DataQualityIssue.GAP);
         }
 
         double outlierPct = properties.getOutlierPct();
@@ -50,11 +60,11 @@ public class DataQualityGuard {
             }
             double pctChange = Math.abs(close - prevClose) / prevClose;
             if (pctChange > outlierPct) {
-                reasons.add("Outlier price spike detected");
-                break;
+                reasons.add("OUTLIER: " + pctChange);
+                return new DataQualityResult(false, reasons, DataQualityIssue.OUTLIER);
             }
         }
-        return new DataQualityResult(reasons.isEmpty(), reasons);
+        return new DataQualityResult(true, reasons, null);
     }
 
     private long parseTimeframeMinutes(String timeframe) {
@@ -71,5 +81,12 @@ public class DataQualityGuard {
         }
     }
 
-    public record DataQualityResult(boolean allowed, List<String> reasons) {}
+    public enum DataQualityIssue {
+        STALE,
+        GAP,
+        OUTLIER,
+        INSUFFICIENT
+    }
+
+    public record DataQualityResult(boolean allowed, List<String> reasons, DataQualityIssue issue) {}
 }
