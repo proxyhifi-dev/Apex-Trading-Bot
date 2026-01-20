@@ -43,39 +43,35 @@ public class SecurityConfig {
         http
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
-            // 1. Enable CORS
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                // 2. Allow these endpoints without login
+                // 🔓 PUBLIC (NO JWT)
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/favicon.ico").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/api/ui/**").permitAll()      // ✅ REQUIRED
+                .requestMatchers("/actuator/**").permitAll()
                 .requestMatchers("/v3/api-docs/**").permitAll()
                 .requestMatchers("/swagger-ui/**").permitAll()
-                // ✅ FIX: Allow WebSocket handshake without authentication
                 .requestMatchers("/ws/**").permitAll()
-                // All other endpoints need login
+
+                // 🔐 EVERYTHING ELSE NEEDS JWT
                 .anyRequest().authenticated()
-            )
-            .sessionManagement(session -> session
-                .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+
         return http.build();
     }
 
-    // 3. Define CORS rules to allow 127.0.0.1
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(allowedOriginResolver.resolveCorsAllowedOrigins());
-        configuration.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
-        configuration.setAllowedHeaders(List.of("*"));
-        configuration.setAllowCredentials(true);
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowedOrigins(allowedOriginResolver.resolveCorsAllowedOrigins());
+        cfg.setAllowedMethods(securityProperties.getCors().getAllowedMethods());
+        cfg.setAllowedHeaders(List.of("*"));
+        cfg.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
-
+        source.registerCorsConfiguration("/**", cfg);
         return source;
     }
 }
