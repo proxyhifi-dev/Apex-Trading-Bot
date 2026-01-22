@@ -66,10 +66,11 @@ public class ScannerRun {
     private Integer passedStage2;
     private Integer finalSignals;
 
-    @Column(length = 4000)
+    // ✅ FIX: explicit column names to match Flyway migration
+    @Column(name = "rejected_stage1_reason_counts", length = 4000)
     private String rejectedStage1ReasonCounts;
 
-    @Column(length = 4000)
+    @Column(name = "rejected_stage2_reason_counts", length = 4000)
     private String rejectedStage2ReasonCounts;
 
     public enum Status {
