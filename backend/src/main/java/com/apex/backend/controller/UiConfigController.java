@@ -52,7 +52,7 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("GET").path("/api/paper/positions").description("Paper positions").build(),
             UiEndpointDTO.builder().method("GET").path("/api/paper/summary").description("Paper summary").build(),
             UiEndpointDTO.builder().method("GET").path("/api/paper/stats").description("Paper stats").build(),
-            UiEndpointDTO.builder().method("POST").path("/api/signals/scan-now").description("Manual scan").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/scanner/run").description("Manual scan").build(),
             UiEndpointDTO.builder().method("GET").path("/api/signals/recent").description("Recent signals").build(),
             UiEndpointDTO.builder().method("GET").path("/api/watchlist").description("Watchlist entries").build(),
             UiEndpointDTO.builder().method("POST").path("/api/watchlist").description("Add watchlist entry").build(),

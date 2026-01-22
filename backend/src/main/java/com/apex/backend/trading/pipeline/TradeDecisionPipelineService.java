@@ -25,6 +25,8 @@ public class TradeDecisionPipelineService {
         var dataQuality = dataQualityGuard.validate(request.timeframe(), request.candles());
         if (!dataQuality.allowed()) {
             reasons.addAll(dataQuality.reasons());
+            SignalDiagnostics diagnostics = SignalDiagnostics.withReason(ScanRejectReason.DATA_QUALITY);
+            SignalScore signalScore = baseSignalScore("Data quality rejected", diagnostics);
             return new DecisionResult(
                     request.symbol(),
                     DecisionResult.DecisionAction.HOLD,
@@ -32,7 +34,7 @@ public class TradeDecisionPipelineService {
                     reasons,
                     new RiskDecision(false, 0.0, reasons, 1.0, 0),
                     null,
-                    null,
+                    signalScore,
                     null
             );
         }
@@ -45,6 +47,7 @@ public class TradeDecisionPipelineService {
         StrategyHealthDecision healthDecision = strategyHealthEngine.evaluate(request.userId());
         if (healthDecision != null && healthDecision.status() == StrategyHealthDecision.StrategyHealthStatus.BROKEN) {
             reasons.addAll(healthDecision.reasons());
+            addDiagnosticReason(signalScore, ScanRejectReason.STRATEGY_HEALTH_BLOCKED);
             return new DecisionResult(
                     request.symbol(),
                     DecisionResult.DecisionAction.HOLD,
@@ -59,6 +62,7 @@ public class TradeDecisionPipelineService {
         RiskDecision riskDecision = riskEngine.evaluate(request, signalScore, snapshot);
         if (!riskDecision.allowed()) {
             reasons.addAll(riskDecision.reasons());
+            addDiagnosticReason(signalScore, ScanRejectReason.RISK_REJECTED);
             return new DecisionResult(
                     request.symbol(),
                     DecisionResult.DecisionAction.HOLD,
@@ -88,5 +92,16 @@ public class TradeDecisionPipelineService {
                 signalScore,
                 healthDecision
         );
+    }
+
+    private SignalScore baseSignalScore(String reason, SignalDiagnostics diagnostics) {
+        return new SignalScore(false, 0.0, "N/A", 0.0, 0.0, reason, null, List.of(), diagnostics);
+    }
+
+    private void addDiagnosticReason(SignalScore signalScore, ScanRejectReason reason) {
+        if (signalScore == null || signalScore.diagnostics() == null) {
+            return;
+        }
+        signalScore.diagnostics().addRejectionReason(reason);
     }
 }

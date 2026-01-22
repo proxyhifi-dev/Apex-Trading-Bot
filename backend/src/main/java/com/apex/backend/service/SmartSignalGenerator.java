@@ -18,6 +18,8 @@ import com.apex.backend.service.indicator.MultiTimeframeMomentumService;
 import com.apex.backend.service.indicator.RsiService;
 import com.apex.backend.service.indicator.SqueezeService;
 import com.apex.backend.service.indicator.VolShockService;
+import com.apex.backend.trading.pipeline.ScanRejectReason;
+import com.apex.backend.trading.pipeline.SignalDiagnostics;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -81,24 +83,39 @@ public class SmartSignalGenerator {
         public double multiTimeframeScore;
         public String patternType;
         public double patternStrength;
+        public SignalDiagnostics diagnostics;
 
         // Helper to check signal
         public boolean isHasSignal() { return hasSignal; }
     }
 
     public SignalDecision generateSignalSmart(String symbol, List<Candle> m5, List<Candle> m15, List<Candle> h1, List<Candle> daily) {
-        if (m5.size() < 50) return SignalDecision.builder().hasSignal(false).reason("Insufficient Data").build();
+        if (m5.size() < 50) {
+            return SignalDecision.builder()
+                    .hasSignal(false)
+                    .reason("Insufficient Data")
+                    .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.INSUFFICIENT_DATA))
+                    .build();
+        }
 
         Instant now = Instant.now();
         if (systemGuardService.getState().isSafeMode()) {
             decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", "SAFE_MODE"));
-            return SignalDecision.builder().hasSignal(false).reason("SAFE MODE: reconciliation mismatch").build();
+            return SignalDecision.builder()
+                    .hasSignal(false)
+                    .reason("SAFE MODE: reconciliation mismatch")
+                    .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.SAFE_MODE))
+                    .build();
         }
 
         TradingWindowService.WindowDecision windowDecision = tradingWindowService.evaluate(now);
         if (!windowDecision.allowed()) {
             decisionAuditService.record(symbol, "5m", "TIME_FILTER", Map.of("reason", windowDecision.reason()));
-            return SignalDecision.builder().hasSignal(false).reason("Time filter: " + windowDecision.reason()).build();
+            return SignalDecision.builder()
+                    .hasSignal(false)
+                    .reason("Time filter: " + windowDecision.reason())
+                    .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.TIME_FILTER))
+                    .build();
         }
 
         MacdService.MacdResult macdRes = macdService.calculate(m5);
@@ -130,7 +147,11 @@ public class SmartSignalGenerator {
             var guardDecision = circuitBreakerService.canTrade(ownerUserId, now);
             if (!guardDecision.allowed()) {
                 decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", guardDecision.reason(), "until", guardDecision.until()));
-                return SignalDecision.builder().hasSignal(false).reason("Guard: " + guardDecision.reason()).build();
+                return SignalDecision.builder()
+                        .hasSignal(false)
+                        .reason("Guard: " + guardDecision.reason())
+                        .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.GUARD_ACTIVE))
+                        .build();
             }
         }
 
@@ -144,7 +165,11 @@ public class SmartSignalGenerator {
                     "lastClose", gate.lastClose()
             ));
             if (!gate.allowed()) {
-                return SignalDecision.builder().hasSignal(false).reason("Market gate: " + gate.reason()).build();
+                return SignalDecision.builder()
+                        .hasSignal(false)
+                        .reason("Market gate: " + gate.reason())
+                        .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.MARKET_GATE))
+                        .build();
             }
         }
 
@@ -158,7 +183,11 @@ public class SmartSignalGenerator {
                     "cooldownBars", shock.cooldownBarsRemaining()
             ));
             if (shock.shocked()) {
-                return SignalDecision.builder().hasSignal(false).reason("Volatility shock: " + shock.reason()).build();
+                return SignalDecision.builder()
+                        .hasSignal(false)
+                        .reason("Volatility shock: " + shock.reason())
+                        .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.VOLATILITY_SHOCK))
+                        .build();
             }
         }
 
@@ -172,7 +201,11 @@ public class SmartSignalGenerator {
                     "avgVolume", liquidityDecision.avgVolume()
             ));
             if (!liquidityDecision.allowed()) {
-                return SignalDecision.builder().hasSignal(false).reason("Liquidity gate: " + liquidityDecision.reason()).build();
+                return SignalDecision.builder()
+                        .hasSignal(false)
+                        .reason("Liquidity gate: " + liquidityDecision.reason())
+                        .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.LIQUIDITY_GATE))
+                        .build();
             }
         }
 
@@ -187,7 +220,11 @@ public class SmartSignalGenerator {
                     "choppy", choppy
             ));
             if (choppy) {
-                return SignalDecision.builder().hasSignal(false).reason(String.format("Choppy market (CHOP=%.2f)", chop.chop())).build();
+                return SignalDecision.builder()
+                        .hasSignal(false)
+                        .reason(String.format("Choppy market (CHOP=%.2f)", chop.chop()))
+                        .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.CHOP_FILTER))
+                        .build();
             }
         }
 
@@ -212,24 +249,71 @@ public class SmartSignalGenerator {
             if (strategyProperties.getBreakout().isRequireStructureBreakout()) {
                 structureBreakoutOk = (squeezeBreakout || strongMomentum) && close > channel.upper();
                 if (!structureBreakoutOk) {
+                    SignalDiagnostics diagnostics = SignalDiagnostics.builder()
+                            .trendPass(adxRes.adx() >= strategyProperties.getAdx().getStrong())
+                            .volumePass(candleConfirm.volumeConfirmed())
+                            .breakoutPass(false)
+                            .rsiPass(rsiGoldilocks)
+                            .adxPass(adxRes.adx() >= minAdx)
+                            .atrPass(atrValid)
+                            .momentumPass(strongMomentum)
+                            .squeezePass(squeezeRes.squeeze())
+                            .build();
+                    diagnostics.addRejectionReason(ScanRejectReason.STRUCTURE_BREAKOUT_MISSING);
                     return SignalDecision.builder()
                             .hasSignal(false)
                             .score((int) Math.round(breakdown.totalScore()))
                             .reason("Structure breakout not confirmed")
+                            .diagnostics(diagnostics)
                             .build();
                 }
             }
         }
+        SignalDiagnostics diagnostics = SignalDiagnostics.builder()
+                .trendPass(adxRes.adx() >= strategyProperties.getAdx().getStrong())
+                .volumePass(candleConfirm.volumeConfirmed())
+                .breakoutPass(structureBreakoutOk && (squeezeBreakout || strongMomentum))
+                .rsiPass(rsiGoldilocks)
+                .adxPass(adxRes.adx() >= minAdx)
+                .atrPass(atrValid)
+                .momentumPass(strongMomentum)
+                .squeezePass(squeezeRes.squeeze())
+                .build();
 
         if (breakdown.totalScore() < 70) {
-            return SignalDecision.builder().hasSignal(false).score((int) Math.round(breakdown.totalScore())).reason("Score Below 70").build();
+            diagnostics.addRejectionReason(ScanRejectReason.SCORE_TOO_LOW);
+            return SignalDecision.builder()
+                    .hasSignal(false)
+                    .score((int) Math.round(breakdown.totalScore()))
+                    .reason("Score Below 70")
+                    .diagnostics(diagnostics)
+                    .build();
         }
 
         if (adxRes.adx() < minAdx || !rsiGoldilocks || !atrValid || !(squeezeBreakout || strongMomentum) || !candleConfirmed || !structureBreakoutOk) {
+            if (adxRes.adx() < minAdx) {
+                diagnostics.addRejectionReason(ScanRejectReason.ADX_TOO_LOW);
+            }
+            if (!rsiGoldilocks) {
+                diagnostics.addRejectionReason(ScanRejectReason.RSI_OUT_OF_RANGE);
+            }
+            if (!atrValid) {
+                diagnostics.addRejectionReason(ScanRejectReason.ATR_OUT_OF_RANGE);
+            }
+            if (!(squeezeBreakout || strongMomentum)) {
+                diagnostics.addRejectionReason(ScanRejectReason.BREAKOUT_FAILED);
+            }
+            if (!candleConfirmed) {
+                diagnostics.addRejectionReason(ScanRejectReason.VOLUME_TOO_LOW);
+            }
+            if (!structureBreakoutOk) {
+                diagnostics.addRejectionReason(ScanRejectReason.STRUCTURE_BREAKOUT_MISSING);
+            }
             return SignalDecision.builder()
                     .hasSignal(false)
                     .score((int) Math.round(breakdown.totalScore()))
                     .reason("Entry conditions not met")
+                    .diagnostics(diagnostics)
                     .build();
         }
 
@@ -277,6 +361,7 @@ public class SmartSignalGenerator {
                 .multiTimeframeScore(multiTfScore.score())
                 .patternType(pattern.type())
                 .patternStrength(pattern.strengthScore())
+                .diagnostics(diagnostics)
                 .build();
     }
 }
