@@ -5,22 +5,14 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
 import java.util.List;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class ScanResponse {
-
-    private String requestId;
-    private Instant startedAt;
-    private long durationMs;
-    private int symbolsScanned;
-    private ScanPipelineStats pipeline;
+public class ScannerRunResultResponse {
+    private Long runId;
     private ScanDiagnosticsBreakdown diagnostics;
-    private List<ScanRejectReasonCount> rejectReasonsTop;
     private List<ScanSignalResponse> signals;
-    private List<ScanError> errors;
 }

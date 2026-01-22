@@ -74,8 +74,13 @@ logging:
 apex:
   scanner:
     enabled: false
+    scheduler-enabled: false
     mode: MANUAL
     interval: 60
+    default-timeframe: ${APEX_SCANNER_DEFAULT_TIMEFRAME:5}
+    default-regime: ${APEX_SCANNER_DEFAULT_REGIME:AUTO}
+    market-open: ${APEX_SCANNER_MARKET_OPEN:09:15}
+    market-close: ${APEX_SCANNER_MARKET_CLOSE:15:30}
     universes:
       nifty50: ${APEX_SCANNER_NIFTY50:}
       nifty200: ${APEX_SCANNER_NIFTY200:}
@@ -89,6 +94,7 @@ apex:
       allowed-origins: ${APEX_ALLOWED_ORIGINS:}
     websocket:
       allowed-origins: ${APEX_ALLOWED_ORIGINS:}
+    public-health-endpoint: ${APEX_PUBLIC_HEALTH_ENDPOINT:true}
   admin:
     token: ${APEX_ADMIN_TOKEN:}
   ws:

@@ -2,6 +2,7 @@ package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.config.StrategyProperties;
+import com.apex.backend.dto.ScanDiagnosticsBreakdown;
 import com.apex.backend.dto.ScanError;
 import com.apex.backend.dto.ScanPipelineStats;
 import com.apex.backend.dto.ScanRejectReasonCount;
@@ -79,6 +80,11 @@ public class ManualScanService {
             List<ScanError> errors = new ArrayList<>();
             ScanPipelineStats pipelineStats = new ScanPipelineStats();
             Map<ScanRejectReason, Long> rejectCounts = new EnumMap<>(ScanRejectReason.class);
+            ScanDiagnosticsBreakdown diagnostics = ScanDiagnosticsBreakdown.builder()
+                    .totalSymbols(outcomes.size())
+                    .build();
+            Map<ScanRejectReason, Long> stage1Rejects = new EnumMap<>(ScanRejectReason.class);
+            Map<ScanRejectReason, Long> stage2Rejects = new EnumMap<>(ScanRejectReason.class);
 
             for (ScanSymbolOutcome outcome : outcomes) {
                 if (outcome.error != null) {
@@ -87,15 +93,18 @@ public class ManualScanService {
                             .message(outcome.error)
                             .build());
                     incrementReject(rejectCounts, ScanRejectReason.UNKNOWN);
+                    incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
                     continue;
                 }
                 DecisionResult decision = outcome.decision;
                 if (decision == null) {
                     incrementReject(rejectCounts, ScanRejectReason.UNKNOWN);
+                    incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
                     continue;
                 }
                 updatePipelineStats(pipelineStats, decision.signalScore());
                 collectRejectReasons(rejectCounts, decision.signalScore());
+                trackDiagnostics(decision.signalScore(), diagnostics, stage1Rejects, stage2Rejects);
                 if (decision.action() == DecisionResult.DecisionAction.BUY) {
                     SignalScore score = decision.signalScore();
                     signals.add(ScanSignalResponse.builder()
@@ -112,6 +121,7 @@ public class ManualScanService {
 
             int finalSignals = signals.size();
             pipelineStats.setFinalSignals(finalSignals);
+            diagnostics.setFinalSignals(finalSignals);
             List<ScanRejectReasonCount> rejectReasonTop = rejectCounts.entrySet().stream()
                     .sorted(Map.Entry.<ScanRejectReason, Long>comparingByValue().reversed())
                     .limit(10)
@@ -120,6 +130,8 @@ public class ManualScanService {
                             .count(entry.getValue())
                             .build())
                     .toList();
+            diagnostics.setRejectedStage1ReasonCounts(toReasonMap(stage1Rejects));
+            diagnostics.setRejectedStage2ReasonCounts(toReasonMap(stage2Rejects));
 
             if (!request.isDryRun()) {
                 processCandidates(candidateDecisions, userId);
@@ -132,6 +144,7 @@ public class ManualScanService {
                     .durationMs(durationMs)
                     .symbolsScanned(outcomes.size())
                     .pipeline(pipelineStats)
+                    .diagnostics(diagnostics)
                     .rejectReasonsTop(rejectReasonTop)
                     .signals(signals)
                     .errors(errors)
@@ -236,6 +249,70 @@ public class ManualScanService {
 
     private void incrementReject(Map<ScanRejectReason, Long> counters, ScanRejectReason reason) {
         counters.merge(reason, 1L, Long::sum);
+    }
+
+    private void trackDiagnostics(SignalScore signalScore, ScanDiagnosticsBreakdown diagnostics,
+                                  Map<ScanRejectReason, Long> stage1Rejects,
+                                  Map<ScanRejectReason, Long> stage2Rejects) {
+        if (signalScore == null || signalScore.diagnostics() == null) {
+            incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
+            return;
+        }
+        SignalDiagnostics details = signalScore.diagnostics();
+        boolean stage1Pass = details.isTrendPass() && details.isVolumePass() && details.isBreakoutPass();
+        if (stage1Pass) {
+            diagnostics.setPassedStage1(diagnostics.getPassedStage1() + 1);
+        } else {
+            incrementRejectsByStage(details.getRejectionReasons(), stage1Rejects, stage2Rejects);
+            return;
+        }
+        boolean stage2Pass = details.isRsiPass() && details.isAdxPass() && details.isAtrPass()
+                && details.isMomentumPass() && details.isSqueezePass();
+        if (stage2Pass) {
+            diagnostics.setPassedStage2(diagnostics.getPassedStage2() + 1);
+        } else {
+            incrementRejectsByStage(details.getRejectionReasons(), stage1Rejects, stage2Rejects);
+        }
+    }
+
+    private void incrementRejectsByStage(List<ScanRejectReason> reasons,
+                                         Map<ScanRejectReason, Long> stage1Rejects,
+                                         Map<ScanRejectReason, Long> stage2Rejects) {
+        if (reasons == null || reasons.isEmpty()) {
+            incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
+            return;
+        }
+        for (ScanRejectReason reason : reasons) {
+            if (isStage1Reason(reason)) {
+                incrementReject(stage1Rejects, reason);
+            } else {
+                incrementReject(stage2Rejects, reason);
+            }
+        }
+    }
+
+    private boolean isStage1Reason(ScanRejectReason reason) {
+        return switch (reason) {
+            case INSUFFICIENT_DATA,
+                 SAFE_MODE,
+                 TIME_FILTER,
+                 GUARD_ACTIVE,
+                 MARKET_GATE,
+                 VOLATILITY_SHOCK,
+                 LIQUIDITY_GATE,
+                 CHOP_FILTER,
+                 BREAKOUT_FAILED,
+                 STRUCTURE_BREAKOUT_MISSING,
+                 VOLUME_TOO_LOW,
+                 DATA_QUALITY,
+                 UNKNOWN -> true;
+            default -> false;
+        };
+    }
+
+    private Map<String, Long> toReasonMap(Map<ScanRejectReason, Long> counts) {
+        return counts.entrySet().stream()
+                .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
     }
 
     private void ensureScannerEnabled() {

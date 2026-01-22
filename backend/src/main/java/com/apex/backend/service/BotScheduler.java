@@ -57,6 +57,7 @@ public class BotScheduler {
     public void runBotCycle() {
         try {
             if (!config.getScanner().isEnabled()
+                    || !config.getScanner().isSchedulerEnabled()
                     || config.getScanner().getMode() != StrategyConfig.Scanner.Mode.SCHEDULED) {
                 log.debug("Scanner disabled or in manual mode. Skipping scheduled scan cycle.");
                 return;
@@ -145,7 +146,9 @@ public class BotScheduler {
      */
     private boolean isMarketOpen() {
         LocalTime now = LocalTime.now();
-        return now.isAfter(LocalTime.of(9, 15)) && now.isBefore(LocalTime.of(15, 30));
+        LocalTime open = LocalTime.parse(config.getScanner().getMarketOpen());
+        LocalTime close = LocalTime.parse(config.getScanner().getMarketClose());
+        return now.isAfter(open) && now.isBefore(close);
     }
     
     /**

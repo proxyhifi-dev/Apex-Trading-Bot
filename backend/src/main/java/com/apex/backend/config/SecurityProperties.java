@@ -14,6 +14,7 @@ public class SecurityProperties {
 
     private Cors cors = new Cors();
     private Websocket websocket = new Websocket();
+    private boolean publicHealthEndpoint = true;
 
     @Data
     public static class Cors {

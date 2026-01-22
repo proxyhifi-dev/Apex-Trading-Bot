@@ -1,12 +1,17 @@
 package com.apex.backend.controller;
 
-import com.apex.backend.dto.WatchlistEntryRequest;
-import com.apex.backend.dto.WatchlistEntryResponse;
+import com.apex.backend.dto.WatchlistItemsRequest;
+import com.apex.backend.dto.WatchlistItemResponse;
+import com.apex.backend.dto.WatchlistResponse;
 import com.apex.backend.exception.UnauthorizedException;
-import com.apex.backend.model.WatchlistEntry;
+import com.apex.backend.model.Watchlist;
+import com.apex.backend.model.WatchlistItem;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.WatchlistService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +25,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.List;
 
@@ -33,31 +39,42 @@ public class WatchlistController {
     private final WatchlistService watchlistService;
 
     @GetMapping
-    @Operation(summary = "Get watchlist entries")
-    public ResponseEntity<List<WatchlistEntryResponse>> getWatchlist(@AuthenticationPrincipal UserPrincipal principal) {
+    @Operation(summary = "Get the default watchlist")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = WatchlistResponse.class)))
+    public ResponseEntity<WatchlistResponse> getWatchlist(@AuthenticationPrincipal UserPrincipal principal) {
         Long userId = requireUserId(principal);
-        List<WatchlistEntryResponse> response = watchlistService.getWatchlist(userId).stream()
-                .map(this::toResponse)
-                .toList();
-        return ResponseEntity.ok(response);
+        Watchlist watchlist = watchlistService.loadDefaultWithItems(userId);
+        return ResponseEntity.ok(toResponse(watchlist));
     }
 
-    @PostMapping
-    @Operation(summary = "Add a watchlist entry")
-    public ResponseEntity<WatchlistEntryResponse> addEntry(
+    @PostMapping("/items")
+    @Operation(summary = "Add symbols to the default watchlist")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = WatchlistResponse.class)))
+    public ResponseEntity<WatchlistResponse> addEntries(
             @AuthenticationPrincipal UserPrincipal principal,
-            @Valid @RequestBody WatchlistEntryRequest request) {
+            @Valid @RequestBody WatchlistItemsRequest request) {
         Long userId = requireUserId(principal);
-        WatchlistEntry entry = watchlistService.addEntry(userId, request);
-        return ResponseEntity.ok(toResponse(entry));
+        Watchlist watchlist = watchlistService.addSymbols(userId, request.getSymbols());
+        return ResponseEntity.ok(toResponse(watchlist));
     }
 
-    @DeleteMapping("/{id}")
-    @Operation(summary = "Delete a watchlist entry")
-    public ResponseEntity<Void> deleteEntry(@AuthenticationPrincipal UserPrincipal principal,
-                                            @PathVariable Long id) {
+    @PutMapping
+    @Operation(summary = "Replace the default watchlist with the provided symbols")
+    @ApiResponse(responseCode = "200", content = @Content(schema = @Schema(implementation = WatchlistResponse.class)))
+    public ResponseEntity<WatchlistResponse> replaceWatchlist(@AuthenticationPrincipal UserPrincipal principal,
+                                                              @Valid @RequestBody WatchlistItemsRequest request) {
         Long userId = requireUserId(principal);
-        watchlistService.deleteEntry(userId, id);
+        Watchlist watchlist = watchlistService.replaceSymbols(userId, request.getSymbols());
+        return ResponseEntity.ok(toResponse(watchlist));
+    }
+
+    @DeleteMapping("/items/{symbol}")
+    @Operation(summary = "Remove a symbol from the default watchlist")
+    @ApiResponse(responseCode = "204", content = @Content)
+    public ResponseEntity<Void> deleteEntry(@AuthenticationPrincipal UserPrincipal principal,
+                                            @PathVariable String symbol) {
+        Long userId = requireUserId(principal);
+        watchlistService.removeSymbol(userId, symbol);
         return ResponseEntity.noContent().build();
     }
 
@@ -68,12 +85,26 @@ public class WatchlistController {
         return principal.getUserId();
     }
 
-    private WatchlistEntryResponse toResponse(WatchlistEntry entry) {
-        return WatchlistEntryResponse.builder()
-                .id(entry.getId())
-                .symbol(entry.getSymbol())
-                .exchange(entry.getExchange())
-                .createdAt(entry.getCreatedAt())
+    private WatchlistResponse toResponse(Watchlist watchlist) {
+        List<WatchlistItemResponse> items = watchlist.getItems().stream()
+                .map(this::toItemResponse)
+                .toList();
+        return WatchlistResponse.builder()
+                .id(watchlist.getId())
+                .name(watchlist.getName())
+                .isDefault(watchlist.isDefault())
+                .maxItems(WatchlistService.MAX_SYMBOLS)
+                .itemCount(items.size())
+                .createdAt(watchlist.getCreatedAt())
+                .updatedAt(watchlist.getUpdatedAt())
+                .items(items)
+                .build();
+    }
+
+    private WatchlistItemResponse toItemResponse(WatchlistItem item) {
+        return WatchlistItemResponse.builder()
+                .symbol(item.getSymbol())
+                .addedAt(item.getCreatedAt())
                 .build();
     }
 }
