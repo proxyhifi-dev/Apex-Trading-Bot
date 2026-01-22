@@ -4,6 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
@@ -80,8 +81,21 @@ public class StrategyConfig {
 
     @Data
     public static class Scanner {
-        private boolean enabled = true;
+        private boolean enabled = false;
+        private Mode mode = Mode.MANUAL;
         private int interval = 60;
         private int minScore = 70;
+        private Universes universes = new Universes();
+
+        public enum Mode {
+            MANUAL,
+            SCHEDULED
+        }
+
+        @Data
+        public static class Universes {
+            private List<String> nifty50 = new ArrayList<>();
+            private List<String> nifty200 = new ArrayList<>();
+        }
     }
 }

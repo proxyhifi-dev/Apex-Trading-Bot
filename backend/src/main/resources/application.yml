@@ -73,7 +73,12 @@ logging:
 
 apex:
   scanner:
+    enabled: false
+    mode: MANUAL
     interval: 60
+    universes:
+      nifty50: ${APEX_SCANNER_NIFTY50:}
+      nifty200: ${APEX_SCANNER_NIFTY200:}
   ui:
     api-base-url: ${APEX_UI_API_BASE_URL:http://127.0.0.1:8080/api}
     ws-url: ${APEX_UI_WS_URL:ws://127.0.0.1:8080/ws}
@@ -88,6 +93,13 @@ apex:
     token: ${APEX_ADMIN_TOKEN:}
   ws:
     broadcastTopics: ${APEX_WS_BROADCAST_TOPICS:false}
+  rate-limit:
+    scanner:
+      limit-per-minute: ${APEX_RATE_LIMIT_SCANNER_PER_MINUTE:2}
+      timeout-ms: ${APEX_RATE_LIMIT_SCANNER_TIMEOUT_MS:0}
+    trade:
+      limit-per-second: ${APEX_RATE_LIMIT_TRADE_PER_SECOND:5}
+      timeout-ms: ${APEX_RATE_LIMIT_TRADE_TIMEOUT_MS:0}
   advanced:
     market-regime:
       trending-adx-threshold: 25.0

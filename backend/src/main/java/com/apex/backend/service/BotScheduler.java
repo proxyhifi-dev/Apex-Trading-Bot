@@ -56,6 +56,11 @@ public class BotScheduler {
     @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
     public void runBotCycle() {
         try {
+            if (!config.getScanner().isEnabled()
+                    || config.getScanner().getMode() != StrategyConfig.Scanner.Mode.SCHEDULED) {
+                log.debug("Scanner disabled or in manual mode. Skipping scheduled scan cycle.");
+                return;
+            }
             if (!botReady.get()) {
                 log.warn("⏳ Bot not ready yet");
                 botStatusService.markStopped("Bot not ready");
