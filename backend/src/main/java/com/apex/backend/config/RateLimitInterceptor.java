@@ -48,13 +48,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
         ApiError error = ApiError.builder()
                 .timestamp(Instant.now())
                 .path(request.getRequestURI())
-                .status(HttpServletResponse.SC_TOO_MANY_REQUESTS)
+                .status(429)
                 .error("TOO_MANY_REQUESTS")
                 .message("Rate limit exceeded")
                 .requestId(MDC.get("requestId"))
                 .correlationId(MDC.get("correlationId"))
                 .build();
-        response.setStatus(HttpServletResponse.SC_TOO_MANY_REQUESTS);
+        response.setStatus(429);
         response.setContentType("application/json");
         objectMapper.writeValue(response.getOutputStream(), error);
         return false;
