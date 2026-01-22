@@ -25,7 +25,8 @@ public class DefaultSignalEngine implements SignalEngine {
     public SignalScore score(PipelineRequest request) {
         List<Candle> primary = request.candles();
         if (primary == null || primary.size() < 50) {
-            return new SignalScore(false, 0.0, "N/A", 0.0, 0.0, "Insufficient data", null, List.of());
+            return new SignalScore(false, 0.0, "N/A", 0.0, 0.0, "Insufficient data",
+                    null, List.of(), SignalDiagnostics.withReason(ScanRejectReason.INSUFFICIENT_DATA));
         }
         List<Candle> m15 = marketDataProvider.getCandles(request.symbol(), "15", 200);
         List<Candle> h1 = marketDataProvider.getCandles(request.symbol(), "60", 200);
@@ -50,7 +51,8 @@ public class DefaultSignalEngine implements SignalEngine {
                 decision.getSuggestedStopLoss(),
                 decision.getReason(),
                 featureVector,
-                contributions
+                contributions,
+                decision.getDiagnostics()
         );
     }
 }

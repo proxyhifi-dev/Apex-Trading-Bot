@@ -10,5 +10,6 @@ public record SignalScore(
         double suggestedStopLoss,
         String reason,
         FeatureVector featureVector,
-        List<FeatureContribution> featureContributions
+        List<FeatureContribution> featureContributions,
+        SignalDiagnostics diagnostics
 ) {}

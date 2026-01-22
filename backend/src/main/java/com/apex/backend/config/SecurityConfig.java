@@ -29,6 +29,8 @@ public class SecurityConfig {
     private final PasswordEncoder passwordEncoder;
     private final SecurityProperties securityProperties;
     private final AllowedOriginResolver allowedOriginResolver;
+    private final com.apex.backend.security.RestAuthenticationEntryPoint restAuthenticationEntryPoint;
+    private final com.apex.backend.security.RestAccessDeniedHandler restAccessDeniedHandler;
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
@@ -44,11 +46,15 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .exceptionHandling(ex -> ex
+                .authenticationEntryPoint(restAuthenticationEntryPoint)
+                .accessDeniedHandler(restAccessDeniedHandler)
+            )
             .authorizeHttpRequests(auth -> auth
                 // 🔓 PUBLIC (NO JWT)
                 .requestMatchers("/api/auth/**").permitAll()
-                .requestMatchers("/api/ui/**").permitAll()      // ✅ REQUIRED
-                .requestMatchers("/actuator/**").permitAll()
+                .requestMatchers("/api/ui/config").permitAll()
+                .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/v3/api-docs/**").permitAll()
                 .requestMatchers("/swagger-ui/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()

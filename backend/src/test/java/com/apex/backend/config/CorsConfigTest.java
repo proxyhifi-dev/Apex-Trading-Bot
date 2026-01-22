@@ -10,7 +10,9 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "jwt.secret=01234567890123456789012345678901"
+})
 class CorsConfigTest {
 
     @Autowired

@@ -1,0 +1,23 @@
+package com.apex.backend.trading.pipeline;
+
+public enum ScanRejectReason {
+    INSUFFICIENT_DATA,
+    SAFE_MODE,
+    TIME_FILTER,
+    GUARD_ACTIVE,
+    MARKET_GATE,
+    VOLATILITY_SHOCK,
+    LIQUIDITY_GATE,
+    CHOP_FILTER,
+    SCORE_TOO_LOW,
+    ADX_TOO_LOW,
+    RSI_OUT_OF_RANGE,
+    ATR_OUT_OF_RANGE,
+    BREAKOUT_FAILED,
+    STRUCTURE_BREAKOUT_MISSING,
+    VOLUME_TOO_LOW,
+    DATA_QUALITY,
+    STRATEGY_HEALTH_BLOCKED,
+    RISK_REJECTED,
+    UNKNOWN
+}
