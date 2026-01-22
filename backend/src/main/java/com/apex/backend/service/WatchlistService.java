@@ -1,73 +1,123 @@
 package com.apex.backend.service;
 
-import com.apex.backend.dto.WatchlistEntryRequest;
 import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.exception.NotFoundException;
-import com.apex.backend.model.WatchlistEntry;
-import com.apex.backend.repository.WatchlistEntryRepository;
+import com.apex.backend.model.Watchlist;
+import com.apex.backend.model.WatchlistItem;
+import com.apex.backend.repository.WatchlistItemRepository;
+import com.apex.backend.repository.WatchlistRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
 public class WatchlistService {
 
-    private final WatchlistEntryRepository watchlistEntryRepository;
+    public static final int MAX_SYMBOLS = 100;
+    private static final Pattern SYMBOL_PATTERN = Pattern.compile("^[A-Z0-9:._-]{1,32}$");
 
-    public List<WatchlistEntry> getWatchlist(Long userId) {
-        return watchlistEntryRepository.findByUserIdOrderByCreatedAtDesc(userId);
-    }
+    private final WatchlistRepository watchlistRepository;
+    private final WatchlistItemRepository watchlistItemRepository;
 
-    public WatchlistEntry addEntry(Long userId, WatchlistEntryRequest request) {
-        String symbol = normalize(request.getSymbol());
-        String exchange = normalize(request.getExchange());
-        if (symbol == null || exchange == null) {
-            throw new BadRequestException("Symbol and exchange are required");
-        }
-        return watchlistEntryRepository
-                .findByUserIdAndSymbolIgnoreCaseAndExchangeIgnoreCase(userId, symbol, exchange)
-                .orElseGet(() -> watchlistEntryRepository.save(WatchlistEntry.builder()
+    public Watchlist getDefaultWatchlist(Long userId) {
+        return watchlistRepository.findByUserIdAndIsDefaultTrue(userId)
+                .orElseGet(() -> watchlistRepository.save(Watchlist.builder()
                         .userId(userId)
-                        .symbol(symbol)
-                        .exchange(exchange)
+                        .name("Default")
+                        .isDefault(true)
                         .build()));
     }
 
-    public void deleteEntry(Long userId, Long id) {
-        WatchlistEntry entry = watchlistEntryRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Watchlist entry not found"));
-        if (!entry.getUserId().equals(userId)) {
-            throw new NotFoundException("Watchlist entry not found");
+    public Watchlist loadDefaultWithItems(Long userId) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        List<WatchlistItem> items = watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId());
+        watchlist.setItems(items);
+        return watchlist;
+    }
+
+    public Watchlist addSymbols(Long userId, List<String> symbols) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        List<String> normalized = normalizeSymbols(symbols);
+        if (normalized.isEmpty()) {
+            throw new BadRequestException("Symbols are required");
         }
-        watchlistEntryRepository.delete(entry);
+        long existingCount = watchlistItemRepository.countByWatchlistId(watchlist.getId());
+        if (existingCount + normalized.size() > MAX_SYMBOLS) {
+            throw new BadRequestException("Watchlist can contain at most " + MAX_SYMBOLS + " symbols");
+        }
+        for (String symbol : normalized) {
+            watchlistItemRepository.findByWatchlistIdAndSymbol(watchlist.getId(), symbol)
+                    .orElseGet(() -> watchlistItemRepository.save(WatchlistItem.builder()
+                            .watchlist(watchlist)
+                            .symbol(symbol)
+                            .build()));
+        }
+        return loadDefaultWithItems(userId);
+    }
+
+    public Watchlist replaceSymbols(Long userId, List<String> symbols) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        List<String> normalized = normalizeSymbols(symbols);
+        if (normalized.size() > MAX_SYMBOLS) {
+            throw new BadRequestException("Watchlist can contain at most " + MAX_SYMBOLS + " symbols");
+        }
+        List<WatchlistItem> existing = watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId());
+        watchlistItemRepository.deleteAll(existing);
+        normalized.forEach(symbol -> watchlistItemRepository.save(WatchlistItem.builder()
+                .watchlist(watchlist)
+                .symbol(symbol)
+                .build()));
+        return loadDefaultWithItems(userId);
+    }
+
+    public void removeSymbol(Long userId, String symbol) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        String normalized = normalizeSymbol(symbol);
+        WatchlistItem item = watchlistItemRepository.findByWatchlistIdAndSymbol(watchlist.getId(), normalized)
+                .orElseThrow(() -> new NotFoundException("Watchlist symbol not found"));
+        watchlistItemRepository.delete(item);
     }
 
     public List<String> resolveSymbolsForUser(Long userId) {
-        return getWatchlist(userId).stream()
-                .map(this::toScannerSymbol)
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        return watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId()).stream()
+                .map(WatchlistItem::getSymbol)
                 .distinct()
                 .toList();
     }
 
     public boolean isWatchlistEmpty(Long userId) {
-        return watchlistEntryRepository.findByUserIdOrderByCreatedAtDesc(userId).isEmpty();
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        return watchlistItemRepository.countByWatchlistId(watchlist.getId()) == 0;
     }
 
-    private String normalize(String value) {
-        if (value == null) {
-            return null;
+    private List<String> normalizeSymbols(List<String> symbols) {
+        if (symbols == null) {
+            return List.of();
         }
-        String trimmed = value.trim();
-        return trimmed.isBlank() ? null : trimmed;
+        return symbols.stream()
+                .map(this::normalizeSymbol)
+                .distinct()
+                .sorted(Comparator.naturalOrder())
+                .toList();
     }
 
-    private String toScannerSymbol(WatchlistEntry entry) {
-        String symbol = entry.getSymbol();
-        if (symbol.contains(":")) {
-            return symbol;
+    private String normalizeSymbol(String symbol) {
+        if (symbol == null) {
+            throw new BadRequestException("Symbol is required");
         }
-        return entry.getExchange() + ":" + symbol;
+        String trimmed = symbol.trim().toUpperCase(Locale.ROOT);
+        if (trimmed.isBlank()) {
+            throw new BadRequestException("Symbol is required");
+        }
+        if (!SYMBOL_PATTERN.matcher(trimmed).matches()) {
+            throw new BadRequestException("Invalid symbol format: " + symbol);
+        }
+        return trimmed;
     }
 }

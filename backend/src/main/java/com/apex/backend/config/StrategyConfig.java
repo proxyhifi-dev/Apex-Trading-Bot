@@ -82,9 +82,14 @@ public class StrategyConfig {
     @Data
     public static class Scanner {
         private boolean enabled = false;
+        private boolean schedulerEnabled = false;
         private Mode mode = Mode.MANUAL;
         private int interval = 60;
         private int minScore = 70;
+        private String defaultTimeframe = "5";
+        private String defaultRegime = "AUTO";
+        private String marketOpen = "09:15";
+        private String marketClose = "15:30";
         private Universes universes = new Universes();
 
         public enum Mode {

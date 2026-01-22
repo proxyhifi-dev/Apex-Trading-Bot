@@ -6,6 +6,14 @@ This document provides a file-by-file implementation plan to harden the Apex Tra
 
 ---
 
+## ✅ Recent Updates (Implemented)
+- **Watchlist v2**: DB-backed `watchlists` + `watchlist_items`, default watchlist per user, max 100 symbols, validation, and REST endpoints.
+- **On-demand scanner runs**: `/api/scanner/run` creates a run, with status/results endpoints and diagnostics breakdown.
+- **Security hardening**: public UI + auth endpoints, configurable `/actuator/health`, CORS via `APEX_ALLOWED_ORIGINS`.
+- **Scheduler safety**: scanner scheduler gated by `apex.scanner.scheduler-enabled`, market window configurable.
+
+---
+
 ## 1. ORDER LIFECYCLE STATE MACHINE (P0)
 
 ### A) Why Needed
@@ -1302,3 +1310,11 @@ All new keys follow pattern:
 ---
 
 **END OF IMPLEMENTATION PLAN**
+
+---
+
+## Roadmap / Remaining Work
+- Complete order lifecycle endpoints (`GET /api/orders`, filters, lifecycle events).
+- Add broker connectivity health indicator (soft-fail) to `/actuator/health`.
+- Add integration tests for scanner runs and order lifecycle transitions.
+- Expand OpenAPI annotations to cover all endpoints and error responses.

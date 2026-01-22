@@ -54,7 +54,9 @@ public class SecurityConfig {
                 // 🔓 PUBLIC (NO JWT)
                 .requestMatchers("/api/auth/**").permitAll()
                 .requestMatchers("/api/ui/config").permitAll()
-                .requestMatchers("/actuator/health").permitAll()
+                .requestMatchers("/actuator/health").access((authentication, context) ->
+                        new org.springframework.security.authorization.AuthorizationDecision(
+                                securityProperties.isPublicHealthEndpoint()))
                 .requestMatchers("/v3/api-docs/**").permitAll()
                 .requestMatchers("/swagger-ui/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()

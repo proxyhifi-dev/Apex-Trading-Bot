@@ -2,6 +2,11 @@
 
 This document tracks the implementation plan for the Apex Trading Bot backend production hardening work. Estimates assume one engineer with domain familiarity and exclude external approvals/deployments.
 
+## Recently Completed
+- Watchlist v2 (DB-backed, max 100 symbols, CRUD endpoints)
+- On-demand scanner runs with diagnostics breakdown
+- Configurable health endpoint + scheduler toggle
+
 ## Summary Estimates
 - **Total P0 effort**: ~6.5–9.5 engineering days
 - **Total P1 effort**: ~2.5–4.0 engineering days
@@ -105,3 +110,10 @@ This document tracks the implementation plan for the Apex Trading Bot backend pr
 - Go/No‑Go checklist execution
 
 **Estimate**: **1.0–1.5 days**
+
+---
+
+## Roadmap / Remaining Work
+- Order lifecycle API expansion (`GET /api/orders`, filters, lifecycle events)
+- Broker connectivity health indicator with soft-fail semantics
+- Integration tests for scanner runs + orders + watchlist API
