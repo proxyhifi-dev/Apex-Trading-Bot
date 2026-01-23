@@ -81,9 +81,23 @@ apex:
     default-regime: ${APEX_SCANNER_DEFAULT_REGIME:AUTO}
     market-open: ${APEX_SCANNER_MARKET_OPEN:09:15}
     market-close: ${APEX_SCANNER_MARKET_CLOSE:15:30}
+    max-candidates: ${APEX_SCANNER_MAX_CANDIDATES:5}
+    require-manual-approval: ${APEX_SCANNER_REQUIRE_MANUAL_APPROVAL:false}
     universes:
       nifty50: ${APEX_SCANNER_NIFTY50:}
       nifty200: ${APEX_SCANNER_NIFTY200:}
+  trading:
+    paper-mode: ${APEX_TRADING_PAPER_MODE:true}
+    paper-signal-orders-enabled: ${APEX_TRADING_PAPER_SIGNAL_ORDERS_ENABLED:false}
+  strategy:
+    rsi-goldilocks-min: ${APEX_STRATEGY_RSI_GOLDILOCKS_MIN:40.0}
+    rsi-goldilocks-max: ${APEX_STRATEGY_RSI_GOLDILOCKS_MAX:70.0}
+    macd-min-momentum-score: ${APEX_STRATEGY_MACD_MIN_MOMENTUM_SCORE:4.0}
+    adx-threshold: ${APEX_STRATEGY_ADX_THRESHOLD:20.0}
+    adx-strong-threshold: ${APEX_STRATEGY_ADX_STRONG_THRESHOLD:25.0}
+    atr-min-percent: ${APEX_STRATEGY_ATR_MIN_PERCENT:0.3}
+    atr-max-percent: ${APEX_STRATEGY_ATR_MAX_PERCENT:6.0}
+    min-entry-score: ${APEX_STRATEGY_MIN_ENTRY_SCORE:65}
   ui:
     api-base-url: ${APEX_UI_API_BASE_URL:http://127.0.0.1:8080/api}
     ws-url: ${APEX_UI_WS_URL:ws://127.0.0.1:8080/ws}

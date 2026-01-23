@@ -67,7 +67,7 @@ class DecisionPipelineIntegrationTest {
         BollingerBandService bollingerBandService = new BollingerBandService(strategyProperties);
         SqueezeService squeezeService = new SqueezeService(strategyProperties);
         com.apex.backend.service.StrategyScoringService scoringService = new com.apex.backend.service.StrategyScoringService(
-                strategyProperties, macdService, adxService, rsiService, atrService, squeezeService);
+                strategyProperties, strategyConfig, macdService, adxService, rsiService, atrService, squeezeService);
         MacdConfirmationService macdConfirmationService = new MacdConfirmationService(macdService, advancedTradingProperties);
         CandleConfirmationValidator candleConfirmationValidator = new CandleConfirmationValidator(advancedTradingProperties);
         CandlePatternDetector candlePatternDetector = new CandlePatternDetector();

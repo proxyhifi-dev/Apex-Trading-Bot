@@ -40,6 +40,7 @@ public class FyersService {
     private final AlertService alertService;
     private final FyersHttpClient fyersHttpClient;
     private final FyersTokenService fyersTokenService;
+    private final InstrumentService instrumentService;
 
     // Semaphore Rate Limiter (Max 8 concurrent)
     private final Semaphore rateLimiter = new Semaphore(8);
@@ -64,13 +65,21 @@ public class FyersService {
         }
         Map<String, BigDecimal> result = new HashMap<>();
         List<String> toFetch = new ArrayList<>();
+        Map<String, String> symbolMap = new HashMap<>();
         for (String symbol : symbols) {
-            String cacheKey = symbol + "_ltp";
+            Optional<String> resolvedSymbol = instrumentService.resolveTradingSymbol(symbol);
+            if (resolvedSymbol.isEmpty()) {
+                instrumentService.logMissingInstrument(symbol);
+                continue;
+            }
+            String tradingSymbol = resolvedSymbol.get();
+            symbolMap.put(tradingSymbol, symbol);
+            String cacheKey = tradingSymbol + "_ltp";
             CacheEntry entry = ltpCache.get(cacheKey);
             if (entry != null && System.currentTimeMillis() - entry.timestamp < 2000) {
                 result.put(symbol, MoneyUtils.bd(entry.data.get(0).getClose()));
             } else {
-                toFetch.add(symbol);
+                toFetch.add(tradingSymbol);
             }
         }
         if (!toFetch.isEmpty()) {
@@ -91,7 +100,8 @@ public class FyersService {
             fetched.forEach((symbol, ltp) -> {
                 double ltpValue = ltp != null ? ltp.doubleValue() : 0.0;
                 ltpCache.put(symbol + "_ltp", new CacheEntry(List.of(new Candle(ltpValue, ltpValue, ltpValue, ltpValue, 0L, LocalDateTime.now())), System.currentTimeMillis()));
-                result.put(symbol, ltp);
+                String original = symbolMap.getOrDefault(symbol, symbol);
+                result.put(original, ltp);
             });
         }
         return result;
@@ -109,7 +119,13 @@ public class FyersService {
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null) return Collections.emptyList();
 
-        String cacheKey = symbol + "_" + resolution;
+        Optional<String> resolvedSymbol = instrumentService.resolveTradingSymbol(symbol);
+        if (resolvedSymbol.isEmpty()) {
+            instrumentService.logMissingInstrument(symbol);
+            return Collections.emptyList();
+        }
+        String tradingSymbol = resolvedSymbol.get();
+        String cacheKey = tradingSymbol + "_" + resolution;
         if (candleCache.containsKey(cacheKey)) {
             CacheEntry entry = candleCache.get(cacheKey);
             if (System.currentTimeMillis() - entry.timestamp < 60000) return entry.data;
@@ -117,7 +133,7 @@ public class FyersService {
 
         try {
             rateLimiter.acquire();
-            List<Candle> data = fetchHistoryInternal(symbol, count, resolution, resolvedToken);
+            List<Candle> data = fetchHistoryInternal(tradingSymbol, count, resolution, resolvedToken);
             if (!data.isEmpty()) {
                 candleCache.put(cacheKey, new CacheEntry(data, System.currentTimeMillis()));
             }

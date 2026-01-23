@@ -21,6 +21,7 @@ public class StrategyConfig {
     public static class Trading {
         // ✅ NEW: Global Paper Mode Toggle (Default: true)
         private boolean paperMode = true;
+        private boolean paperSignalOrdersEnabled = false;
         private double capital;
         private Long ownerUserId;
         private Universe universe;
@@ -36,19 +37,25 @@ public class StrategyConfig {
         private String name;
         private int rsiPeriod = 14;
         private double rsiNeutral = 50.0;
+        private double rsiGoldilocksMin = 40.0;
+        private double rsiGoldilocksMax = 70.0;
         private int rsiWeight = 20;
         private int macdFastPeriod = 12;
         private int macdSlowPeriod = 26;
         private int macdSignalPeriod = 9;
+        private double macdMinMomentumScore = 4.0;
         private int macdWeight = 20;
         private int adxPeriod = 14;
         private int adxWeight = 20;
-        private double adxThreshold = 25.0;
+        private double adxThreshold = 20.0;
+        private double adxStrongThreshold = 25.0;
         private int bollingerPeriod = 20;
         private double bollingerStdDev = 2.0;
         private int squeezeWeight = 20;
+        private double atrMinPercent = 0.3;
+        private double atrMaxPercent = 6.0;
         private double initialCapital = 100000.0;
-        private int minEntryScore = 70;
+        private int minEntryScore = 65;
     }
 
     @Data
@@ -86,6 +93,8 @@ public class StrategyConfig {
         private Mode mode = Mode.MANUAL;
         private int interval = 60;
         private int minScore = 70;
+        private int maxCandidates = 5;
+        private boolean requireManualApproval = false;
         private String defaultTimeframe = "5";
         private String defaultRegime = "AUTO";
         private String marketOpen = "09:15";

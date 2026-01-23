@@ -16,6 +16,8 @@ public class ScanDiagnosticsBreakdown {
     private int passedStage1;
     private int passedStage2;
     private int finalSignals;
-    private Map<String, Long> rejectedStage1ReasonCounts;
-    private Map<String, Long> rejectedStage2ReasonCounts;
+    @Builder.Default
+    private Map<String, Long> rejectedStage1ReasonCounts = Map.of();
+    @Builder.Default
+    private Map<String, Long> rejectedStage2ReasonCounts = Map.of();
 }
