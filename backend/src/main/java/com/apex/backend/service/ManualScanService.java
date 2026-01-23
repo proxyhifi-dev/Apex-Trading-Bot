@@ -278,6 +278,12 @@ public class ManualScanService {
         if (stage1Pass) {
             diagnostics.setPassedStage1(diagnostics.getPassedStage1() + 1);
         } else {
+            if (details.getRejectionReasons() != null && details.getRejectionReasons().contains(ScanRejectReason.LIQUIDITY_GATE)) {
+                incrementReject(stage1Rejects, ScanDiagnosticsReason.LIQUIDITY_FILTER);
+            }
+            if (details.getRejectionReasons() != null && details.getRejectionReasons().contains(ScanRejectReason.VOLUME_TOO_LOW)) {
+                incrementReject(stage1Rejects, ScanDiagnosticsReason.LIQUIDITY_FILTER);
+            }
             return;
         }
         boolean stage2Pass = details.isRsiPass() && details.isAdxPass() && details.isAtrPass()
@@ -286,16 +292,16 @@ public class ManualScanService {
             diagnostics.setPassedStage2(diagnostics.getPassedStage2() + 1);
         } else {
             if (!details.isAdxPass()) {
-                incrementReject(stage2Rejects, ScanDiagnosticsReason.ADX_FAIL);
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.ADX_FILTER);
             }
             if (!details.isRsiPass()) {
-                incrementReject(stage2Rejects, ScanDiagnosticsReason.RSI_FAIL);
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.RSI_FILTER);
             }
             if (!details.isMomentumPass()) {
-                incrementReject(stage2Rejects, ScanDiagnosticsReason.MACD_FAIL);
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.MACD_FILTER);
             }
             if (!details.isAtrPass()) {
-                incrementReject(stage2Rejects, ScanDiagnosticsReason.VOLATILITY_FAIL);
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.VOLATILITY_FILTER);
             }
         }
     }

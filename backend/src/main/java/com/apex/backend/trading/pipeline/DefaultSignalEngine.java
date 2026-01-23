@@ -1,6 +1,6 @@
 package com.apex.backend.trading.pipeline;
 
-import com.apex.backend.config.StrategyProperties;
+import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.Candle;
 import com.apex.backend.service.SmartSignalGenerator;
 import com.apex.backend.service.StrategyScoringService;
@@ -19,12 +19,12 @@ public class DefaultSignalEngine implements SignalEngine {
     private final SmartSignalGenerator smartSignalGenerator;
     private final StrategyScoringService strategyScoringService;
     private final FeatureAttributionService featureAttributionService;
-    private final StrategyProperties strategyProperties;
+    private final StrategyConfig strategyConfig;
 
     @Override
     public SignalScore score(PipelineRequest request) {
         List<Candle> primary = request.candles();
-        if (primary == null || primary.size() < 50) {
+        if (primary == null || primary.size() < strategyConfig.getStrategy().getMinCandleCount()) {
             return new SignalScore(false, 0.0, "N/A", 0.0, 0.0, "Insufficient data",
                     null, List.of(), SignalDiagnostics.withReason(ScanRejectReason.INSUFFICIENT_DATA));
         }
@@ -41,7 +41,7 @@ public class DefaultSignalEngine implements SignalEngine {
         );
         ScoreBreakdown breakdown = strategyScoringService.score(primary);
         FeatureVector featureVector = featureAttributionService.buildFeatureVector(breakdown);
-        List<FeatureContribution> contributions = featureAttributionService.computeContributions(featureVector, strategyProperties.getScoring());
+        List<FeatureContribution> contributions = featureAttributionService.computeContributions(featureVector, strategyConfig.getStrategy());
 
         return new SignalScore(
                 decision.isHasSignal(),

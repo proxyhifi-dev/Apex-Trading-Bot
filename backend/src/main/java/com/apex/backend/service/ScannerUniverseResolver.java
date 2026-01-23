@@ -14,6 +14,7 @@ import java.util.List;
 public class ScannerUniverseResolver {
 
     private final StrategyConfig strategyConfig;
+    private final InstrumentService instrumentService;
 
     public List<String> resolveUniverse(ScanRequest request) {
         List<String> raw = switch (request.getUniverse()) {
@@ -25,7 +26,8 @@ public class ScannerUniverseResolver {
             throw new BadRequestException("Universe is empty or not configured");
         }
         return raw.stream()
-                .map(this::normalizeSymbol)
+                .map(this::resolveTradingSymbol)
+                .flatMap(java.util.Optional::stream)
                 .distinct()
                 .toList();
     }
@@ -55,10 +57,11 @@ public class ScannerUniverseResolver {
         return resolved;
     }
 
-    private String normalizeSymbol(String symbol) {
-        if (symbol.contains(":")) {
-            return symbol;
+    private java.util.Optional<String> resolveTradingSymbol(String symbol) {
+        java.util.Optional<String> resolved = instrumentService.resolveTradingSymbol(symbol);
+        if (resolved.isEmpty()) {
+            instrumentService.logMissingInstrument(symbol);
         }
-        return "NSE:" + symbol;
+        return resolved;
     }
 }
