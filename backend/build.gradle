@@ -82,6 +82,10 @@ tasks.named('test') {
 	useJUnitPlatform()
 }
 
+tasks.withType(JavaCompile).configureEach {
+	options.annotationProcessorPath = configurations.annotationProcessor
+}
+
 // Custom task to run with dev profile
 task bootRunDev(type: JavaExec) {
 	group = 'Application'
