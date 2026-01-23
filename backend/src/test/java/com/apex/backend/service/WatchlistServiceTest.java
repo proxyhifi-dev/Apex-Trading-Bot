@@ -5,12 +5,14 @@ import com.apex.backend.exception.NotFoundException;
 import com.apex.backend.model.Watchlist;
 import com.apex.backend.repository.WatchlistItemRepository;
 import com.apex.backend.repository.WatchlistRepository;
+import com.apex.backend.repository.WatchlistStockRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -19,6 +21,7 @@ class WatchlistServiceTest {
 
     private WatchlistRepository watchlistRepository;
     private WatchlistItemRepository watchlistItemRepository;
+    private WatchlistStockRepository watchlistStockRepository;
     private WatchlistService watchlistService;
     private Watchlist watchlist;
 
@@ -26,7 +29,8 @@ class WatchlistServiceTest {
     void setUp() {
         watchlistRepository = mock(WatchlistRepository.class);
         watchlistItemRepository = mock(WatchlistItemRepository.class);
-        watchlistService = new WatchlistService(watchlistRepository, watchlistItemRepository);
+        watchlistStockRepository = mock(WatchlistStockRepository.class);
+        watchlistService = new WatchlistService(watchlistRepository, watchlistItemRepository, watchlistStockRepository);
         watchlist = Watchlist.builder()
                 .id(1L)
                 .userId(42L)
@@ -61,5 +65,15 @@ class WatchlistServiceTest {
         assertThatThrownBy(() -> watchlistService.removeSymbol(42L, "NSE:ABC"))
                 .isInstanceOf(NotFoundException.class)
                 .hasMessageContaining("Watchlist symbol not found");
+    }
+
+    @Test
+    void resolveSymbolsForStrategyReturnsActiveSymbols() {
+        when(watchlistStockRepository.findActiveSymbolsByStrategyId(7L))
+                .thenReturn(List.of("NSE:ABC", "NSE:ABC", "NSE:XYZ"));
+
+        List<String> resolved = watchlistService.resolveSymbolsForStrategy(7L);
+
+        assertThat(resolved).containsExactlyInAnyOrder("NSE:ABC", "NSE:XYZ");
     }
 }

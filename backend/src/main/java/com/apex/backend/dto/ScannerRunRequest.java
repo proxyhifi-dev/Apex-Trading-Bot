@@ -23,7 +23,7 @@ public class ScannerRunRequest {
     private String index;
     private String timeframe;
     private String regime;
-    private String strategyId;
+    private Long strategyId;
     private Map<String, Object> options;
     private boolean dryRun;
     private Mode mode;
