@@ -126,6 +126,13 @@ public class BotScheduler {
             botStatusService.setLastError(e.getMessage());
         }
     }
+
+    /**
+     * Backward-compatible entry point for scheduled scans.
+     */
+    public void runBotCycle() {
+        runScheduledCycle();
+    }
     
     /**
      * Manual scan triggered by frontend
