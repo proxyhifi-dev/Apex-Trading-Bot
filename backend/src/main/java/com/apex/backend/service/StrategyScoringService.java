@@ -1,5 +1,6 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Candle;
 import com.apex.backend.service.indicator.AdxService;
@@ -17,6 +18,7 @@ import java.util.List;
 public class StrategyScoringService {
 
     private final StrategyProperties strategyProperties;
+    private final StrategyConfig strategyConfig;
     private final MacdService macdService;
     private final AdxService adxService;
     private final RsiService rsiService;
@@ -32,12 +34,12 @@ public class StrategyScoringService {
 
         StrategyProperties.Scoring weights = strategyProperties.getScoring();
         double momentumScore = (macd.momentumScore() / 11.0) * weights.getMomentumWeight();
-        double trendScore = (adx.adx() >= strategyProperties.getAdx().getStrong() ? 1.0 : 0.0) * weights.getTrendWeight();
-        boolean rsiGoldilocks = rsi.rsi() >= strategyProperties.getRsi().getGoldilocksMin()
-                && rsi.rsi() <= strategyProperties.getRsi().getGoldilocksMax();
+        double trendScore = (adx.adx() >= strategyConfig.getStrategy().getAdxStrongThreshold() ? 1.0 : 0.0) * weights.getTrendWeight();
+        boolean rsiGoldilocks = rsi.rsi() >= strategyConfig.getStrategy().getRsiGoldilocksMin()
+                && rsi.rsi() <= strategyConfig.getStrategy().getRsiGoldilocksMax();
         double rsiScore = (rsiGoldilocks ? 1.0 : 0.0) * weights.getRsiWeight();
-        boolean atrValid = atr.atrPercent() >= strategyProperties.getAtr().getMinPercent()
-                && atr.atrPercent() <= strategyProperties.getAtr().getMaxPercent();
+        boolean atrValid = atr.atrPercent() >= strategyConfig.getStrategy().getAtrMinPercent()
+                && atr.atrPercent() <= strategyConfig.getStrategy().getAtrMaxPercent();
         double volatilityScore = (atrValid ? 1.0 : 0.0) * weights.getVolatilityWeight();
         double squeezeScore = (squeeze.squeeze() ? 1.0 : 0.0) * weights.getSqueezeWeight();
 

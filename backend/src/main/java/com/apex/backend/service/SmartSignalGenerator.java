@@ -130,7 +130,7 @@ public class SmartSignalGenerator {
         BollingerBandService.BollingerBands bollinger = bollingerBandService.calculate(m5);
         ScoreBreakdown breakdown = strategyScoringService.score(m5);
 
-        double minAdx = strategyProperties.getAdx().getThreshold();
+        double minAdx = strategyConfig.getStrategy().getAdxThreshold();
         double close = m5.get(m5.size() - 1).getClose();
         decisionAuditService.record(symbol, "5m", "PATTERN", Map.of(
                 "pattern", pattern.type(),
@@ -228,12 +228,12 @@ public class SmartSignalGenerator {
             }
         }
 
-        boolean rsiGoldilocks = rsiRes.rsi() >= strategyProperties.getRsi().getGoldilocksMin()
-                && rsiRes.rsi() <= strategyProperties.getRsi().getGoldilocksMax();
-        boolean atrValid = atrRes.atrPercent() >= strategyProperties.getAtr().getMinPercent()
-                && atrRes.atrPercent() <= strategyProperties.getAtr().getMaxPercent();
+        boolean rsiGoldilocks = rsiRes.rsi() >= strategyConfig.getStrategy().getRsiGoldilocksMin()
+                && rsiRes.rsi() <= strategyConfig.getStrategy().getRsiGoldilocksMax();
+        boolean atrValid = atrRes.atrPercent() >= strategyConfig.getStrategy().getAtrMinPercent()
+                && atrRes.atrPercent() <= strategyConfig.getStrategy().getAtrMaxPercent();
         boolean strongMomentum = macdRes.histogram() > 0
-                && macdRes.momentumScore() >= strategyProperties.getMacd().getMinMomentumScore()
+                && macdRes.momentumScore() >= strategyConfig.getStrategy().getMacdMinMomentumScore()
                 && macdConfirm.bullishCrossover();
         boolean squeezeBreakout = squeezeRes.squeeze() && close > bollinger.upper();
         boolean candleConfirmed = candleConfirm.bullishConfirmed() && candleConfirm.volumeConfirmed();
@@ -250,7 +250,7 @@ public class SmartSignalGenerator {
                 structureBreakoutOk = (squeezeBreakout || strongMomentum) && close > channel.upper();
                 if (!structureBreakoutOk) {
                     SignalDiagnostics diagnostics = SignalDiagnostics.builder()
-                            .trendPass(adxRes.adx() >= strategyProperties.getAdx().getStrong())
+                            .trendPass(adxRes.adx() >= strategyConfig.getStrategy().getAdxStrongThreshold())
                             .volumePass(candleConfirm.volumeConfirmed())
                             .breakoutPass(false)
                             .rsiPass(rsiGoldilocks)
@@ -270,7 +270,7 @@ public class SmartSignalGenerator {
             }
         }
         SignalDiagnostics diagnostics = SignalDiagnostics.builder()
-                .trendPass(adxRes.adx() >= strategyProperties.getAdx().getStrong())
+                .trendPass(adxRes.adx() >= strategyConfig.getStrategy().getAdxStrongThreshold())
                 .volumePass(candleConfirm.volumeConfirmed())
                 .breakoutPass(structureBreakoutOk && (squeezeBreakout || strongMomentum))
                 .rsiPass(rsiGoldilocks)
@@ -280,7 +280,7 @@ public class SmartSignalGenerator {
                 .squeezePass(squeezeRes.squeeze())
                 .build();
 
-        if (breakdown.totalScore() < 70) {
+        if (breakdown.totalScore() < strategyConfig.getStrategy().getMinEntryScore()) {
             diagnostics.addRejectionReason(ScanRejectReason.SCORE_TOO_LOW);
             return SignalDecision.builder()
                     .hasSignal(false)

@@ -1,8 +1,8 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
-import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.dto.ScanDiagnosticsBreakdown;
+import com.apex.backend.dto.ScanDiagnosticsReason;
 import com.apex.backend.dto.ScanError;
 import com.apex.backend.dto.ScanPipelineStats;
 import com.apex.backend.dto.ScanRejectReasonCount;
@@ -43,13 +43,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ManualScanService {
 
     private final StrategyConfig config;
-    private final StrategyProperties strategyProperties;
     private final ScannerUniverseResolver universeResolver;
     private final ScannerTimeframeMapper timeframeMapper;
     private final StockScreeningService screeningService;
     private final FyersService fyersService;
     private final TradeDecisionPipelineService tradeDecisionPipelineService;
     private final TradeExecutionService tradeExecutionService;
+    private final PaperOrderService paperOrderService;
     private final MarketRegimeDetector marketRegimeDetector;
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
@@ -83,23 +83,28 @@ public class ManualScanService {
             ScanDiagnosticsBreakdown diagnostics = ScanDiagnosticsBreakdown.builder()
                     .totalSymbols(outcomes.size())
                     .build();
-            Map<ScanRejectReason, Long> stage1Rejects = new EnumMap<>(ScanRejectReason.class);
-            Map<ScanRejectReason, Long> stage2Rejects = new EnumMap<>(ScanRejectReason.class);
+            Map<ScanDiagnosticsReason, Long> stage1Rejects = new EnumMap<>(ScanDiagnosticsReason.class);
+            Map<ScanDiagnosticsReason, Long> stage2Rejects = new EnumMap<>(ScanDiagnosticsReason.class);
 
             for (ScanSymbolOutcome outcome : outcomes) {
+                if (outcome.dataMissing) {
+                    incrementReject(stage1Rejects, ScanDiagnosticsReason.DATA_MISSING);
+                    incrementReject(rejectCounts, ScanRejectReason.INSUFFICIENT_DATA);
+                    continue;
+                }
                 if (outcome.error != null) {
                     errors.add(ScanError.builder()
                             .symbol(outcome.symbol)
                             .message(outcome.error)
                             .build());
                     incrementReject(rejectCounts, ScanRejectReason.UNKNOWN);
-                    incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
+                    incrementReject(stage1Rejects, ScanDiagnosticsReason.DATA_MISSING);
                     continue;
                 }
                 DecisionResult decision = outcome.decision;
                 if (decision == null) {
                     incrementReject(rejectCounts, ScanRejectReason.UNKNOWN);
-                    incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
+                    incrementReject(stage1Rejects, ScanDiagnosticsReason.DATA_MISSING);
                     continue;
                 }
                 updatePipelineStats(pipelineStats, decision.signalScore());
@@ -157,6 +162,9 @@ public class ManualScanService {
     private ScanSymbolOutcome scanSymbol(Long userId, String symbol, String timeframe) {
         try {
             List<Candle> candles = fyersService.getHistoricalData(symbol, 200, timeframe);
+            if (candles == null || candles.isEmpty()) {
+                return ScanSymbolOutcome.dataMissing(symbol);
+            }
             DecisionResult decision = tradeDecisionPipelineService.evaluate(new PipelineRequest(
                     userId,
                     symbol,
@@ -176,11 +184,14 @@ public class ManualScanService {
             return;
         }
         candidates.sort(Comparator.comparingDouble(DecisionResult::score).reversed());
-        int maxCandidates = strategyProperties.getScanner().getMaxCandidates();
+        int maxCandidates = config.getScanner().getMaxCandidates();
         List<DecisionResult> topSignals = candidates.stream().limit(maxCandidates).toList();
-        boolean requireManualApproval = strategyProperties.getScanner().isRequireManualApproval();
+        boolean requireManualApproval = config.getScanner().isRequireManualApproval();
         double currentVix = fetchVix();
         for (DecisionResult decision : topSignals) {
+            if (config.getTrading().isPaperSignalOrdersEnabled()) {
+                paperOrderService.placeFromSignal(userId, decision);
+            }
             if (requireManualApproval) {
                 screeningService.saveSignal(userId, decision);
             } else {
@@ -251,11 +262,15 @@ public class ManualScanService {
         counters.merge(reason, 1L, Long::sum);
     }
 
+    private void incrementReject(Map<ScanDiagnosticsReason, Long> counters, ScanDiagnosticsReason reason) {
+        counters.merge(reason, 1L, Long::sum);
+    }
+
     private void trackDiagnostics(SignalScore signalScore, ScanDiagnosticsBreakdown diagnostics,
-                                  Map<ScanRejectReason, Long> stage1Rejects,
-                                  Map<ScanRejectReason, Long> stage2Rejects) {
+                                  Map<ScanDiagnosticsReason, Long> stage1Rejects,
+                                  Map<ScanDiagnosticsReason, Long> stage2Rejects) {
         if (signalScore == null || signalScore.diagnostics() == null) {
-            incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
+            incrementReject(stage1Rejects, ScanDiagnosticsReason.DATA_MISSING);
             return;
         }
         SignalDiagnostics details = signalScore.diagnostics();
@@ -263,7 +278,6 @@ public class ManualScanService {
         if (stage1Pass) {
             diagnostics.setPassedStage1(diagnostics.getPassedStage1() + 1);
         } else {
-            incrementRejectsByStage(details.getRejectionReasons(), stage1Rejects, stage2Rejects);
             return;
         }
         boolean stage2Pass = details.isRsiPass() && details.isAdxPass() && details.isAtrPass()
@@ -271,46 +285,22 @@ public class ManualScanService {
         if (stage2Pass) {
             diagnostics.setPassedStage2(diagnostics.getPassedStage2() + 1);
         } else {
-            incrementRejectsByStage(details.getRejectionReasons(), stage1Rejects, stage2Rejects);
-        }
-    }
-
-    private void incrementRejectsByStage(List<ScanRejectReason> reasons,
-                                         Map<ScanRejectReason, Long> stage1Rejects,
-                                         Map<ScanRejectReason, Long> stage2Rejects) {
-        if (reasons == null || reasons.isEmpty()) {
-            incrementReject(stage1Rejects, ScanRejectReason.UNKNOWN);
-            return;
-        }
-        for (ScanRejectReason reason : reasons) {
-            if (isStage1Reason(reason)) {
-                incrementReject(stage1Rejects, reason);
-            } else {
-                incrementReject(stage2Rejects, reason);
+            if (!details.isAdxPass()) {
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.ADX_FAIL);
+            }
+            if (!details.isRsiPass()) {
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.RSI_FAIL);
+            }
+            if (!details.isMomentumPass()) {
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.MACD_FAIL);
+            }
+            if (!details.isAtrPass()) {
+                incrementReject(stage2Rejects, ScanDiagnosticsReason.VOLATILITY_FAIL);
             }
         }
     }
 
-    private boolean isStage1Reason(ScanRejectReason reason) {
-        return switch (reason) {
-            case INSUFFICIENT_DATA,
-                 SAFE_MODE,
-                 TIME_FILTER,
-                 GUARD_ACTIVE,
-                 MARKET_GATE,
-                 VOLATILITY_SHOCK,
-                 LIQUIDITY_GATE,
-                 CHOP_FILTER,
-                 BREAKOUT_FAILED,
-                 STRUCTURE_BREAKOUT_MISSING,
-                 VOLUME_TOO_LOW,
-                 DATA_QUALITY,
-                 UNKNOWN -> true;
-            default -> false;
-        };
-    }
-
-    private Map<String, Long> toReasonMap(Map<ScanRejectReason, Long> counts) {
+    private Map<String, Long> toReasonMap(Map<ScanDiagnosticsReason, Long> counts) {
         return counts.entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
     }
@@ -352,13 +342,17 @@ public class ManualScanService {
         return universeResolver.resolveUniverse(request);
     }
 
-    private record ScanSymbolOutcome(String symbol, DecisionResult decision, String error) {
+    private record ScanSymbolOutcome(String symbol, DecisionResult decision, String error, boolean dataMissing) {
         static ScanSymbolOutcome success(String symbol, DecisionResult decision) {
-            return new ScanSymbolOutcome(symbol, decision, null);
+            return new ScanSymbolOutcome(symbol, decision, null, false);
+        }
+
+        static ScanSymbolOutcome dataMissing(String symbol) {
+            return new ScanSymbolOutcome(symbol, null, null, true);
         }
 
         static ScanSymbolOutcome failure(String symbol, String error) {
-            return new ScanSymbolOutcome(symbol, null, error);
+            return new ScanSymbolOutcome(symbol, null, error, false);
         }
     }
 }
