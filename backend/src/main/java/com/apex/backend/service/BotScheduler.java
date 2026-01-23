@@ -3,9 +3,9 @@ package com.apex.backend.service;
 import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -49,12 +49,19 @@ public class BotScheduler {
             botStatusService.markStopped(e.getMessage());
         }
     }
+
+    @PostConstruct
+    public void logSchedulerMode() {
+        if (!config.getScanner().isSchedulerEnabled()
+                || config.getScanner().getMode() != StrategyConfig.Scanner.Mode.SCHEDULED) {
+            log.info("Scanner scheduler disabled (manual-only mode)");
+        }
+    }
     
     /**
-     * Main bot cycle - runs periodically
+     * Main bot cycle - invoked by the scheduler when enabled.
      */
-    @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
-    public void runBotCycle() {
+    public void runScheduledCycle() {
         try {
             if (!config.getScanner().isEnabled()
                     || !config.getScanner().isSchedulerEnabled()

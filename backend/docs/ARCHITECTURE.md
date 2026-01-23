@@ -22,6 +22,10 @@ UI -> ScannerRunController -> ScannerRunService
    -> StockScreeningService (signals) / TradeExecutionService (auto trade)
    -> scanner_runs + scanner_run_results
 
+Scanner mode:
+- Manual-only by default (no startup or scheduled scans).
+- Scheduler requires `apex.scanner.scheduler-enabled=true` and `apex.scanner.mode=SCHEDULED`.
+
 Order flow:
 UI -> OrderExecutionController -> OrderExecutionService
    -> PaperOrderExecutionService or FyersService
@@ -31,6 +35,7 @@ UI -> OrderExecutionController -> OrderExecutionService
 ## Storage
 - **Postgres** via Flyway migrations
 - Core tables: `watchlists`, `watchlist_items`, `scanner_runs`, `scanner_run_results`, `order_intents`, `order_audit`
+- Instruments master: `instruments` stores symbol → trading symbol normalization for FYERS requests
 
 ## Observability
 - Request correlation IDs: `X-Request-Id`, `X-Correlation-Id`
