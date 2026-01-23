@@ -64,6 +64,7 @@ public class ScannerRunService {
 
             scannerRunRepository.save(run);
             Long runId = run.getId();
+            log.info("Manual scan requested: runId={}, userId={}", runId, userId);
 
             // IMPORTANT: only start async after the TX commits; otherwise the async thread may not find the run row.
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
