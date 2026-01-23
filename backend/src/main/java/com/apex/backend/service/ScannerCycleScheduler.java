@@ -14,6 +14,6 @@ public class ScannerCycleScheduler {
 
     @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
     public void runCycle() {
-        botScheduler.runBotCycle();
+        botScheduler.runScheduledCycle();
     }
 }
