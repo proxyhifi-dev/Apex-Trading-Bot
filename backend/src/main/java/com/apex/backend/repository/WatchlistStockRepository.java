@@ -9,11 +9,12 @@ import java.util.List;
 
 public interface WatchlistStockRepository extends JpaRepository<WatchlistStock, Long> {
 
+    // ✅ If WatchlistStock has:  @ManyToOne TradingStrategy strategy;
     @Query("""
         select ws.symbol
         from WatchlistStock ws
         where ws.active = true
-          and ws.strategyId = :strategyId
+          and ws.strategy.id = :strategyId
         order by ws.id asc
     """)
     List<String> findActiveSymbolsByStrategyId(@Param("strategyId") Long strategyId);
