@@ -1,7 +1,6 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
-import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Candle;
 import com.apex.backend.service.indicator.AdxService;
 import com.apex.backend.service.indicator.AtrService;
@@ -17,7 +16,6 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StrategyScoringService {
 
-    private final StrategyProperties strategyProperties;
     private final StrategyConfig strategyConfig;
     private final MacdService macdService;
     private final AdxService adxService;
@@ -32,22 +30,23 @@ public class StrategyScoringService {
         AtrService.AtrResult atr = atrService.calculate(candles);
         SqueezeService.SqueezeResult squeeze = squeezeService.detect(candles);
 
-        StrategyProperties.Scoring weights = strategyProperties.getScoring();
-        double momentumScore = (macd.momentumScore() / 11.0) * weights.getMomentumWeight();
-        double trendScore = (adx.adx() >= strategyConfig.getStrategy().getAdxStrongThreshold() ? 1.0 : 0.0) * weights.getTrendWeight();
+        StrategyConfig.Strategy strategy = strategyConfig.getStrategy();
+        double momentumScale = strategy.getMacdMomentumScale() <= 0 ? 1.0 : strategy.getMacdMomentumScale();
+        double momentumScore = (macd.momentumScore() / momentumScale) * strategy.getMomentumWeight();
+        double trendScore = (adx.adx() >= strategy.getAdxStrongThreshold() ? 1.0 : 0.0) * strategy.getTrendWeight();
         boolean rsiGoldilocks = rsi.rsi() >= strategyConfig.getStrategy().getRsiGoldilocksMin()
                 && rsi.rsi() <= strategyConfig.getStrategy().getRsiGoldilocksMax();
-        double rsiScore = (rsiGoldilocks ? 1.0 : 0.0) * weights.getRsiWeight();
+        double rsiScore = (rsiGoldilocks ? 1.0 : 0.0) * strategy.getRsiWeight();
         boolean atrValid = atr.atrPercent() >= strategyConfig.getStrategy().getAtrMinPercent()
                 && atr.atrPercent() <= strategyConfig.getStrategy().getAtrMaxPercent();
-        double volatilityScore = (atrValid ? 1.0 : 0.0) * weights.getVolatilityWeight();
-        double squeezeScore = (squeeze.squeeze() ? 1.0 : 0.0) * weights.getSqueezeWeight();
+        double volatilityScore = (atrValid ? 1.0 : 0.0) * strategy.getVolatilityWeight();
+        double squeezeScore = (squeeze.squeeze() ? 1.0 : 0.0) * strategy.getSqueezeWeight();
 
-        double weightSum = weights.getMomentumWeight()
-                + weights.getTrendWeight()
-                + weights.getRsiWeight()
-                + weights.getVolatilityWeight()
-                + weights.getSqueezeWeight();
+        double weightSum = strategy.getMomentumWeight()
+                + strategy.getTrendWeight()
+                + strategy.getRsiWeight()
+                + strategy.getVolatilityWeight()
+                + strategy.getSqueezeWeight();
         double rawScore = momentumScore + trendScore + rsiScore + volatilityScore + squeezeScore;
         double normalizedScore = weightSum == 0 ? 0 : (rawScore / weightSum) * 100.0;
 

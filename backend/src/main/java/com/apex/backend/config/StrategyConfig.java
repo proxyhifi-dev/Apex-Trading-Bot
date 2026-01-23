@@ -35,27 +35,34 @@ public class StrategyConfig {
     @Data
     public static class Strategy {
         private String name;
+        private int minCandleCount = 50;
         private int rsiPeriod = 14;
         private double rsiNeutral = 50.0;
         private double rsiGoldilocksMin = 40.0;
         private double rsiGoldilocksMax = 70.0;
-        private int rsiWeight = 20;
+        private double momentumWeight = 20.0;
+        private double trendWeight = 20.0;
+        private double rsiWeight = 20.0;
+        private double volatilityWeight = 20.0;
+        private double squeezeWeight = 20.0;
         private int macdFastPeriod = 12;
         private int macdSlowPeriod = 26;
         private int macdSignalPeriod = 9;
         private double macdMinMomentumScore = 4.0;
-        private int macdWeight = 20;
+        private double macdMomentumScale = 11.0;
+        private double macdHistogramMin = 0.0;
         private int adxPeriod = 14;
-        private int adxWeight = 20;
         private double adxThreshold = 20.0;
         private double adxStrongThreshold = 25.0;
         private int bollingerPeriod = 20;
         private double bollingerStdDev = 2.0;
-        private int squeezeWeight = 20;
         private double atrMinPercent = 0.3;
         private double atrMaxPercent = 6.0;
         private double initialCapital = 100000.0;
         private int minEntryScore = 65;
+        private int gradeAaaThreshold = 90;
+        private int gradeAaThreshold = 85;
+        private int gradeAThreshold = 80;
     }
 
     @Data
@@ -88,7 +95,7 @@ public class StrategyConfig {
 
     @Data
     public static class Scanner {
-        private boolean enabled = false;
+        private boolean enabled = true;
         private boolean schedulerEnabled = false;
         private Mode mode = Mode.MANUAL;
         private int interval = 60;

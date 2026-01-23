@@ -72,6 +72,7 @@ docker run --rm -p 8080:8080 \
 | `FYERS_ACCESS_TOKEN` | ❌ | (empty) | Fallback token for system market data |
 | `FYERS_API_BASE_URL` | ❌ | `https://api-t1.fyers.in/api/v3` | FYERS API base URL |
 | `FYERS_DATA_BASE_URL` | ❌ | `https://api-t1.fyers.in/data` | FYERS data base URL |
+| `APEX_SCANNER_ENABLED` | ❌ | `true` | Enable manual scanner |
 | `APEX_SCANNER_NIFTY50` | ❌ | (empty) | Comma‑separated NIFTY50 symbols |
 | `APEX_SCANNER_NIFTY200` | ❌ | (empty) | Comma‑separated NIFTY200 symbols |
 | `APEX_SCANNER_DEFAULT_TIMEFRAME` | ❌ | `5` | Default timeframe for scans |
@@ -101,8 +102,11 @@ All other `/api/**` endpoints require Bearer JWT.
 
 Symbols are uppercased and validated (`A-Z0-9:._-`).
 
+## Manual-only scanning (required)
+The system scans **only** when the user clicks **Scan** (manual trigger). No background scans, startup scans, or scheduler-driven runs are allowed by default. Scheduled scanning is guarded behind `apex.scanner.scheduler-enabled=true` and `apex.scanner.mode=SCHEDULED`.
+
 ## On-demand scanner
-Run the scanner only when requested:
+Run the scanner manually when requested:
 ```bash
 curl -X POST http://localhost:8080/api/scanner/run \
   -H "Authorization: Bearer <token>" \
@@ -119,6 +123,53 @@ Fetch results:
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}/results
 ```
+
+## Scanner lifecycle + diagnostics
+Scanner runs always transition through:
+
+`PENDING → RUNNING → COMPLETED/FAILED`
+
+Diagnostics are always persisted, even when `total_symbols = 0` or `final_signals = 0`:
+- `total_symbols`: total instruments scanned.
+- `passed_stage1`: passed trend/volume/breakout stage.
+- `passed_stage2`: passed momentum/ADX/RSI/ATR/squeeze stage.
+- `final_signals`: count of tradable signals.
+- `rejected_stage*_reason_counts`: reasons for rejections, e.g.:
+  - `DATA_MISSING`
+  - `LIQUIDITY_FILTER`
+  - `ADX_FILTER`
+  - `RSI_FILTER`
+  - `MACD_FILTER`
+  - `VOLATILITY_FILTER`
+
+## Instruments master (symbol normalization)
+Market data requests are normalized through the `instruments` table. The backend resolves a user symbol (e.g., `INFY`) to its trading symbol (e.g., `NSE:INFY-EQ`) before calling FYERS. Missing instruments are logged, and the request is skipped or rejected.
+
+## Verification queries (DB-only health)
+Recent runs and diagnostics:
+```sql
+select id, status, total_symbols, passed_stage1,
+       passed_stage2, final_signals,
+       rejected_stage1_reason_counts
+from scanner_runs
+order by id desc
+limit 3;
+```
+
+Manual-only verification:
+```sql
+select max(id) from scanner_runs;
+```
+- Refresh UI → ID must NOT change
+- Click Scan → ID must increase
+
+## Common failure reasons checklist
+- **DATA_MISSING**: market data returned no candles for the symbol.
+- **LIQUIDITY_FILTER**: liquidity gate rejected the symbol (low volume/spread).
+- **ADX_FILTER**: trend strength below configured ADX threshold.
+- **RSI_FILTER**: RSI outside configured goldilocks range.
+- **MACD_FILTER**: momentum score or crossover invalid.
+- **VOLATILITY_FILTER**: ATR% outside configured bounds.
 
 ## OpenAPI / Swagger
 - Swagger UI: `http://localhost:8080/swagger-ui/index.html`
