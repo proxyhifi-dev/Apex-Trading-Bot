@@ -194,10 +194,16 @@ public class FyersService {
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token");
         }
+        Optional<String> resolvedSymbol = instrumentService.resolveTradingSymbol(symbol);
+        if (resolvedSymbol.isEmpty()) {
+            instrumentService.logMissingInstrument(symbol);
+            throw new IllegalArgumentException("Instrument not found for symbol: " + symbol);
+        }
+        String tradingSymbol = resolvedSymbol.get();
         String url = apiBaseUrl + "/orders";
         try {
             Map<String, Object> body = new HashMap<>();
-            body.put("symbol", symbol);
+            body.put("symbol", tradingSymbol);
             body.put("qty", qty);
             body.put("side", side.equalsIgnoreCase("BUY") ? 1 : -1);
             body.put("type", type.equalsIgnoreCase("MARKET") ? 2 : 1);

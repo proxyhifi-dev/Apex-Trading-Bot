@@ -24,13 +24,27 @@ Key properties from `application.yml`:
 - `fyers.redirect-uri`
 
 ### Scanner
-- `apex.scanner.enabled` (default `false`)
+- `apex.scanner.enabled` (default `true`)
 - `apex.scanner.scheduler-enabled` (default `false`)
 - `apex.scanner.mode` (`MANUAL` or `SCHEDULED`)
 - `apex.scanner.default-timeframe` (default `5`)
 - `apex.scanner.default-regime` (default `AUTO`)
 - `apex.scanner.market-open` / `apex.scanner.market-close`
 - `apex.scanner.universes.nifty50` / `nifty200`
+
+### Strategy thresholds (scanner scoring)
+- `apex.strategy.min-candle-count`
+- `apex.strategy.min-entry-score`
+- `apex.strategy.macd-momentum-scale`
+- `apex.strategy.macd-histogram-min`
+- `apex.strategy.grade-aaa-threshold`
+- `apex.strategy.grade-aa-threshold`
+- `apex.strategy.grade-a-threshold`
+- `apex.strategy.momentum-weight`
+- `apex.strategy.trend-weight`
+- `apex.strategy.rsi-weight`
+- `apex.strategy.volatility-weight`
+- `apex.strategy.squeeze-weight`
 
 ### CORS
 - `apex.security.cors.allowed-origins`

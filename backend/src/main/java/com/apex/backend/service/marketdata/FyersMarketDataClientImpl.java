@@ -2,6 +2,7 @@ package com.apex.backend.service.marketdata;
 
 import com.apex.backend.exception.FyersApiException;
 import com.apex.backend.service.FyersHttpClient;
+import com.apex.backend.service.InstrumentService;
 import com.apex.backend.util.MoneyUtils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ import java.util.function.Consumer;
 public class FyersMarketDataClientImpl implements FyersMarketDataClient {
 
     private final FyersHttpClient fyersHttpClient;
+    private final InstrumentService instrumentService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${fyers.data.base-url:https://api-t1.fyers.in/data}")
@@ -47,10 +49,12 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
 
     @Override
     public Optional<FyersQuote> getQuote(String symbol, String token) {
-        if (symbol == null || symbol.isBlank()) {
+        Optional<String> resolvedSymbol = resolveSymbol(symbol);
+        if (resolvedSymbol.isEmpty()) {
             return Optional.empty();
         }
-        String url = dataBaseUrl + "/quotes?symbols=" + symbol;
+        String tradingSymbol = resolvedSymbol.get();
+        String url = dataBaseUrl + "/quotes?symbols=" + tradingSymbol;
         try {
             String response = fyersHttpClient.get(url, token);
             if (response == null) {
@@ -65,24 +69,26 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
                 return Optional.empty();
             }
             JsonNode first = dataNode.get(0);
-            String resolvedSymbol = first.path("n").asText(symbol);
+            String quoteSymbol = first.path("n").asText(tradingSymbol);
             JsonNode values = first.path("v");
             BigDecimal ltp = MoneyUtils.bd(values.path("lp").asDouble(0.0));
             BigDecimal bid = MoneyUtils.bd(firstNonZero(values, "bp", "bid", "best_bid"));
             BigDecimal ask = MoneyUtils.bd(firstNonZero(values, "ap", "ask", "best_ask"));
-            return Optional.of(new FyersQuote(resolvedSymbol, ltp, bid, ask));
+            return Optional.of(new FyersQuote(quoteSymbol, ltp, bid, ask));
         } catch (Exception e) {
-            log.warn("Failed to fetch quote for {}: {}", symbol, e.getMessage());
+            log.warn("Failed to fetch quote for {}: {}", tradingSymbol, e.getMessage());
             return Optional.empty();
         }
     }
 
     @Override
     public Optional<FyersMarketDepth> getMarketDepth(String symbol, String token) {
-        if (symbol == null || symbol.isBlank()) {
+        Optional<String> resolvedSymbol = resolveSymbol(symbol);
+        if (resolvedSymbol.isEmpty()) {
             return Optional.empty();
         }
-        String url = dataBaseUrl + depthPath + "?symbol=" + symbol;
+        String tradingSymbol = resolvedSymbol.get();
+        String url = dataBaseUrl + depthPath + "?symbol=" + tradingSymbol;
         try {
             String response = fyersHttpClient.get(url, token);
             if (response == null) {
@@ -99,25 +105,30 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
             }
             List<FyersDepthLevel> bids = parseDepth(depthNode.path("bids"));
             List<FyersDepthLevel> asks = parseDepth(depthNode.path("asks"));
-            return Optional.of(new FyersMarketDepth(symbol, bids, asks));
+            return Optional.of(new FyersMarketDepth(tradingSymbol, bids, asks));
         } catch (FyersApiException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch market depth for {}: {}", symbol, e.getMessage());
+            log.warn("Failed to fetch market depth for {}: {}", tradingSymbol, e.getMessage());
             return Optional.empty();
         }
     }
 
     @Override
     public AutoCloseable streamTicks(String symbol, String token, Consumer<FyersTick> consumer) {
+        Optional<String> resolvedSymbol = resolveSymbol(symbol);
+        if (resolvedSymbol.isEmpty()) {
+            return () -> {};
+        }
+        String tradingSymbol = resolvedSymbol.get();
         ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor(runnable -> {
-            Thread thread = new Thread(runnable, "fyers-tick-stream-" + symbol);
+            Thread thread = new Thread(runnable, "fyers-tick-stream-" + tradingSymbol);
             thread.setDaemon(true);
             return thread;
         });
         executor.scheduleAtFixedRate(() -> {
             try {
-                getQuote(symbol, token).ifPresent(quote -> consumer.accept(new FyersTick(
+                getQuote(tradingSymbol, token).ifPresent(quote -> consumer.accept(new FyersTick(
                         quote.symbol(),
                         quote.lastTradedPrice(),
                         quote.bidPrice(),
@@ -129,6 +140,17 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
             }
         }, 0, streamIntervalMs, TimeUnit.MILLISECONDS);
         return executor::shutdownNow;
+    }
+
+    private Optional<String> resolveSymbol(String symbol) {
+        if (symbol == null || symbol.isBlank()) {
+            return Optional.empty();
+        }
+        Optional<String> resolved = instrumentService.resolveTradingSymbol(symbol);
+        if (resolved.isEmpty()) {
+            instrumentService.logMissingInstrument(symbol);
+        }
+        return resolved;
     }
 
     private double firstNonZero(JsonNode node, String... fields) {

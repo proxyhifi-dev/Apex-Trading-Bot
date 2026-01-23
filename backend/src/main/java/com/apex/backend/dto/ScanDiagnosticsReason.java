@@ -2,8 +2,9 @@ package com.apex.backend.dto;
 
 public enum ScanDiagnosticsReason {
     DATA_MISSING,
-    ADX_FAIL,
-    RSI_FAIL,
-    MACD_FAIL,
-    VOLATILITY_FAIL
+    ADX_FILTER,
+    RSI_FILTER,
+    MACD_FILTER,
+    VOLATILITY_FILTER,
+    LIQUIDITY_FILTER
 }

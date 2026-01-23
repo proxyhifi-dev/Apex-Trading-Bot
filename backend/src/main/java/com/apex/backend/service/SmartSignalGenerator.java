@@ -90,7 +90,7 @@ public class SmartSignalGenerator {
     }
 
     public SignalDecision generateSignalSmart(String symbol, List<Candle> m5, List<Candle> m15, List<Candle> h1, List<Candle> daily) {
-        if (m5.size() < 50) {
+        if (m5.size() < strategyConfig.getStrategy().getMinCandleCount()) {
             return SignalDecision.builder()
                     .hasSignal(false)
                     .reason("Insufficient Data")
@@ -232,7 +232,7 @@ public class SmartSignalGenerator {
                 && rsiRes.rsi() <= strategyConfig.getStrategy().getRsiGoldilocksMax();
         boolean atrValid = atrRes.atrPercent() >= strategyConfig.getStrategy().getAtrMinPercent()
                 && atrRes.atrPercent() <= strategyConfig.getStrategy().getAtrMaxPercent();
-        boolean strongMomentum = macdRes.histogram() > 0
+        boolean strongMomentum = macdRes.histogram() > strategyConfig.getStrategy().getMacdHistogramMin()
                 && macdRes.momentumScore() >= strategyConfig.getStrategy().getMacdMinMomentumScore()
                 && macdConfirm.bullishCrossover();
         boolean squeezeBreakout = squeezeRes.squeeze() && close > bollinger.upper();
@@ -280,12 +280,13 @@ public class SmartSignalGenerator {
                 .squeezePass(squeezeRes.squeeze())
                 .build();
 
-        if (breakdown.totalScore() < strategyConfig.getStrategy().getMinEntryScore()) {
+        int minEntryScore = strategyConfig.getStrategy().getMinEntryScore();
+        if (breakdown.totalScore() < minEntryScore) {
             diagnostics.addRejectionReason(ScanRejectReason.SCORE_TOO_LOW);
             return SignalDecision.builder()
                     .hasSignal(false)
                     .score((int) Math.round(breakdown.totalScore()))
-                    .reason("Score Below 70")
+                    .reason("Score Below " + minEntryScore)
                     .diagnostics(diagnostics)
                     .build();
         }
@@ -318,9 +319,12 @@ public class SmartSignalGenerator {
         }
 
         double sl = close - (atrRes.atr() * strategyProperties.getAtr().getStopMultiplier());
-        String grade = breakdown.totalScore() >= 90 ? "A+++"
-                : (breakdown.totalScore() >= 85 ? "A++"
-                : (breakdown.totalScore() >= 80 ? "A+" : "A"));
+        int gradeAaa = strategyConfig.getStrategy().getGradeAaaThreshold();
+        int gradeAa = strategyConfig.getStrategy().getGradeAaThreshold();
+        int gradeA = strategyConfig.getStrategy().getGradeAThreshold();
+        String grade = breakdown.totalScore() >= gradeAaa ? "A+++"
+                : (breakdown.totalScore() >= gradeAa ? "A++"
+                : (breakdown.totalScore() >= gradeA ? "A+" : "A"));
 
         String reason = String.format(
                 "Score=%.1f (momentum=%.1f trend=%.1f rsi=%.1f vol=%.1f squeeze=%.1f) | " +

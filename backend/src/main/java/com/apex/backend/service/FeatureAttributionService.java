@@ -1,6 +1,6 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyProperties;
+import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.service.StrategyScoringService.ScoreBreakdown;
 import com.apex.backend.trading.pipeline.FeatureContribution;
 import com.apex.backend.trading.pipeline.FeatureVector;
@@ -24,7 +24,7 @@ public class FeatureAttributionService {
         return new FeatureVector(normalized);
     }
 
-    public List<FeatureContribution> computeContributions(FeatureVector vector, StrategyProperties.Scoring weights) {
+    public List<FeatureContribution> computeContributions(FeatureVector vector, StrategyConfig.Strategy weights) {
         List<FeatureContribution> contributions = new ArrayList<>();
         contributions.add(build("momentum", vector, weights.getMomentumWeight()));
         contributions.add(build("trend", vector, weights.getTrendWeight()));
