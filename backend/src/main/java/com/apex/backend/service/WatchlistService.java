@@ -6,6 +6,7 @@ import com.apex.backend.model.Watchlist;
 import com.apex.backend.model.WatchlistItem;
 import com.apex.backend.repository.WatchlistItemRepository;
 import com.apex.backend.repository.WatchlistRepository;
+import com.apex.backend.repository.WatchlistStockRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -23,6 +24,9 @@ public class WatchlistService {
 
     private final WatchlistRepository watchlistRepository;
     private final WatchlistItemRepository watchlistItemRepository;
+
+    // ✅ NEW: strategy-scoped watchlist table (watchlist_stocks)
+    private final WatchlistStockRepository watchlistStockRepository;
 
     public Watchlist getDefaultWatchlist(Long userId) {
         return watchlistRepository.findByUserIdAndIsDefaultTrue(userId)
@@ -83,10 +87,28 @@ public class WatchlistService {
         watchlistItemRepository.delete(item);
     }
 
+    /**
+     * ✅ EXISTING (user default watchlist via watchlist_items)
+     * Keep this for UI watchlist management.
+     */
     public List<String> resolveSymbolsForUser(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
         return watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId()).stream()
                 .map(WatchlistItem::getSymbol)
+                .distinct()
+                .toList();
+    }
+
+    /**
+     * ✅ NEW (scanner WATCHLIST universe)
+     * Uses strategy-scoped table: watchlist_stocks (active symbols for a strategy).
+     */
+    public List<String> resolveSymbolsForStrategy(Long strategyId) {
+        if (strategyId == null) {
+            throw new BadRequestException("strategyId is required for WATCHLIST universe");
+        }
+        return watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId).stream()
+                .filter(s -> s != null && !s.isBlank())
                 .distinct()
                 .toList();
     }

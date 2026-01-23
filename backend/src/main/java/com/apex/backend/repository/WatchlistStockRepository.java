@@ -2,11 +2,19 @@ package com.apex.backend.repository;
 
 import com.apex.backend.model.WatchlistStock;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.stereotype.Repository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 
-@Repository
 public interface WatchlistStockRepository extends JpaRepository<WatchlistStock, Long> {
-    List<WatchlistStock> findByActiveTrue();
+
+    @Query("""
+        select ws.symbol
+        from WatchlistStock ws
+        where ws.active = true
+          and ws.strategyId = :strategyId
+        order by ws.id asc
+    """)
+    List<String> findActiveSymbolsByStrategyId(@Param("strategyId") Long strategyId);
 }
