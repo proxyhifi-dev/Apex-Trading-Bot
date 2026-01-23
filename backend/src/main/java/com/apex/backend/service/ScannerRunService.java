@@ -21,6 +21,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -39,14 +41,15 @@ public class ScannerRunService {
     private final ScannerRunRepository scannerRunRepository;
     private final ScannerRunResultRepository scannerRunResultRepository;
     private final IdempotencyService idempotencyService;
+    private final ObjectMapper objectMapper;
+
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
         validateRequest(request);
+
         return idempotencyService.execute(userId, idempotencyKey, request, ScannerRunResponse.class, () -> {
             ScannerRun run = ScannerRun.builder()
                     .userId(userId)
@@ -59,10 +62,20 @@ public class ScannerRunService {
                     .mode(resolveMode(request))
                     .createdAt(Instant.now())
                     .build();
+
             scannerRunRepository.save(run);
-            tradingExecutor.execute(() -> executeRun(run.getId(), userId, request));
+            Long runId = run.getId();
+
+            // IMPORTANT: only start async after the TX commits; otherwise the async thread may not find the run row.
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    tradingExecutor.execute(() -> executeRun(runId, userId, request));
+                }
+            });
+
             return ScannerRunResponse.builder()
-                    .runId(run.getId())
+                    .runId(runId)
                     .status(run.getStatus().name())
                     .createdAt(run.getCreatedAt())
                     .build();
@@ -73,6 +86,7 @@ public class ScannerRunService {
     public ScannerRunStatusResponse getStatus(Long userId, Long runId) {
         ScannerRun run = scannerRunRepository.findByIdAndUserId(runId, userId)
                 .orElseThrow(() -> new NotFoundException("Scan run not found"));
+
         return ScannerRunStatusResponse.builder()
                 .runId(run.getId())
                 .status(run.getStatus().name())
@@ -88,10 +102,12 @@ public class ScannerRunService {
     public ScannerRunResultResponse getResults(Long userId, Long runId) {
         ScannerRun run = scannerRunRepository.findByIdAndUserId(runId, userId)
                 .orElseThrow(() -> new NotFoundException("Scan run not found"));
+
         List<ScanSignalResponse> signals = scannerRunResultRepository.findByRunIdOrderByScoreDesc(runId)
                 .stream()
                 .map(this::toSignalResponse)
                 .toList();
+
         return ScannerRunResultResponse.builder()
                 .runId(run.getId())
                 .diagnostics(toDiagnostics(run))
@@ -103,26 +119,43 @@ public class ScannerRunService {
     public ScannerRunStatusResponse cancel(Long userId, Long runId) {
         ScannerRun run = scannerRunRepository.findByIdAndUserId(runId, userId)
                 .orElseThrow(() -> new NotFoundException("Scan run not found"));
+
         if (run.getStatus() == ScannerRun.Status.COMPLETED || run.getStatus() == ScannerRun.Status.FAILED) {
             return getStatus(userId, runId);
         }
+
         run.setStatus(ScannerRun.Status.CANCELLED);
         run.setCompletedAt(Instant.now());
         scannerRunRepository.save(run);
+
         return getStatus(userId, runId);
     }
 
     private void executeRun(Long runId, Long userId, ScannerRunRequest request) {
-        ScannerRun run = scannerRunRepository.findById(runId)
-                .orElseThrow(() -> new NotFoundException("Scan run not found"));
-        if (run.getStatus() == ScannerRun.Status.CANCELLED) {
-            return;
-        }
-        run.setStatus(ScannerRun.Status.RUNNING);
-        run.setStartedAt(Instant.now());
-        scannerRunRepository.save(run);
         try {
+            ScannerRun run = scannerRunRepository.findById(runId)
+                    .orElseThrow(() -> new NotFoundException("Scan run not found"));
+
+            if (run.getStatus() == ScannerRun.Status.CANCELLED) return;
+
+            run.setStatus(ScannerRun.Status.RUNNING);
+            run.setStartedAt(Instant.now());
+            scannerRunRepository.save(run);
+
             List<String> symbols = resolveSymbols(userId, request);
+
+            // If your universe resolution returns empty, mark completed with zeros (so you can see it clearly in DB).
+            if (symbols == null || symbols.isEmpty()) {
+                run.setTotalSymbols(0);
+                run.setPassedStage1(0);
+                run.setPassedStage2(0);
+                run.setFinalSignals(0);
+                run.setStatus(ScannerRun.Status.COMPLETED);
+                run.setCompletedAt(Instant.now());
+                scannerRunRepository.save(run);
+                return;
+            }
+
             ScanRequest scanRequest = ScanRequest.builder()
                     .universe(ScanRequest.Universe.CUSTOM)
                     .symbols(symbols)
@@ -130,29 +163,39 @@ public class ScannerRunService {
                     .regime(resolveRegime(request))
                     .dryRun(request.isDryRun())
                     .build();
+
             ScanResponse response = manualScanService.runManualScan(userId, scanRequest);
-            if (run.getStatus() == ScannerRun.Status.CANCELLED) {
+
+            // Re-check cancelled before saving anything heavy
+            if (scannerRunRepository.findById(runId).map(ScannerRun::getStatus).orElse(ScannerRun.Status.RUNNING)
+                    == ScannerRun.Status.CANCELLED) {
                 return;
             }
+
             updateRunWithResponse(run, response);
             saveResults(run, response.getSignals());
+
             run.setStatus(ScannerRun.Status.COMPLETED);
             run.setCompletedAt(Instant.now());
             scannerRunRepository.save(run);
+
         } catch (Exception ex) {
-            log.error("Scanner run {} failed: {}", runId, ex.getMessage(), ex);
-            run.setStatus(ScannerRun.Status.FAILED);
-            run.setErrorMessage(ex.getMessage());
-            run.setCompletedAt(Instant.now());
-            scannerRunRepository.save(run);
+            log.error("Scanner run {} failed", runId, ex);
+
+            // Make sure FAILED status is persisted even if the exception happened early.
+            scannerRunRepository.findById(runId).ifPresent(r -> {
+                r.setStatus(ScannerRun.Status.FAILED);
+                r.setErrorMessage(ex.getMessage());
+                r.setCompletedAt(Instant.now());
+                scannerRunRepository.save(r);
+            });
         }
     }
 
     private void updateRunWithResponse(ScannerRun run, ScanResponse response) {
-        ScanDiagnosticsBreakdown diagnostics = response.getDiagnostics();
-        if (diagnostics == null) {
-            return;
-        }
+        ScanDiagnosticsBreakdown diagnostics = response != null ? response.getDiagnostics() : null;
+        if (diagnostics == null) return;
+
         run.setTotalSymbols(diagnostics.getTotalSymbols());
         run.setPassedStage1(diagnostics.getPassedStage1());
         run.setPassedStage2(diagnostics.getPassedStage2());
@@ -162,9 +205,8 @@ public class ScannerRunService {
     }
 
     private void saveResults(ScannerRun run, List<ScanSignalResponse> signals) {
-        if (signals == null || signals.isEmpty()) {
-            return;
-        }
+        if (signals == null || signals.isEmpty()) return;
+
         List<ScannerRunResult> results = signals.stream()
                 .map(signal -> ScannerRunResult.builder()
                         .run(run)
@@ -176,12 +218,17 @@ public class ScannerRunService {
                         .createdAt(Instant.now())
                         .build())
                 .toList();
+
         scannerRunResultRepository.saveAll(results);
     }
 
     private List<String> resolveSymbols(Long userId, ScannerRunRequest request) {
         return switch (request.getUniverseType()) {
-            case WATCHLIST -> watchlistService.resolveSymbolsForUser(userId);
+            case WATCHLIST -> watchlistService.resolveSymbolsForUser(userId)
+                    .stream()
+                    .map(String::trim)
+                    .filter(s -> !s.isBlank())
+                    .toList();
             case SYMBOLS -> request.getSymbols();
             case INDEX -> resolveIndexSymbols(request);
         };
@@ -192,15 +239,18 @@ public class ScannerRunService {
         if (index == null || index.isBlank()) {
             throw new BadRequestException("Index name is required for INDEX universe");
         }
+
         String normalized = index.trim().toUpperCase(Locale.ROOT);
         List<String> symbols = switch (normalized) {
             case "NIFTY50" -> strategyConfig.getScanner().getUniverses().getNifty50();
             case "NIFTY200" -> strategyConfig.getScanner().getUniverses().getNifty200();
             default -> throw new BadRequestException("Unsupported index universe: " + index);
         };
+
         if (symbols == null || symbols.isEmpty()) {
             throw new BadRequestException("Index universe is empty or not configured");
         }
+
         return symbols;
     }
 
@@ -235,15 +285,11 @@ public class ScannerRunService {
     private Map<String, Object> resolveUniversePayload(ScannerRunRequest request) {
         Map<String, Object> payload = new java.util.HashMap<>();
         payload.put("universeType", request.getUniverseType().name());
-        if (request.getSymbols() != null) {
-            payload.put("symbols", request.getSymbols());
-        }
-        if (request.getWatchlistId() != null) {
-            payload.put("watchlistId", request.getWatchlistId());
-        }
-        if (request.getIndex() != null) {
-            payload.put("index", request.getIndex());
-        }
+
+        if (request.getSymbols() != null) payload.put("symbols", request.getSymbols());
+        if (request.getWatchlistId() != null) payload.put("watchlistId", request.getWatchlistId());
+        if (request.getIndex() != null) payload.put("index", request.getIndex());
+
         return payload;
     }
 
@@ -253,9 +299,7 @@ public class ScannerRunService {
     }
 
     private String serialize(Object payload) {
-        if (payload == null) {
-            return null;
-        }
+        if (payload == null) return null;
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
@@ -267,6 +311,7 @@ public class ScannerRunService {
     private ScanDiagnosticsBreakdown toDiagnostics(ScannerRun run) {
         Map<String, Long> stage1 = deserializeCounts(run.getRejectedStage1ReasonCounts());
         Map<String, Long> stage2 = deserializeCounts(run.getRejectedStage2ReasonCounts());
+
         return ScanDiagnosticsBreakdown.builder()
                 .totalSymbols(defaultValue(run.getTotalSymbols()))
                 .passedStage1(defaultValue(run.getPassedStage1()))
@@ -278,12 +323,12 @@ public class ScannerRunService {
     }
 
     private Map<String, Long> deserializeCounts(String payload) {
-        if (payload == null || payload.isBlank()) {
-            return Map.of();
-        }
+        if (payload == null || payload.isBlank()) return Map.of();
         try {
-            return objectMapper.readValue(payload, objectMapper.getTypeFactory()
-                    .constructMapType(Map.class, String.class, Long.class));
+            return objectMapper.readValue(
+                    payload,
+                    objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Long.class)
+            );
         } catch (Exception e) {
             log.warn("Failed to deserialize scanner counts: {}", e.getMessage());
             return Map.of();
@@ -300,7 +345,9 @@ public class ScannerRunService {
                 .score(result.getScore() != null ? result.getScore() : 0.0)
                 .grade(result.getGrade())
                 .entryPrice(result.getEntryPrice() != null ? result.getEntryPrice() : 0.0)
-                .scanTime(result.getCreatedAt() != null ? result.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime() : null)
+                .scanTime(result.getCreatedAt() != null
+                        ? result.getCreatedAt().atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+                        : null)
                 .reason(result.getReason())
                 .build();
     }
