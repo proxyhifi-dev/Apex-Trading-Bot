@@ -44,6 +44,7 @@ public class ScannerRunExecutor {
                 return;
             }
 
+            log.info("Starting scan run {} for user {}", runId, userId);
             run.setStatus(ScannerRun.Status.RUNNING);
             run.setStartedAt(Instant.now());
             scannerRunRepository.save(run);
@@ -84,6 +85,7 @@ public class ScannerRunExecutor {
             run.setStatus(ScannerRun.Status.COMPLETED);
             run.setCompletedAt(Instant.now());
             scannerRunRepository.save(run);
+            log.info("Completed scan run {} for user {}", runId, userId);
         } catch (Exception ex) {
             log.error("Scanner run {} failed for user {}", runId, userId, ex);
             scannerRunRepository.findById(runId).ifPresent(r -> {
@@ -92,6 +94,24 @@ public class ScannerRunExecutor {
                 }
                 r.setStatus(ScannerRun.Status.FAILED);
                 r.setErrorMessage(ex.getMessage());
+                if (r.getTotalSymbols() == null) {
+                    r.setTotalSymbols(0);
+                }
+                if (r.getPassedStage1() == null) {
+                    r.setPassedStage1(0);
+                }
+                if (r.getPassedStage2() == null) {
+                    r.setPassedStage2(0);
+                }
+                if (r.getFinalSignals() == null) {
+                    r.setFinalSignals(0);
+                }
+                if (r.getRejectedStage1ReasonCounts() == null) {
+                    r.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
+                }
+                if (r.getRejectedStage2ReasonCounts() == null) {
+                    r.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
+                }
                 r.setCompletedAt(Instant.now());
                 scannerRunRepository.save(r);
             });
@@ -100,6 +120,12 @@ public class ScannerRunExecutor {
 
     private void updateRunWithResponse(ScannerRun run, ScanResponse response) {
         if (response == null || response.getDiagnostics() == null) {
+            run.setTotalSymbols(0);
+            run.setPassedStage1(0);
+            run.setPassedStage2(0);
+            run.setFinalSignals(0);
+            run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
+            run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
             return;
         }
         var diagnostics = response.getDiagnostics();
@@ -131,7 +157,7 @@ public class ScannerRunExecutor {
 
     private List<String> resolveSymbols(Long userId, ScannerRunRequest request) {
         return switch (request.getUniverseType()) {
-            case WATCHLIST -> watchlistService.resolveSymbolsForUser(userId)
+            case WATCHLIST -> watchlistService.resolveSymbolsForStrategy(request.getStrategyId())
                     .stream()
                     .map(String::trim)
                     .filter(s -> !s.isBlank())

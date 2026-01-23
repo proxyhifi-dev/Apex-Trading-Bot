@@ -1,5 +1,6 @@
 package com.apex.backend.service;
 
+import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.dto.ScanDiagnosticsBreakdown;
 import com.apex.backend.dto.ScanSignalResponse;
 import com.apex.backend.dto.ScannerRunRequest;
@@ -36,6 +37,7 @@ public class ScannerRunService {
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
     private final ScannerRunExecutor scannerRunExecutor;
+    private final StrategyConfig strategyConfig;
 
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
@@ -43,6 +45,9 @@ public class ScannerRunService {
     @Transactional
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
         validateRequest(request);
+        if (!strategyConfig.getScanner().isEnabled()) {
+            throw new BadRequestException("Scanner disabled. Set APEX_SCANNER_ENABLED=true to enable manual scans.");
+        }
 
         return idempotencyService.execute(userId, idempotencyKey, request, ScannerRunResponse.class, () -> {
             ScannerRun run = ScannerRun.builder()
@@ -50,7 +55,7 @@ public class ScannerRunService {
                     .status(ScannerRun.Status.PENDING)
                     .universeType(request.getUniverseType().name())
                     .universePayload(serialize(resolveUniversePayload(request)))
-                    .strategyId(request.getStrategyId())
+                    .strategyId(request.getStrategyId() != null ? request.getStrategyId().toString() : null)
                     .optionsPayload(serialize(request.getOptions()))
                     .dryRun(request.isDryRun())
                     .mode(resolveMode(request))
@@ -129,6 +134,9 @@ public class ScannerRunService {
         if (request == null || request.getUniverseType() == null) {
             throw new BadRequestException("universeType is required");
         }
+        if (request.getUniverseType() == ScannerRunRequest.UniverseType.WATCHLIST && request.getStrategyId() == null) {
+            throw new BadRequestException("strategyId is required for WATCHLIST universe");
+        }
         if (request.getUniverseType() == ScannerRunRequest.UniverseType.SYMBOLS) {
             if (request.getSymbols() == null || request.getSymbols().isEmpty()) {
                 throw new BadRequestException("symbols are required for SYMBOLS universe");
@@ -146,6 +154,7 @@ public class ScannerRunService {
         if (request.getSymbols() != null) payload.put("symbols", request.getSymbols());
         if (request.getWatchlistId() != null) payload.put("watchlistId", request.getWatchlistId());
         if (request.getIndex() != null) payload.put("index", request.getIndex());
+        if (request.getStrategyId() != null) payload.put("strategyId", request.getStrategyId());
 
         return payload;
     }
