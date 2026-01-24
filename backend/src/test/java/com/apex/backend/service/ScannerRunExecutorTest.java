@@ -39,6 +39,9 @@ class ScannerRunExecutorTest {
     @Autowired
     private ScannerRunExecutor scannerRunExecutor;
 
+    @Autowired
+    private ObjectMapper objectMapper;
+
     @MockBean
     private ManualScanService manualScanService;
 
@@ -114,5 +117,40 @@ class ScannerRunExecutorTest {
         assertThat(updated.getStartedAt()).isNotNull();
         assertThat(updated.getCompletedAt()).isNotNull();
         assertThat(updated.getErrorMessage()).isEqualTo("Scanner disabled");
+    }
+
+    @Test
+    void executeRunCompletesWithEmptyUniverseDiagnostics() throws Exception {
+        StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
+        scanner.setEnabled(true);
+        when(strategyConfig.getScanner()).thenReturn(scanner);
+        when(watchlistService.resolveSymbolsForStrategyOrDefault(42L, 7L)).thenReturn(List.of());
+
+        ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
+                .userId(42L)
+                .status(ScannerRun.Status.PENDING)
+                .universeType(ScannerRunRequest.UniverseType.WATCHLIST.name())
+                .dryRun(true)
+                .mode(ScannerRunRequest.Mode.PAPER.name())
+                .createdAt(Instant.now())
+                .build());
+
+        ScannerRunRequest request = ScannerRunRequest.builder()
+                .universeType(ScannerRunRequest.UniverseType.WATCHLIST)
+                .strategyId(7L)
+                .timeframe("5")
+                .regime("BULL")
+                .build();
+
+        scannerRunExecutor.executeRun(run.getId(), 42L, request);
+
+        ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.COMPLETED);
+        assertThat(updated.getTotalSymbols()).isEqualTo(0);
+        java.util.Map<String, Long> stage1 = objectMapper.readValue(
+                updated.getRejectedStage1ReasonCounts(),
+                objectMapper.getTypeFactory().constructMapType(java.util.Map.class, String.class, Long.class)
+        );
+        assertThat(stage1).containsKey("EMPTY_UNIVERSE");
     }
 }
