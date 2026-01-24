@@ -22,6 +22,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import java.util.*;
+import java.util.Locale;
 
 @Slf4j
 @RestController
@@ -154,7 +155,15 @@ public class RiskController {
         if (principal == null || principal.getUserId() == null) {
             throw new UnauthorizedException("Missing authentication");
         }
-        if (principal.getRole() == null || !principal.getRole().equalsIgnoreCase("ADMIN")) {
+        String role = principal.getRole();
+        if (role == null) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role required");
+        }
+        String normalized = role.trim().toUpperCase(Locale.ROOT);
+        if (normalized.startsWith("ROLE_")) {
+            normalized = normalized.substring("ROLE_".length());
+        }
+        if (!"ADMIN".equals(normalized)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Admin role required");
         }
     }

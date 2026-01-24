@@ -157,7 +157,7 @@ public class ScannerRunExecutor {
 
     private List<String> resolveSymbols(Long userId, ScannerRunRequest request) {
         return switch (request.getUniverseType()) {
-            case WATCHLIST -> watchlistService.resolveSymbolsForStrategy(request.getStrategyId())
+            case WATCHLIST -> watchlistService.resolveSymbolsForStrategyOrDefault(request.getStrategyId())
                     .stream()
                     .map(String::trim)
                     .filter(s -> !s.isBlank())

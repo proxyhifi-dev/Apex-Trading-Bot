@@ -111,7 +111,7 @@ Run the scanner manually when requested:
 curl -X POST http://localhost:8080/api/scanner/run \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
-  -d '{"universeType":"WATCHLIST","dryRun":true,"mode":"PAPER"}'
+  -d '{"universeType":"WATCHLIST","strategyId":1,"dryRun":true,"mode":"PAPER"}'
 ```
 Check status:
 ```bash
@@ -123,6 +123,8 @@ Fetch results:
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}/results
 ```
+
+If you omit `strategyId`, the backend resolves the first active strategy with populated `watchlist_stocks`.
 
 ## Scanner lifecycle + diagnostics
 Scanner runs always transition through:
@@ -162,6 +164,14 @@ select max(id) from scanner_runs;
 ```
 - Refresh UI → ID must NOT change
 - Click Scan → ID must increase
+
+Verify WATCHLIST universe symbols (strategy-scoped):
+```sql
+select strategy_id, symbol, active
+from watchlist_stocks
+where active = true
+order by strategy_id, symbol;
+```
 
 ## Common failure reasons checklist
 - **DATA_MISSING**: market data returned no candles for the symbol.

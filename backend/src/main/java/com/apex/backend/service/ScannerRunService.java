@@ -38,27 +38,35 @@ public class ScannerRunService {
     private final ObjectMapper objectMapper;
     private final ScannerRunExecutor scannerRunExecutor;
     private final StrategyConfig strategyConfig;
+    private final WatchlistService watchlistService;
 
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
     @Transactional
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
-        validateRequest(request);
+        ScannerRunRequest normalizedRequest = normalizeRequest(request);
+        validateRequest(normalizedRequest);
         if (!strategyConfig.getScanner().isEnabled()) {
             throw new BadRequestException("Scanner disabled. Set APEX_SCANNER_ENABLED=true to enable manual scans.");
         }
 
-        return idempotencyService.execute(userId, idempotencyKey, request, ScannerRunResponse.class, () -> {
+        return idempotencyService.execute(userId, idempotencyKey, normalizedRequest, ScannerRunResponse.class, () -> {
             ScannerRun run = ScannerRun.builder()
                     .userId(userId)
                     .status(ScannerRun.Status.PENDING)
-                    .universeType(request.getUniverseType().name())
-                    .universePayload(serialize(resolveUniversePayload(request)))
-                    .strategyId(request.getStrategyId() != null ? request.getStrategyId().toString() : null)
-                    .optionsPayload(serialize(request.getOptions()))
-                    .dryRun(request.isDryRun())
-                    .mode(resolveMode(request))
+                    .universeType(normalizedRequest.getUniverseType().name())
+                    .universePayload(serialize(resolveUniversePayload(normalizedRequest)))
+                    .strategyId(normalizedRequest.getStrategyId() != null ? normalizedRequest.getStrategyId().toString() : null)
+                    .optionsPayload(serialize(normalizedRequest.getOptions()))
+                    .dryRun(normalizedRequest.isDryRun())
+                    .mode(resolveMode(normalizedRequest))
+                    .totalSymbols(0)
+                    .passedStage1(0)
+                    .passedStage2(0)
+                    .finalSignals(0)
+                    .rejectedStage1ReasonCounts(serialize(Map.of()))
+                    .rejectedStage2ReasonCounts(serialize(Map.of()))
                     .createdAt(Instant.now())
                     .build();
 
@@ -70,7 +78,7 @@ public class ScannerRunService {
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void afterCommit() {
-                    tradingExecutor.execute(() -> scannerRunExecutor.executeRun(runId, userId, request));
+                    tradingExecutor.execute(() -> scannerRunExecutor.executeRun(runId, userId, normalizedRequest));
                 }
             });
 
@@ -135,9 +143,6 @@ public class ScannerRunService {
         if (request == null || request.getUniverseType() == null) {
             throw new BadRequestException("universeType is required");
         }
-        if (request.getUniverseType() == ScannerRunRequest.UniverseType.WATCHLIST && request.getStrategyId() == null) {
-            throw new BadRequestException("strategyId is required for WATCHLIST universe");
-        }
         if (request.getUniverseType() == ScannerRunRequest.UniverseType.SYMBOLS) {
             if (request.getSymbols() == null || request.getSymbols().isEmpty()) {
                 throw new BadRequestException("symbols are required for SYMBOLS universe");
@@ -146,6 +151,20 @@ public class ScannerRunService {
                 throw new BadRequestException("symbols cannot exceed " + WatchlistService.MAX_SYMBOLS);
             }
         }
+    }
+
+    private ScannerRunRequest normalizeRequest(ScannerRunRequest request) {
+        if (request == null) {
+            return null;
+        }
+        if (request.getUniverseType() == ScannerRunRequest.UniverseType.WATCHLIST && request.getStrategyId() == null) {
+            Long defaultStrategyId = watchlistService.resolveDefaultStrategyId();
+            if (defaultStrategyId == null) {
+                throw new BadRequestException("strategyId is required for WATCHLIST universe");
+            }
+            request.setStrategyId(defaultStrategyId);
+        }
+        return request;
     }
 
     private Map<String, Object> resolveUniversePayload(ScannerRunRequest request) {
