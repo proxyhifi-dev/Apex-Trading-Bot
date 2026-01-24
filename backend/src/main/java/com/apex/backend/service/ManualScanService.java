@@ -10,6 +10,7 @@ import com.apex.backend.dto.ScanRequest;
 import com.apex.backend.dto.ScanResponse;
 import com.apex.backend.dto.ScanSignalResponse;
 import com.apex.backend.exception.ConflictException;
+import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.model.Candle;
 import com.apex.backend.service.indicator.MarketRegimeDetector;
 import com.apex.backend.trading.pipeline.DecisionResult;
@@ -64,7 +65,14 @@ public class ManualScanService {
         Instant startedAt = Instant.now();
         String requestId = resolveRequestId();
         try {
+            if (request.getUniverse() == ScanRequest.Universe.CUSTOM
+                    && (request.getSymbols() == null || request.getSymbols().isEmpty())) {
+                return buildEmptyScanResponse(startedAt, requestId);
+            }
             List<String> universe = resolveUniverse(request);
+            if (universe.isEmpty()) {
+                return buildEmptyScanResponse(startedAt, requestId);
+            }
             String timeframe = timeframeMapper.toFyersTimeframe(request.getTf());
             boolean marketBullish = resolveMarketRegime(request);
             log.info("Manual scan: universe={} tf={} regime={} bullish={}", request.getUniverse(), timeframe, request.getRegime(), marketBullish);
@@ -154,6 +162,11 @@ public class ManualScanService {
                     .signals(signals)
                     .errors(errors)
                     .build();
+        } catch (BadRequestException ex) {
+            if (isEmptyUniverseRequest(request, ex)) {
+                return buildEmptyScanResponse(startedAt, requestId);
+            }
+            throw ex;
         } finally {
             scanInProgress.set(false);
         }
@@ -309,6 +322,42 @@ public class ManualScanService {
     private Map<String, Long> toReasonMap(Map<ScanDiagnosticsReason, Long> counts) {
         return counts.entrySet().stream()
                 .collect(java.util.stream.Collectors.toMap(entry -> entry.getKey().name(), Map.Entry::getValue));
+    }
+
+    private ScanResponse buildEmptyScanResponse(Instant startedAt, String requestId) {
+        ScanDiagnosticsBreakdown diagnostics = ScanDiagnosticsBreakdown.builder()
+                .totalSymbols(0)
+                .passedStage1(0)
+                .passedStage2(0)
+                .finalSignals(0)
+                .rejectedStage1ReasonCounts(Map.of(ScanDiagnosticsReason.EMPTY_UNIVERSE.name(), 1L))
+                .rejectedStage2ReasonCounts(Map.of())
+                .build();
+        ScanPipelineStats pipelineStats = new ScanPipelineStats();
+        pipelineStats.setFinalSignals(0);
+        return ScanResponse.builder()
+                .requestId(requestId)
+                .startedAt(startedAt)
+                .durationMs(0)
+                .symbolsScanned(0)
+                .pipeline(pipelineStats)
+                .diagnostics(diagnostics)
+                .rejectReasonsTop(List.of())
+                .signals(List.of())
+                .errors(List.of())
+                .build();
+    }
+
+    private boolean isEmptyUniverseRequest(ScanRequest request, BadRequestException ex) {
+        if (request == null) {
+            return false;
+        }
+        String message = ex.getMessage() == null ? "" : ex.getMessage().toLowerCase(Locale.ROOT);
+        if (message.contains("universe is empty") || message.contains("custom universe requires symbols")) {
+            return true;
+        }
+        return request.getUniverse() == ScanRequest.Universe.CUSTOM
+                && (request.getSymbols() == null || request.getSymbols().isEmpty());
     }
 
     private void ensureScannerEnabled() {

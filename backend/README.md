@@ -124,7 +124,49 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}/results
 ```
 
-If you omit `strategyId`, the backend resolves the first active strategy with populated `watchlist_stocks`.
+If you omit `strategyId`, the backend falls back to the user's default watchlist (`watchlist_items`).
+
+## Scanner Verification
+### Run a scan + poll status
+```bash
+curl -X POST http://localhost:8080/api/scanner/run \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"universeType":"WATCHLIST","strategyId":1,"dryRun":true,"mode":"PAPER"}'
+
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/scanner/runs/{runId}
+
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/scanner/runs/{runId}/results
+```
+
+### Database checks (psql)
+```sql
+select id, status, error_message, created_at, started_at, completed_at,
+       total_symbols, passed_stage1, passed_stage2, final_signals
+from scanner_runs
+order by id desc
+limit 5;
+
+select run_id, symbol, score, grade
+from scanner_run_results
+order by run_id desc, score desc
+limit 10;
+```
+
+### Required environment variables
+Minimum for scanner verification:
+- `APEX_SCANNER_ENABLED` (set `true` to allow runs)
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `JWT_SECRET`
+- `FYERS_API_APP_ID`
+- `FYERS_API_SECRET_KEY`
+- `FYERS_ACCESS_TOKEN` (needed for market data if you are not using OAuth)
+
+Scanning happens **only on-demand** when `/api/scanner/run` is called—there is no continuous background scanning unless the scheduler is explicitly enabled.
 
 ## Scanner lifecycle + diagnostics
 Scanner runs always transition through:

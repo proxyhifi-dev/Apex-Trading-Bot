@@ -1,6 +1,5 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
 import com.apex.backend.dto.ScanDiagnosticsBreakdown;
 import com.apex.backend.dto.ScanSignalResponse;
 import com.apex.backend.dto.ScannerRunRequest;
@@ -37,9 +36,6 @@ public class ScannerRunService {
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
     private final ScannerRunExecutor scannerRunExecutor;
-    private final StrategyConfig strategyConfig;
-    private final WatchlistService watchlistService;
-
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
@@ -47,9 +43,6 @@ public class ScannerRunService {
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
         ScannerRunRequest normalizedRequest = normalizeRequest(request);
         validateRequest(normalizedRequest);
-        if (!strategyConfig.getScanner().isEnabled()) {
-            throw new BadRequestException("Scanner disabled. Set APEX_SCANNER_ENABLED=true to enable manual scans.");
-        }
 
         return idempotencyService.execute(userId, idempotencyKey, normalizedRequest, ScannerRunResponse.class, () -> {
             ScannerRun run = ScannerRun.builder()
@@ -75,12 +68,19 @@ public class ScannerRunService {
             log.info("Manual scan requested: runId={}, userId={}", runId, userId);
 
             // IMPORTANT: only start async after the TX commits; otherwise the async thread may not find the run row.
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    tradingExecutor.execute(() -> scannerRunExecutor.executeRun(runId, userId, normalizedRequest));
-                }
-            });
+            Runnable executorTask = () -> scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
+            log.info("Scheduling scan run: runId={}, userId={}, universeType={}, strategyId={}",
+                    runId, userId, normalizedRequest.getUniverseType(), normalizedRequest.getStrategyId());
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        tradingExecutor.execute(executorTask);
+                    }
+                });
+            } else {
+                tradingExecutor.execute(executorTask);
+            }
 
             return ScannerRunResponse.builder()
                     .runId(runId)
@@ -154,16 +154,6 @@ public class ScannerRunService {
     }
 
     private ScannerRunRequest normalizeRequest(ScannerRunRequest request) {
-        if (request == null) {
-            return null;
-        }
-        if (request.getUniverseType() == ScannerRunRequest.UniverseType.WATCHLIST && request.getStrategyId() == null) {
-            Long defaultStrategyId = watchlistService.resolveDefaultStrategyId();
-            if (defaultStrategyId == null) {
-                throw new BadRequestException("strategyId is required for WATCHLIST universe");
-            }
-            request.setStrategyId(defaultStrategyId);
-        }
         return request;
     }
 

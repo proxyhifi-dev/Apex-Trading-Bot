@@ -110,18 +110,18 @@ public class WatchlistService {
         if (strategyId == null) {
             throw new BadRequestException("strategyId is required for WATCHLIST universe");
         }
-        return watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId).stream()
-                .filter(s -> s != null && !s.isBlank())
-                .distinct()
-                .toList();
+        return normalizeSymbols(watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId));
     }
 
-    public List<String> resolveSymbolsForStrategyOrDefault(Long strategyId) {
-        Long resolvedStrategyId = strategyId != null ? strategyId : resolveDefaultStrategyId();
-        if (resolvedStrategyId == null) {
-            return List.of();
+    public List<String> resolveSymbolsForStrategyOrDefault(Long userId, Long strategyId) {
+        List<String> strategySymbols = List.of();
+        if (strategyId != null) {
+            strategySymbols = normalizeSymbols(watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId));
         }
-        return resolveSymbolsForStrategy(resolvedStrategyId);
+        if (!strategySymbols.isEmpty()) {
+            return strategySymbols;
+        }
+        return normalizeSymbols(resolveSymbolsForUser(userId));
     }
 
     public Long resolveDefaultStrategyId() {
@@ -141,11 +141,7 @@ public class WatchlistService {
     }
 
     public List<String> resolveSymbolsForScanner(Long userId, Long strategyId) {
-        List<String> strategySymbols = resolveSymbolsForStrategyOrDefault(strategyId);
-        if (!strategySymbols.isEmpty()) {
-            return strategySymbols;
-        }
-        return resolveSymbolsForUser(userId);
+        return resolveSymbolsForStrategyOrDefault(userId, strategyId);
     }
 
     public boolean isWatchlistEmpty(Long userId) {
