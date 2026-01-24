@@ -3,6 +3,7 @@ package com.apex.backend.service;
 import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.exception.NotFoundException;
 import com.apex.backend.model.Watchlist;
+import com.apex.backend.repository.TradingStrategyRepository;
 import com.apex.backend.repository.WatchlistItemRepository;
 import com.apex.backend.repository.WatchlistRepository;
 import com.apex.backend.repository.WatchlistStockRepository;
@@ -22,6 +23,7 @@ class WatchlistServiceTest {
     private WatchlistRepository watchlistRepository;
     private WatchlistItemRepository watchlistItemRepository;
     private WatchlistStockRepository watchlistStockRepository;
+    private TradingStrategyRepository tradingStrategyRepository;
     private WatchlistService watchlistService;
     private Watchlist watchlist;
 
@@ -30,7 +32,13 @@ class WatchlistServiceTest {
         watchlistRepository = mock(WatchlistRepository.class);
         watchlistItemRepository = mock(WatchlistItemRepository.class);
         watchlistStockRepository = mock(WatchlistStockRepository.class);
-        watchlistService = new WatchlistService(watchlistRepository, watchlistItemRepository, watchlistStockRepository);
+        tradingStrategyRepository = mock(TradingStrategyRepository.class);
+        watchlistService = new WatchlistService(
+                watchlistRepository,
+                watchlistItemRepository,
+                watchlistStockRepository,
+                tradingStrategyRepository
+        );
         watchlist = Watchlist.builder()
                 .id(1L)
                 .userId(42L)
@@ -75,5 +83,20 @@ class WatchlistServiceTest {
         List<String> resolved = watchlistService.resolveSymbolsForStrategy(7L);
 
         assertThat(resolved).containsExactlyInAnyOrder("NSE:ABC", "NSE:XYZ");
+    }
+
+    @Test
+    void resolveSymbolsForStrategyOrDefaultFallsBackToUserWatchlist() {
+        when(watchlistStockRepository.findActiveSymbolsByStrategyId(7L))
+                .thenReturn(List.of());
+        when(watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(1L))
+                .thenReturn(List.of(
+                        com.apex.backend.model.WatchlistItem.builder().symbol("nse:aaa").build(),
+                        com.apex.backend.model.WatchlistItem.builder().symbol("NSE:BBB").build()
+                ));
+
+        List<String> resolved = watchlistService.resolveSymbolsForStrategyOrDefault(42L, 7L);
+
+        assertThat(resolved).containsExactly("NSE:AAA", "NSE:BBB");
     }
 }

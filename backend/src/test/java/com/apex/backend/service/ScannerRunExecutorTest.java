@@ -50,6 +50,10 @@ class ScannerRunExecutorTest {
 
     @Test
     void executeRunMarksFailedAndPersistsError() {
+        StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
+        scanner.setEnabled(true);
+        when(strategyConfig.getScanner()).thenReturn(scanner);
+
         ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
                 .userId(42L)
                 .status(ScannerRun.Status.PENDING)
@@ -79,5 +83,36 @@ class ScannerRunExecutorTest {
         assertThat(updated.getTotalSymbols()).isEqualTo(0);
         assertThat(updated.getRejectedStage1ReasonCounts()).isNotNull();
         assertThat(updated.getRejectedStage2ReasonCounts()).isNotNull();
+    }
+
+    @Test
+    void executeRunFailsWhenScannerDisabled() {
+        StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
+        scanner.setEnabled(false);
+        when(strategyConfig.getScanner()).thenReturn(scanner);
+
+        ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
+                .userId(7L)
+                .status(ScannerRun.Status.PENDING)
+                .universeType(ScannerRunRequest.UniverseType.SYMBOLS.name())
+                .dryRun(true)
+                .mode(ScannerRunRequest.Mode.PAPER.name())
+                .createdAt(Instant.now())
+                .build());
+
+        ScannerRunRequest request = ScannerRunRequest.builder()
+                .universeType(ScannerRunRequest.UniverseType.SYMBOLS)
+                .symbols(List.of("NSE:AAA"))
+                .timeframe("5")
+                .regime("BULL")
+                .build();
+
+        scannerRunExecutor.executeRun(run.getId(), 7L, request);
+
+        ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.FAILED);
+        assertThat(updated.getStartedAt()).isNotNull();
+        assertThat(updated.getCompletedAt()).isNotNull();
+        assertThat(updated.getErrorMessage()).isEqualTo("Scanner disabled");
     }
 }

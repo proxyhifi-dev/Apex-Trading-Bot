@@ -97,6 +97,23 @@ class ManualScanServiceTest {
                 .anyMatch(reason -> reason.getReason().equals("ADX_TOO_LOW"));
     }
 
+    @Test
+    void diagnosticsPopulatedWhenUniverseEmpty() {
+        ScanRequest request = ScanRequest.builder()
+                .universe(ScanRequest.Universe.CUSTOM)
+                .symbols(List.of())
+                .tf("5m")
+                .regime(ScanRequest.Regime.BULL)
+                .dryRun(true)
+                .build();
+
+        ScanResponse response = manualScanService.runManualScan(42L, request);
+
+        assertThat(response.getDiagnostics().getTotalSymbols()).isZero();
+        assertThat(response.getDiagnostics().getRejectedStage1ReasonCounts())
+                .containsKey("EMPTY_UNIVERSE");
+    }
+
     private List<Candle> sampleCandles() {
         LocalDateTime now = LocalDateTime.now();
         return List.of(

@@ -1,6 +1,7 @@
 package com.apex.backend.dto;
 
 public enum ScanDiagnosticsReason {
+    EMPTY_UNIVERSE,
     DATA_MISSING,
     ADX_FILTER,
     RSI_FILTER,
