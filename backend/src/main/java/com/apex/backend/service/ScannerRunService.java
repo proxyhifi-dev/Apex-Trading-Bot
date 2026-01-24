@@ -79,7 +79,7 @@ public class ScannerRunService {
                     }
                 });
             } else {
-                tradingExecutor.execute(executorTask);
+                executorTask.run();
             }
 
             return ScannerRunResponse.builder()
