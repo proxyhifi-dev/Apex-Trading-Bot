@@ -122,7 +122,7 @@ All other `/api/**` endpoints require Bearer JWT.
 Symbols are uppercased and validated (`A-Z0-9:._-`).
 
 ## Manual-only scanning (required)
-The system scans **only** when the user clicks **Scan** (manual trigger). No background scans, startup scans, or scheduler-driven runs are allowed by default. Scheduled scanning is guarded behind `apex.scanner.scheduler-enabled=true` and `apex.scanner.mode=SCHEDULED`.
+The system scans **only** when the user clicks **Scan** (manual trigger). No background scans, startup scans, or scheduler-driven runs are allowed by default. Scanner runs are created in `PENDING` and move to `RUNNING` only when the API-triggered executor starts. Diagnostics always populate even when there are zero final signals or an empty universe.
 
 ## On-demand scanner
 Run the scanner manually when requested:
@@ -182,11 +182,20 @@ from scanner_runs
 order by id desc
 limit 5;
 
+select id, strategy_id, symbol, active
+from watchlist_stocks
+order by id desc
+limit 10;
+
 select run_id, symbol, score, grade
 from scanner_run_results
 order by run_id desc, score desc
 limit 10;
 ```
+
+### Notes
+- Scanner runs remain in `PENDING` until the manual API trigger executes.
+- Diagnostics are always returned; empty universes populate `rejectedStage1ReasonCounts` with `EMPTY_UNIVERSE`, and counts are zeroed when no signals are produced.
 
 ### Required environment variables
 Minimum for scanner verification:

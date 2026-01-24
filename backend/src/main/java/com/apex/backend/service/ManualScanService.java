@@ -31,7 +31,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
-import java.util.Locale; // <--- ADDED THIS IMPORT
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -83,6 +83,9 @@ public class ManualScanService {
                     .map(symbol -> CompletableFuture.runAsync(() -> outcomes.add(scanSymbol(userId, symbol, timeframe)), tradingExecutor))
                     .toList();
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+            if (!outcomes.isEmpty() && outcomes.stream().allMatch(outcome -> outcome.dataMissing)) {
+                return buildEmptyScanResponse(startedAt, requestId);
+            }
 
             List<ScanSignalResponse> signals = new ArrayList<>();
             List<DecisionResult> candidateDecisions = new ArrayList<>();

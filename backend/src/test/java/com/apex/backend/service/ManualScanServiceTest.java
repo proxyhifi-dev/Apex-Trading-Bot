@@ -114,6 +114,27 @@ class ManualScanServiceTest {
                 .containsKey("EMPTY_UNIVERSE");
     }
 
+    @Test
+    void diagnosticsPopulatedWhenDataMissing() {
+        Mockito.when(fyersService.getHistoricalData(Mockito.anyString(), Mockito.anyInt(), Mockito.anyString()))
+                .thenReturn(List.of());
+
+        ScanRequest request = ScanRequest.builder()
+                .universe(ScanRequest.Universe.CUSTOM)
+                .symbols(List.of("SBIN", "RELIANCE"))
+                .tf("5m")
+                .regime(ScanRequest.Regime.BULL)
+                .dryRun(true)
+                .build();
+
+        ScanResponse response = manualScanService.runManualScan(42L, request);
+
+        assertThat(response.getDiagnostics().getTotalSymbols()).isZero();
+        assertThat(response.getDiagnostics().getFinalSignals()).isZero();
+        assertThat(response.getDiagnostics().getRejectedStage1ReasonCounts())
+                .containsKey("EMPTY_UNIVERSE");
+    }
+
     private List<Candle> sampleCandles() {
         LocalDateTime now = LocalDateTime.now();
         return List.of(
