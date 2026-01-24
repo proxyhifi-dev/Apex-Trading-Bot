@@ -23,7 +23,7 @@ public class StockScreeningService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public List<String> getUniverse(Long userId) {
-        return watchlistService.resolveSymbolsForUser(userId);
+        return watchlistService.resolveSymbolsForScanner(userId, null);
     }
 
     public void saveSignal(Long userId, DecisionResult decision) {

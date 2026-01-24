@@ -4,6 +4,8 @@ import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.exception.NotFoundException;
 import com.apex.backend.model.Watchlist;
 import com.apex.backend.model.WatchlistItem;
+import com.apex.backend.model.TradingStrategy;
+import com.apex.backend.repository.TradingStrategyRepository;
 import com.apex.backend.repository.WatchlistItemRepository;
 import com.apex.backend.repository.WatchlistRepository;
 import com.apex.backend.repository.WatchlistStockRepository;
@@ -27,6 +29,7 @@ public class WatchlistService {
 
     // ✅ NEW: strategy-scoped watchlist table (watchlist_stocks)
     private final WatchlistStockRepository watchlistStockRepository;
+    private final TradingStrategyRepository tradingStrategyRepository;
 
     public Watchlist getDefaultWatchlist(Long userId) {
         return watchlistRepository.findByUserIdAndIsDefaultTrue(userId)
@@ -113,9 +116,49 @@ public class WatchlistService {
                 .toList();
     }
 
+    public List<String> resolveSymbolsForStrategyOrDefault(Long strategyId) {
+        Long resolvedStrategyId = strategyId != null ? strategyId : resolveDefaultStrategyId();
+        if (resolvedStrategyId == null) {
+            return List.of();
+        }
+        return resolveSymbolsForStrategy(resolvedStrategyId);
+    }
+
+    public Long resolveDefaultStrategyId() {
+        List<TradingStrategy> strategies = tradingStrategyRepository.findByActiveTrue().stream()
+                .sorted(Comparator.comparing(TradingStrategy::getId))
+                .toList();
+        if (strategies.isEmpty()) {
+            return null;
+        }
+        for (TradingStrategy strategy : strategies) {
+            List<String> symbols = watchlistStockRepository.findActiveSymbolsByStrategyId(strategy.getId());
+            if (symbols != null && !symbols.isEmpty()) {
+                return strategy.getId();
+            }
+        }
+        return strategies.get(0).getId();
+    }
+
+    public List<String> resolveSymbolsForScanner(Long userId, Long strategyId) {
+        List<String> strategySymbols = resolveSymbolsForStrategyOrDefault(strategyId);
+        if (!strategySymbols.isEmpty()) {
+            return strategySymbols;
+        }
+        return resolveSymbolsForUser(userId);
+    }
+
     public boolean isWatchlistEmpty(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
-        return watchlistItemRepository.countByWatchlistId(watchlist.getId()) == 0;
+        boolean userWatchlistEmpty = watchlistItemRepository.countByWatchlistId(watchlist.getId()) == 0;
+        if (!userWatchlistEmpty) {
+            return false;
+        }
+        Long defaultStrategyId = resolveDefaultStrategyId();
+        if (defaultStrategyId == null) {
+            return true;
+        }
+        return watchlistStockRepository.findActiveSymbolsByStrategyId(defaultStrategyId).isEmpty();
     }
 
     private List<String> normalizeSymbols(List<String> symbols) {

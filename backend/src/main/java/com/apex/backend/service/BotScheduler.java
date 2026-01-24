@@ -6,9 +6,6 @@ import com.apex.backend.repository.UserRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import jakarta.annotation.PostConstruct;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -64,9 +61,7 @@ public class BotScheduler {
     /**
      * Main bot cycle - invoked by the scheduler when enabled.
      */
-    @Scheduled(fixedDelayString = "${apex.scanner.interval}000")
-    @ConditionalOnProperty(name = "apex.scanner.scheduler-enabled", havingValue = "true")
-    public void runBotCycle() {
+    public void runScheduledCycle() {
         try {
             if (!config.getScanner().isEnabled()
                     || !config.getScanner().isSchedulerEnabled()
