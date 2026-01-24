@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.dto.ScanDiagnosticsReason;
 import com.apex.backend.dto.ScanRequest;
 import com.apex.backend.dto.ScanResponse;
 import com.apex.backend.dto.ScanSignalResponse;
@@ -60,12 +61,7 @@ public class ScannerRunExecutor {
             log.info("Resolved {} symbols for scan run {}", symbolCount, runId);
 
             if (symbols == null || symbols.isEmpty()) {
-                run.setTotalSymbols(0);
-                run.setPassedStage1(0);
-                run.setPassedStage2(0);
-                run.setFinalSignals(0);
-                run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
-                run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
+                applyEmptyUniverseDiagnostics(run);
                 run.setStatus(ScannerRun.Status.COMPLETED);
                 run.setCompletedAt(Instant.now());
                 scannerRunRepository.save(run);
@@ -103,21 +99,16 @@ public class ScannerRunExecutor {
 
     private void updateRunWithResponse(ScannerRun run, ScanResponse response) {
         if (response == null || response.getDiagnostics() == null) {
-            run.setTotalSymbols(0);
-            run.setPassedStage1(0);
-            run.setPassedStage2(0);
-            run.setFinalSignals(0);
-            run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
-            run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
+            applyZeroDiagnostics(run);
             return;
         }
         var diagnostics = response.getDiagnostics();
-        run.setTotalSymbols(diagnostics.getTotalSymbols());
-        run.setPassedStage1(diagnostics.getPassedStage1());
-        run.setPassedStage2(diagnostics.getPassedStage2());
-        run.setFinalSignals(diagnostics.getFinalSignals());
-        run.setRejectedStage1ReasonCounts(serialize(diagnostics.getRejectedStage1ReasonCounts()));
-        run.setRejectedStage2ReasonCounts(serialize(diagnostics.getRejectedStage2ReasonCounts()));
+        run.setTotalSymbols(defaultCount(diagnostics.getTotalSymbols()));
+        run.setPassedStage1(defaultCount(diagnostics.getPassedStage1()));
+        run.setPassedStage2(defaultCount(diagnostics.getPassedStage2()));
+        run.setFinalSignals(defaultCount(diagnostics.getFinalSignals()));
+        run.setRejectedStage1ReasonCounts(serialize(defaultReasonMap(diagnostics.getRejectedStage1ReasonCounts())));
+        run.setRejectedStage2ReasonCounts(serialize(defaultReasonMap(diagnostics.getRejectedStage2ReasonCounts())));
     }
 
     private void saveResults(ScannerRun run, List<ScanSignalResponse> signals) {
@@ -140,12 +131,8 @@ public class ScannerRunExecutor {
 
     private List<String> resolveSymbols(Long userId, ScannerRunRequest request) {
         return switch (request.getUniverseType()) {
-            case WATCHLIST -> watchlistService.resolveSymbolsForStrategyOrDefault(userId, request.getStrategyId())
-                    .stream()
-                    .map(String::trim)
-                    .filter(s -> !s.isBlank())
-                    .toList();
-            case SYMBOLS -> request.getSymbols();
+            case WATCHLIST -> watchlistService.resolveSymbolsForStrategyOrDefault(userId, request.getStrategyId());
+            case SYMBOLS -> watchlistService.normalizeSymbols(request.getSymbols());
             case INDEX -> resolveIndexSymbols(request);
         };
     }
@@ -189,8 +176,34 @@ public class ScannerRunExecutor {
             return objectMapper.writeValueAsString(payload);
         } catch (Exception e) {
             log.warn("Failed to serialize scanner payload: {}", e.getMessage());
-            return null;
+            return "{}";
         }
+    }
+
+    private void applyEmptyUniverseDiagnostics(ScannerRun run) {
+        run.setTotalSymbols(0);
+        run.setPassedStage1(0);
+        run.setPassedStage2(0);
+        run.setFinalSignals(0);
+        run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of(ScanDiagnosticsReason.EMPTY_UNIVERSE.name(), 1L)));
+        run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
+    }
+
+    private void applyZeroDiagnostics(ScannerRun run) {
+        run.setTotalSymbols(0);
+        run.setPassedStage1(0);
+        run.setPassedStage2(0);
+        run.setFinalSignals(0);
+        run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
+        run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
+    }
+
+    private int defaultCount(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    private java.util.Map<String, Long> defaultReasonMap(java.util.Map<String, Long> reasons) {
+        return reasons == null ? java.util.Map.of() : reasons;
     }
 
     private void markRunFailed(ScannerRun run, String message) {

@@ -99,4 +99,17 @@ class WatchlistServiceTest {
 
         assertThat(resolved).containsExactly("NSE:AAA", "NSE:BBB");
     }
+
+    @Test
+    void resolveSymbolsForStrategyOrDefaultRejectsOverLimit() {
+        List<String> symbols = java.util.stream.IntStream.rangeClosed(1, WatchlistService.MAX_SYMBOLS + 1)
+                .mapToObj(i -> "NSE:SYM" + i)
+                .toList();
+        when(watchlistStockRepository.findActiveSymbolsByStrategyId(7L))
+                .thenReturn(symbols);
+
+        assertThatThrownBy(() -> watchlistService.resolveSymbolsForStrategyOrDefault(42L, 7L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Symbols cannot exceed");
+    }
 }

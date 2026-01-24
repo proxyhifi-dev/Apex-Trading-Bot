@@ -81,6 +81,25 @@ docker run --rm -p 8080:8080 \
 | `APEX_SCANNER_MARKET_CLOSE` | ❌ | `15:30` | Market close window for scheduler |
 | `APEX_SCANNER_SCHEDULER_ENABLED` | ❌ | `false` | Enable scheduler |
 
+### Render + local required variables
+**Render (production)** should set at minimum:
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `JWT_SECRET`
+- `FYERS_API_APP_ID`
+- `FYERS_API_SECRET_KEY`
+- `FYERS_ACCESS_TOKEN` (for market data when OAuth tokens are not present)
+- `APEX_SCANNER_ENABLED` (keep `true` for manual scans)
+- `APEX_SCANNER_SCHEDULER_ENABLED=false` (explicitly disable background scans)
+
+**Local development** minimum:
+- `SPRING_DATASOURCE_URL`
+- `SPRING_DATASOURCE_USERNAME`
+- `SPRING_DATASOURCE_PASSWORD`
+- `JWT_SECRET`
+- `APEX_SCANNER_ENABLED=true`
+
 ## Auth flow (FYERS OAuth + JWT)
 1. UI calls `GET /api/auth/fyers/auth-url` to get the FYERS login URL.
 2. FYERS redirects to `FYERS_REDIRECT_URI`, UI posts callback to `POST /api/auth/fyers/callback`.
@@ -127,7 +146,7 @@ curl -H "Authorization: Bearer <token>" \
 If you omit `strategyId`, the backend falls back to the user's default watchlist (`watchlist_items`).
 
 ## Scanner Verification
-### Run a scan + poll status
+### Run a scan + poll status (bash/macOS/Linux)
 ```bash
 curl -X POST http://localhost:8080/api/scanner/run \
   -H "Authorization: Bearer <token>" \
@@ -138,6 +157,20 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}
 
 curl -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/scanner/runs/{runId}/results
+```
+
+### Run a scan + poll status (Windows cmd)
+```cmd
+curl -X POST http://localhost:8080/api/scanner/run ^
+  -H "Authorization: Bearer <token>" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"universeType\":\"WATCHLIST\",\"strategyId\":1,\"dryRun\":true,\"mode\":\"PAPER\"}"
+
+curl -H "Authorization: Bearer <token>" ^
+  http://localhost:8080/api/scanner/runs/{runId}
+
+curl -H "Authorization: Bearer <token>" ^
   http://localhost:8080/api/scanner/runs/{runId}/results
 ```
 

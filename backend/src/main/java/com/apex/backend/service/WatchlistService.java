@@ -110,7 +110,9 @@ public class WatchlistService {
         if (strategyId == null) {
             throw new BadRequestException("strategyId is required for WATCHLIST universe");
         }
-        return normalizeSymbols(watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId));
+        List<String> symbols = normalizeSymbols(watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId));
+        enforceSymbolLimit(symbols);
+        return symbols;
     }
 
     public List<String> resolveSymbolsForStrategyOrDefault(Long userId, Long strategyId) {
@@ -119,9 +121,12 @@ public class WatchlistService {
             strategySymbols = normalizeSymbols(watchlistStockRepository.findActiveSymbolsByStrategyId(strategyId));
         }
         if (!strategySymbols.isEmpty()) {
+            enforceSymbolLimit(strategySymbols);
             return strategySymbols;
         }
-        return normalizeSymbols(resolveSymbolsForUser(userId));
+        List<String> fallback = normalizeSymbols(resolveSymbolsForUser(userId));
+        enforceSymbolLimit(fallback);
+        return fallback;
     }
 
     public Long resolveDefaultStrategyId() {
@@ -157,7 +162,7 @@ public class WatchlistService {
         return watchlistStockRepository.findActiveSymbolsByStrategyId(defaultStrategyId).isEmpty();
     }
 
-    private List<String> normalizeSymbols(List<String> symbols) {
+    List<String> normalizeSymbols(List<String> symbols) {
         if (symbols == null) {
             return List.of();
         }
@@ -180,5 +185,11 @@ public class WatchlistService {
             throw new BadRequestException("Invalid symbol format: " + symbol);
         }
         return trimmed;
+    }
+
+    private void enforceSymbolLimit(List<String> symbols) {
+        if (symbols.size() > MAX_SYMBOLS) {
+            throw new BadRequestException("Symbols cannot exceed " + MAX_SYMBOLS);
+        }
     }
 }
