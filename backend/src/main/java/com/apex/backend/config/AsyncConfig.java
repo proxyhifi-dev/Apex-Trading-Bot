@@ -12,13 +12,16 @@ public class AsyncConfig {
     @Bean(name = "tradingExecutor")
     public Executor tradingExecutor() {
         int processors = Runtime.getRuntime().availableProcessors();
-        int corePoolSize = Math.min(4, processors);
-        int maxPoolSize = Math.min(8, processors * 2);
+        int corePoolSize = Math.max(8, processors);
+        int maxPoolSize = Math.max(32, processors * 4);
+
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
         executor.setMaxPoolSize(maxPoolSize);
-        executor.setQueueCapacity(200);
+        executor.setQueueCapacity(1000);
         executor.setThreadNamePrefix("trading-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
         executor.initialize();
         return executor;
     }

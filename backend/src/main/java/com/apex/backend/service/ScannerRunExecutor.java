@@ -37,22 +37,22 @@ public class ScannerRunExecutor {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void executeRun(Long runId, Long userId, ScannerRunRequest request) {
+        log.info("EXECUTOR START: Processing runId={} for userId={}", runId, userId);
         try {
             ScannerRun run = scannerRunRepository.findById(runId)
                     .orElseThrow(() -> new NotFoundException("Scan run not found"));
 
             if (run.getStatus() == ScannerRun.Status.CANCELLED) {
+                log.info("Run {} was cancelled before execution started.", runId);
                 return;
             }
 
-            log.info("Starting scan run: runId={}, userId={}, universeType={}, strategyId={}",
-                    runId, userId, request.getUniverseType(), request.getStrategyId());
             run.setStatus(ScannerRun.Status.RUNNING);
             run.setStartedAt(Instant.now());
             scannerRunRepository.save(run);
 
             if (!strategyConfig.getScanner().isEnabled()) {
-                markRunFailed(run, "Scanner disabled");
+                markRunFailed(run, "Scanner configuration is disabled.");
                 return;
             }
 
@@ -62,9 +62,7 @@ public class ScannerRunExecutor {
 
             if (symbols == null || symbols.isEmpty()) {
                 applyEmptyUniverseDiagnostics(run);
-                run.setStatus(ScannerRun.Status.COMPLETED);
-                run.setCompletedAt(Instant.now());
-                scannerRunRepository.save(run);
+                completeRun(run);
                 return;
             }
 
@@ -78,23 +76,28 @@ public class ScannerRunExecutor {
 
             ScanResponse response = manualScanService.runManualScan(userId, scanRequest);
 
-            if (scannerRunRepository.findById(runId).map(ScannerRun::getStatus).orElse(ScannerRun.Status.RUNNING)
-                    == ScannerRun.Status.CANCELLED) {
+            run = scannerRunRepository.findById(runId).orElse(run);
+            if (run.getStatus() == ScannerRun.Status.CANCELLED) {
+                log.info("Run {} was cancelled during execution.", runId);
                 return;
             }
 
             updateRunWithResponse(run, response);
             saveResults(run, response.getSignals());
+            completeRun(run);
 
-            run.setStatus(ScannerRun.Status.COMPLETED);
-            run.setCompletedAt(Instant.now());
-            scannerRunRepository.save(run);
-            log.info("Completed scan run {} for user {}", runId, userId);
+            log.info("✅ Completed scan run {} for user {}", runId, userId);
+
         } catch (Exception ex) {
-            log.error("Scanner run {} failed for user {}", runId, userId, ex);
-            scannerRunRepository.findById(runId)
-                    .ifPresent(r -> markRunFailed(r, ex.getMessage()));
+            log.error("❌ Scanner run {} failed for user {}", runId, userId, ex);
+            scannerRunRepository.findById(runId).ifPresent(r -> markRunFailed(r, ex.getMessage()));
         }
+    }
+
+    private void completeRun(ScannerRun run) {
+        run.setStatus(ScannerRun.Status.COMPLETED);
+        run.setCompletedAt(Instant.now());
+        scannerRunRepository.save(run);
     }
 
     private void updateRunWithResponse(ScannerRun run, ScanResponse response) {
