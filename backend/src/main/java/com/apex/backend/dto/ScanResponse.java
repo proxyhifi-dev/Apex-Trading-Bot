@@ -19,7 +19,8 @@ public class ScanResponse {
     private long durationMs;
     private int symbolsScanned;
     private ScanPipelineStats pipeline;
-    private ScanDiagnosticsBreakdown diagnostics;
+    @Builder.Default
+    private ScanDiagnosticsBreakdown diagnostics = ScanDiagnosticsBreakdown.builder().build();
     private List<ScanRejectReasonCount> rejectReasonsTop;
     private List<ScanSignalResponse> signals;
     private List<ScanError> errors;

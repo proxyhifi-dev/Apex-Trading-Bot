@@ -32,6 +32,7 @@ Postgres + Flyway
 ```
 
 ## Quickstart (local)
+**Prereqs:** Java 21 (Gradle toolchain will request a JDK 21 install if missing).
 1. Start Postgres (optional if you already have one running):
    ```bash
    docker compose up -d

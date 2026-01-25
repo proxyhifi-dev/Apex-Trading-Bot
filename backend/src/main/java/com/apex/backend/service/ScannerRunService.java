@@ -36,6 +36,7 @@ public class ScannerRunService {
     private final IdempotencyService idempotencyService;
     private final ObjectMapper objectMapper;
     private final ScannerRunExecutor scannerRunExecutor;
+    private final WatchlistService watchlistService;
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
@@ -45,11 +46,16 @@ public class ScannerRunService {
         validateRequest(normalizedRequest);
 
         return idempotencyService.execute(userId, idempotencyKey, normalizedRequest, ScannerRunResponse.class, () -> {
+            List<String> resolvedSymbols = null;
+            if (normalizedRequest.getStrategyId() != null) {
+                resolvedSymbols = watchlistService.resolveSymbolsForStrategyOrDefault(userId, normalizedRequest.getStrategyId());
+            }
+            Map<String, Object> universePayload = resolveUniversePayload(normalizedRequest, resolvedSymbols);
             ScannerRun run = ScannerRun.builder()
                     .userId(userId)
                     .status(ScannerRun.Status.PENDING)
                     .universeType(normalizedRequest.getUniverseType().name())
-                    .universePayload(serialize(resolveUniversePayload(normalizedRequest)))
+                    .universePayload(serialize(universePayload))
                     .strategyId(normalizedRequest.getStrategyId() != null ? normalizedRequest.getStrategyId().toString() : null)
                     .optionsPayload(serialize(normalizedRequest.getOptions()))
                     .dryRun(normalizedRequest.isDryRun())
@@ -79,7 +85,7 @@ public class ScannerRunService {
                     }
                 });
             } else {
-                executorTask.run();
+                scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
             }
 
             return ScannerRunResponse.builder()
@@ -157,11 +163,15 @@ public class ScannerRunService {
         return request;
     }
 
-    private Map<String, Object> resolveUniversePayload(ScannerRunRequest request) {
+    private Map<String, Object> resolveUniversePayload(ScannerRunRequest request, List<String> resolvedSymbols) {
         Map<String, Object> payload = new java.util.HashMap<>();
         payload.put("universeType", request.getUniverseType().name());
 
-        if (request.getSymbols() != null) payload.put("symbols", request.getSymbols());
+        if (resolvedSymbols != null) {
+            payload.put("symbols", resolvedSymbols);
+        } else if (request.getSymbols() != null) {
+            payload.put("symbols", request.getSymbols());
+        }
         if (request.getWatchlistId() != null) payload.put("watchlistId", request.getWatchlistId());
         if (request.getIndex() != null) payload.put("index", request.getIndex());
         if (request.getStrategyId() != null) payload.put("strategyId", request.getStrategyId());
