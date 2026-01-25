@@ -1,6 +1,8 @@
 package com.apex.backend.service;
 
 import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.dto.ScanDiagnosticsBreakdown;
+import com.apex.backend.dto.ScanResponse;
 import com.apex.backend.dto.ScannerRunRequest;
 import com.apex.backend.model.ScannerRun;
 import com.apex.backend.repository.ScannerRunRepository;
@@ -56,6 +58,7 @@ class ScannerRunExecutorTest {
         StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
         scanner.setEnabled(true);
         when(strategyConfig.getScanner()).thenReturn(scanner);
+        when(watchlistService.normalizeSymbols(List.of("NSE:AAA"))).thenReturn(List.of("NSE:AAA"));
 
         ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
                 .userId(42L)
@@ -93,6 +96,7 @@ class ScannerRunExecutorTest {
         StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
         scanner.setEnabled(false);
         when(strategyConfig.getScanner()).thenReturn(scanner);
+        when(watchlistService.normalizeSymbols(List.of("NSE:AAA"))).thenReturn(List.of("NSE:AAA"));
 
         ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
                 .userId(7L)
@@ -152,5 +156,54 @@ class ScannerRunExecutorTest {
                 objectMapper.getTypeFactory().constructMapType(java.util.Map.class, String.class, Long.class)
         );
         assertThat(stage1).containsKey("EMPTY_UNIVERSE");
+    }
+
+    @Test
+    void executeRunTransitionsToCompletedWithDiagnostics() {
+        StrategyConfig.Scanner scanner = new StrategyConfig.Scanner();
+        scanner.setEnabled(true);
+        when(strategyConfig.getScanner()).thenReturn(scanner);
+        when(watchlistService.normalizeSymbols(List.of("NSE:AAA"))).thenReturn(List.of("NSE:AAA"));
+
+        ScannerRun run = scannerRunRepository.save(ScannerRun.builder()
+                .userId(99L)
+                .status(ScannerRun.Status.PENDING)
+                .universeType(ScannerRunRequest.UniverseType.SYMBOLS.name())
+                .dryRun(true)
+                .mode(ScannerRunRequest.Mode.PAPER.name())
+                .createdAt(Instant.now())
+                .build());
+
+        ScanResponse response = ScanResponse.builder()
+                .diagnostics(ScanDiagnosticsBreakdown.builder()
+                        .totalSymbols(1)
+                        .passedStage1(1)
+                        .passedStage2(1)
+                        .finalSignals(0)
+                        .rejectedStage1ReasonCounts(java.util.Map.of())
+                        .rejectedStage2ReasonCounts(java.util.Map.of())
+                        .build())
+                .signals(List.of())
+                .build();
+
+        when(manualScanService.runManualScan(anyLong(), any()))
+                .thenReturn(response);
+
+        ScannerRunRequest request = ScannerRunRequest.builder()
+                .universeType(ScannerRunRequest.UniverseType.SYMBOLS)
+                .symbols(List.of("NSE:AAA"))
+                .timeframe("5")
+                .regime("BULL")
+                .build();
+
+        scannerRunExecutor.executeRun(run.getId(), 99L, request);
+
+        ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
+        assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.COMPLETED);
+        assertThat(updated.getStartedAt()).isNotNull();
+        assertThat(updated.getCompletedAt()).isNotNull();
+        assertThat(updated.getTotalSymbols()).isEqualTo(1);
+        assertThat(updated.getRejectedStage1ReasonCounts()).isNotNull();
+        assertThat(updated.getRejectedStage2ReasonCounts()).isNotNull();
     }
 }
