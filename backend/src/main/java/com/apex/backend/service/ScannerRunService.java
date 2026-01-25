@@ -16,6 +16,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -24,6 +25,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 
 @Service
@@ -51,6 +53,7 @@ public class ScannerRunService {
                 resolvedSymbols = watchlistService.resolveSymbolsForStrategyOrDefault(userId, normalizedRequest.getStrategyId());
             }
             Map<String, Object> universePayload = resolveUniversePayload(normalizedRequest, resolvedSymbols);
+
             ScannerRun run = ScannerRun.builder()
                     .userId(userId)
                     .status(ScannerRun.Status.PENDING)
@@ -73,19 +76,37 @@ public class ScannerRunService {
             Long runId = run.getId();
             log.info("Manual scan requested: runId={}, userId={}", runId, userId);
 
-            // IMPORTANT: only start async after the TX commits; otherwise the async thread may not find the run row.
-            Runnable executorTask = () -> scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
-            log.info("Scheduling scan run: runId={}, userId={}, universeType={}, strategyId={}",
-                    runId, userId, normalizedRequest.getUniverseType(), normalizedRequest.getStrategyId());
+            Runnable executorTask = () -> {
+                try {
+                    scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
+                } catch (Exception e) {
+                    log.error("CRITICAL: Async scan task crashed for runId: {}", runId, e);
+                    failRunSafely(runId, "System Error: Scan execution crashed.");
+                }
+            };
+
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                     @Override
                     public void afterCommit() {
-                        tradingExecutor.execute(executorTask);
+                        try {
+                            tradingExecutor.execute(executorTask);
+                        } catch (TaskRejectedException e) {
+                            log.error("Scan task rejected (Queue Full) for runId: {}", runId);
+                            failRunSafely(runId, "System Busy: Scan queue is full. Try again later.");
+                        } catch (Exception e) {
+                            log.error("Failed to submit scan task for runId: {}", runId, e);
+                            failRunSafely(runId, "System Error: Failed to submit scan task.");
+                        }
                     }
                 });
             } else {
-                scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
+                try {
+                    tradingExecutor.execute(executorTask);
+                } catch (Exception e) {
+                    log.error("Immediate scan submission failed for runId: {}", runId, e);
+                    throw new BadRequestException("System busy, cannot start scan right now.");
+                }
             }
 
             return ScannerRunResponse.builder()
@@ -93,6 +114,24 @@ public class ScannerRunService {
                     .status(run.getStatus().name())
                     .createdAt(run.getCreatedAt())
                     .build();
+        });
+    }
+
+    public void failRunSafely(Long runId, String reason) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                scannerRunRepository.findById(runId).ifPresent(r -> {
+                    if (r.getStatus() == ScannerRun.Status.PENDING) {
+                        r.setStatus(ScannerRun.Status.FAILED);
+                        r.setErrorMessage(reason);
+                        r.setCompletedAt(Instant.now());
+                        scannerRunRepository.save(r);
+                        log.info("Forcefully marked runId {} as FAILED. Reason: {}", runId, reason);
+                    }
+                });
+            } catch (Exception e) {
+                log.error("Failed to update run status to FAILED for runId: {}", runId, e);
+            }
         });
     }
 
