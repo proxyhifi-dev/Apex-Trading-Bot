@@ -15,6 +15,7 @@ import com.apex.backend.repository.ScannerRunResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,8 @@ public class ScannerRunExecutor {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void executeRun(Long runId, Long userId, ScannerRunRequest request) {
+        MDC.put("runId", String.valueOf(runId));
+        MDC.put("userId", String.valueOf(userId));
         log.info("EXECUTOR START: Processing runId={} for userId={}", runId, userId);
         try {
             ScannerRun run = scannerRunRepository.findById(runId)
@@ -58,7 +61,7 @@ public class ScannerRunExecutor {
 
             List<String> symbols = resolveSymbols(userId, request);
             int symbolCount = symbols != null ? symbols.size() : 0;
-            log.info("Resolved {} symbols for scan run {}", symbolCount, runId);
+            log.info("Resolved {} symbols for scan run {} (userId={})", symbolCount, runId, userId);
 
             if (symbols == null || symbols.isEmpty()) {
                 applyEmptyUniverseDiagnostics(run);
@@ -91,6 +94,9 @@ public class ScannerRunExecutor {
         } catch (Exception ex) {
             log.error("❌ Scanner run {} failed for user {}", runId, userId, ex);
             scannerRunRepository.findById(runId).ifPresent(r -> markRunFailed(r, ex.getMessage()));
+        } finally {
+            log.info("EXECUTOR STOP: Completed processing runId={} for userId={}", runId, userId);
+            MDC.clear();
         }
     }
 

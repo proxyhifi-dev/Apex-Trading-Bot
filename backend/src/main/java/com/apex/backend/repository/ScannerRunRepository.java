@@ -7,4 +7,6 @@ import java.util.Optional;
 
 public interface ScannerRunRepository extends JpaRepository<ScannerRun, Long> {
     Optional<ScannerRun> findByIdAndUserId(Long id, Long userId);
+
+    Optional<ScannerRun> findTopByOrderByIdDesc();
 }

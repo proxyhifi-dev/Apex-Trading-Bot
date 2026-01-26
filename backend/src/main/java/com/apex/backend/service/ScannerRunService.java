@@ -39,8 +39,8 @@ public class ScannerRunService {
     private final ObjectMapper objectMapper;
     private final ScannerRunExecutor scannerRunExecutor;
     private final WatchlistService watchlistService;
-    @Qualifier("tradingExecutor")
-    private final Executor tradingExecutor;
+    @Qualifier("scannerExecutor")
+    private final Executor scannerExecutor;
 
     @Transactional
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
@@ -90,21 +90,23 @@ public class ScannerRunService {
                     @Override
                     public void afterCommit() {
                         try {
-                            tradingExecutor.execute(executorTask);
+                            log.info("Submitting scan executor task after commit: runId={}, userId={}", runId, userId);
+                            scannerExecutor.execute(executorTask);
                         } catch (TaskRejectedException e) {
-                            log.error("Scan task rejected (Queue Full) for runId: {}", runId);
+                            log.error("Scan task rejected (Queue Full) for runId: {}, userId={}", runId, userId);
                             failRunSafely(runId, "System Busy: Scan queue is full. Try again later.");
                         } catch (Exception e) {
-                            log.error("Failed to submit scan task for runId: {}", runId, e);
+                            log.error("Failed to submit scan task for runId: {}, userId={}", runId, userId, e);
                             failRunSafely(runId, "System Error: Failed to submit scan task.");
                         }
                     }
                 });
             } else {
                 try {
-                    tradingExecutor.execute(executorTask);
+                    log.info("Submitting scan executor task immediately: runId={}, userId={}", runId, userId);
+                    scannerExecutor.execute(executorTask);
                 } catch (Exception e) {
-                    log.error("Immediate scan submission failed for runId: {}", runId, e);
+                    log.error("Immediate scan submission failed for runId: {}, userId={}", runId, userId, e);
                     throw new BadRequestException("System busy, cannot start scan right now.");
                 }
             }
@@ -123,6 +125,9 @@ public class ScannerRunService {
                 scannerRunRepository.findById(runId).ifPresent(r -> {
                     if (r.getStatus() == ScannerRun.Status.PENDING) {
                         r.setStatus(ScannerRun.Status.FAILED);
+                        if (r.getStartedAt() == null) {
+                            r.setStartedAt(Instant.now());
+                        }
                         r.setErrorMessage(reason);
                         r.setCompletedAt(Instant.now());
                         scannerRunRepository.save(r);
