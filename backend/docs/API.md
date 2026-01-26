@@ -90,3 +90,6 @@ All errors use a consistent structure:
   "correlationId": "..."
 }
 ```
+
+## Postman (no UI)
+The Postman collection lives at `docs/postman/Apex-Trading-Bot.postman_collection.json` with a CLI-friendly guide in `docs/POSTMAN.md`.
