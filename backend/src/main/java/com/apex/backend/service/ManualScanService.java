@@ -76,7 +76,8 @@ public class ManualScanService {
             }
             String timeframe = timeframeMapper.toFyersTimeframe(request.getTf());
             boolean marketBullish = resolveMarketRegime(request);
-            log.info("Manual scan: universe={} tf={} regime={} bullish={}", request.getUniverse(), timeframe, request.getRegime(), marketBullish);
+            log.info("Manual scan: universe={} tf={} regime={} bullish={} userId={} runId={}",
+                    request.getUniverse(), timeframe, request.getRegime(), marketBullish, userId, mdcRunId());
 
             ConcurrentLinkedQueue<ScanSymbolOutcome> outcomes = new ConcurrentLinkedQueue<>();
             List<CompletableFuture<Void>> futures = universe.stream()
@@ -180,6 +181,7 @@ public class ManualScanService {
         try {
             List<Candle> candles = fyersService.getHistoricalData(symbol, 200, timeframe);
             if (candles == null || candles.isEmpty()) {
+                log.warn("Manual scan data missing for symbol={} userId={} runId={}", symbol, userId, mdcRunId());
                 return ScanSymbolOutcome.dataMissing(symbol);
             }
             DecisionResult decision = tradeDecisionPipelineService.evaluate(new PipelineRequest(
@@ -191,7 +193,7 @@ public class ManualScanService {
             ));
             return ScanSymbolOutcome.success(symbol, decision);
         } catch (Exception ex) {
-            log.warn("Manual scan error for {}: {}", symbol, ex.getMessage());
+            log.warn("Manual scan error for symbol={} userId={} runId={} error={}", symbol, userId, mdcRunId(), ex.getMessage());
             return ScanSymbolOutcome.failure(symbol, ex.getMessage());
         }
     }
@@ -227,6 +229,11 @@ public class ManualScanService {
             log.warn("Failed to fetch VIX: {}", e.getMessage());
         }
         return 15.0;
+    }
+
+    private String mdcRunId() {
+        String runId = MDC.get("runId");
+        return runId != null ? runId : "n/a";
     }
 
     private void updatePipelineStats(ScanPipelineStats stats, SignalScore signalScore) {

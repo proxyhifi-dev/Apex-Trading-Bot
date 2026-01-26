@@ -25,4 +25,21 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "scannerExecutor")
+    public Executor scannerExecutor() {
+        int processors = Runtime.getRuntime().availableProcessors();
+        int corePoolSize = Math.max(4, processors / 2);
+        int maxPoolSize = Math.max(16, processors * 2);
+
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(250);
+        executor.setThreadNamePrefix("scanner-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(60);
+        executor.initialize();
+        return executor;
+    }
 }
