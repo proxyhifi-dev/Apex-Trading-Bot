@@ -85,7 +85,7 @@ public class ManualScanService {
                     .toList();
             CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
             if (!outcomes.isEmpty() && outcomes.stream().allMatch(outcome -> outcome.dataMissing)) {
-                return buildEmptyScanResponse(startedAt, requestId);
+                return buildDataMissingScanResponse(startedAt, requestId, outcomes.size());
             }
 
             List<ScanSignalResponse> signals = new ArrayList<>();
@@ -351,6 +351,30 @@ public class ManualScanService {
                 .startedAt(startedAt)
                 .durationMs(0)
                 .symbolsScanned(0)
+                .pipeline(pipelineStats)
+                .diagnostics(diagnostics)
+                .rejectReasonsTop(List.of())
+                .signals(List.of())
+                .errors(List.of())
+                .build();
+    }
+
+    private ScanResponse buildDataMissingScanResponse(Instant startedAt, String requestId, int totalSymbols) {
+        ScanDiagnosticsBreakdown diagnostics = ScanDiagnosticsBreakdown.builder()
+                .totalSymbols(totalSymbols)
+                .passedStage1(0)
+                .passedStage2(0)
+                .finalSignals(0)
+                .rejectedStage1ReasonCounts(Map.of(ScanDiagnosticsReason.DATA_MISSING.name(), (long) totalSymbols))
+                .rejectedStage2ReasonCounts(Map.of())
+                .build();
+        ScanPipelineStats pipelineStats = new ScanPipelineStats();
+        pipelineStats.setFinalSignals(0);
+        return ScanResponse.builder()
+                .requestId(requestId)
+                .startedAt(startedAt)
+                .durationMs(0)
+                .symbolsScanned(totalSymbols)
                 .pipeline(pipelineStats)
                 .diagnostics(diagnostics)
                 .rejectReasonsTop(List.of())

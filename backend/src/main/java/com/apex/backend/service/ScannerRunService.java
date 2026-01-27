@@ -15,6 +15,7 @@ import com.apex.backend.repository.ScannerRunResultRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.stereotype.Service;
@@ -46,6 +47,7 @@ public class ScannerRunService {
     public ScannerRunResponse startRun(Long userId, String idempotencyKey, ScannerRunRequest request) {
         ScannerRunRequest normalizedRequest = normalizeRequest(request);
         validateRequest(normalizedRequest);
+        String correlationId = MDC.get("correlationId");
 
         return idempotencyService.execute(userId, idempotencyKey, normalizedRequest, ScannerRunResponse.class, () -> {
             List<String> resolvedSymbols = null;
@@ -77,11 +79,17 @@ public class ScannerRunService {
             log.info("Manual scan requested: runId={}, userId={}", runId, userId);
 
             Runnable executorTask = () -> {
+                if (correlationId != null) {
+                    MDC.put("correlationId", correlationId);
+                }
+                MDC.put("runId", String.valueOf(runId));
                 try {
-                    scannerRunExecutor.executeRun(runId, userId, normalizedRequest);
+                    scannerRunExecutor.executeRun(runId, userId, correlationId, normalizedRequest);
                 } catch (Exception e) {
                     log.error("CRITICAL: Async scan task crashed for runId: {}", runId, e);
                     failRunSafely(runId, "System Error: Scan execution crashed.");
+                } finally {
+                    MDC.clear();
                 }
             };
 
@@ -107,6 +115,7 @@ public class ScannerRunService {
                     scannerExecutor.execute(executorTask);
                 } catch (Exception e) {
                     log.error("Immediate scan submission failed for runId: {}, userId={}", runId, userId, e);
+                    failRunSafely(runId, "System Error: Failed to submit scan task.");
                     throw new BadRequestException("System busy, cannot start scan right now.");
                 }
             }
@@ -129,6 +138,24 @@ public class ScannerRunService {
                             r.setStartedAt(Instant.now());
                         }
                         r.setErrorMessage(reason);
+                        if (r.getTotalSymbols() == null) {
+                            r.setTotalSymbols(0);
+                        }
+                        if (r.getPassedStage1() == null) {
+                            r.setPassedStage1(0);
+                        }
+                        if (r.getPassedStage2() == null) {
+                            r.setPassedStage2(0);
+                        }
+                        if (r.getFinalSignals() == null) {
+                            r.setFinalSignals(0);
+                        }
+                        if (r.getRejectedStage1ReasonCounts() == null) {
+                            r.setRejectedStage1ReasonCounts(serialize(Map.of()));
+                        }
+                        if (r.getRejectedStage2ReasonCounts() == null) {
+                            r.setRejectedStage2ReasonCounts(serialize(Map.of()));
+                        }
                         r.setCompletedAt(Instant.now());
                         scannerRunRepository.save(r);
                         log.info("Forcefully marked runId {} as FAILED. Reason: {}", runId, reason);

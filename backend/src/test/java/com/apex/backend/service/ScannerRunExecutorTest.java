@@ -79,7 +79,7 @@ class ScannerRunExecutorTest {
         when(manualScanService.runManualScan(anyLong(), any()))
                 .thenThrow(new RuntimeException("boom"));
 
-        scannerRunExecutor.executeRun(run.getId(), 42L, request);
+        scannerRunExecutor.executeRun(run.getId(), 42L, "test-correlation", request);
 
         ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.FAILED);
@@ -114,7 +114,7 @@ class ScannerRunExecutorTest {
                 .regime("BULL")
                 .build();
 
-        scannerRunExecutor.executeRun(run.getId(), 7L, request);
+        scannerRunExecutor.executeRun(run.getId(), 7L, "test-correlation", request);
 
         ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.FAILED);
@@ -146,7 +146,7 @@ class ScannerRunExecutorTest {
                 .regime("BULL")
                 .build();
 
-        scannerRunExecutor.executeRun(run.getId(), 42L, request);
+        scannerRunExecutor.executeRun(run.getId(), 42L, "test-correlation", request);
 
         ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.COMPLETED);
@@ -196,7 +196,7 @@ class ScannerRunExecutorTest {
                 .regime("BULL")
                 .build();
 
-        scannerRunExecutor.executeRun(run.getId(), 99L, request);
+        scannerRunExecutor.executeRun(run.getId(), 99L, "test-correlation", request);
 
         ScannerRun updated = scannerRunRepository.findById(run.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(ScannerRun.Status.COMPLETED);

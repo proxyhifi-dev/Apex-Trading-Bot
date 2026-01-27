@@ -8,6 +8,9 @@ import java.util.Optional;
 
 public interface WatchlistItemRepository extends JpaRepository<WatchlistItem, Long> {
     List<WatchlistItem> findByWatchlistIdOrderByCreatedAtAsc(Long watchlistId);
+    List<WatchlistItem> findByWatchlistIdAndStatusOrderByCreatedAtAsc(Long watchlistId, WatchlistItem.Status status);
     Optional<WatchlistItem> findByWatchlistIdAndSymbol(Long watchlistId, String symbol);
     long countByWatchlistId(Long watchlistId);
+    long countByWatchlistIdAndStatus(Long watchlistId, WatchlistItem.Status status);
+    List<WatchlistItem> findByStatus(WatchlistItem.Status status);
 }
