@@ -1,5 +1,6 @@
 package com.apex.backend.service;
 
+import com.apex.backend.exception.FyersApiException;
 import com.apex.backend.model.Candle;
 import com.apex.backend.model.UserProfile;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -59,6 +60,7 @@ public class FyersService {
     }
 
     public Map<String, BigDecimal> getLtpBatch(List<String> symbols, String token) {
+        boolean tokenProvided = token != null && !token.isBlank();
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null || symbols == null || symbols.isEmpty()) {
             return Collections.emptyMap();
@@ -88,7 +90,7 @@ public class FyersService {
             try {
                 rateLimiter.acquire();
                 acquired = true;
-                fetched = fetchQuotes(toFetch, resolvedToken);
+                fetched = fetchQuotes(toFetch, resolvedToken, tokenProvided);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 fetched = Collections.emptyMap();
@@ -116,6 +118,7 @@ public class FyersService {
     }
 
     public List<Candle> getHistoricalData(String symbol, int count, String resolution, String token) {
+        boolean tokenProvided = token != null && !token.isBlank();
         String resolvedToken = resolveToken(token);
         if (resolvedToken == null) return Collections.emptyList();
 
@@ -140,6 +143,12 @@ public class FyersService {
             return data;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            return Collections.emptyList();
+        } catch (FyersApiException e) {
+            if (tokenProvided && (e.getStatusCode() == 401 || e.getStatusCode() == 403)) {
+                throw e;
+            }
+            log.warn("FYERS API error fetching historical data for {}: {}", symbol, e.getMessage());
             return Collections.emptyList();
         } catch (com.apex.backend.exception.FyersCircuitOpenException e) {
             throw e;
@@ -433,7 +442,7 @@ public class FyersService {
         return fyersHttpClient.get(url, token);
     }
 
-    private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token) {
+    private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token, boolean tokenProvided) {
         if (symbols.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -455,6 +464,12 @@ public class FyersService {
                 }
             }
             return ltpMap;
+        } catch (FyersApiException e) {
+            if (tokenProvided && (e.getStatusCode() == 401 || e.getStatusCode() == 403)) {
+                throw e;
+            }
+            log.warn("FYERS API error fetching quotes: {}", e.getMessage());
+            return Collections.emptyMap();
         } catch (Exception e) {
             log.error("❌ Failed to fetch quotes: {}", e.getMessage());
             return Collections.emptyMap();

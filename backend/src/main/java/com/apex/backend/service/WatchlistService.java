@@ -42,7 +42,10 @@ public class WatchlistService {
 
     public Watchlist loadDefaultWithItems(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
-        List<WatchlistItem> items = watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId());
+        List<WatchlistItem> items = watchlistItemRepository.findByWatchlistIdAndStatusOrderByCreatedAtAsc(
+                watchlist.getId(),
+                WatchlistItem.Status.ACTIVE
+        );
         watchlist.setItems(items);
         return watchlist;
     }
@@ -53,7 +56,7 @@ public class WatchlistService {
         if (normalized.isEmpty()) {
             throw new BadRequestException("Symbols are required");
         }
-        long existingCount = watchlistItemRepository.countByWatchlistId(watchlist.getId());
+        long existingCount = watchlistItemRepository.countByWatchlistIdAndStatus(watchlist.getId(), WatchlistItem.Status.ACTIVE);
         if (existingCount + normalized.size() > MAX_SYMBOLS) {
             throw new BadRequestException("Watchlist can contain at most " + MAX_SYMBOLS + " symbols");
         }
@@ -62,6 +65,7 @@ public class WatchlistService {
                     .orElseGet(() -> watchlistItemRepository.save(WatchlistItem.builder()
                             .watchlist(watchlist)
                             .symbol(symbol)
+                            .status(WatchlistItem.Status.ACTIVE)
                             .build()));
         }
         return loadDefaultWithItems(userId);
@@ -78,6 +82,7 @@ public class WatchlistService {
         normalized.forEach(symbol -> watchlistItemRepository.save(WatchlistItem.builder()
                 .watchlist(watchlist)
                 .symbol(symbol)
+                .status(WatchlistItem.Status.ACTIVE)
                 .build()));
         return loadDefaultWithItems(userId);
     }
@@ -96,7 +101,10 @@ public class WatchlistService {
      */
     public List<String> resolveSymbolsForUser(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
-        return watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(watchlist.getId()).stream()
+        return watchlistItemRepository.findByWatchlistIdAndStatusOrderByCreatedAtAsc(
+                        watchlist.getId(),
+                        WatchlistItem.Status.ACTIVE
+                ).stream()
                 .map(WatchlistItem::getSymbol)
                 .distinct()
                 .toList();
@@ -151,7 +159,10 @@ public class WatchlistService {
 
     public boolean isWatchlistEmpty(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
-        boolean userWatchlistEmpty = watchlistItemRepository.countByWatchlistId(watchlist.getId()) == 0;
+        boolean userWatchlistEmpty = watchlistItemRepository.countByWatchlistIdAndStatus(
+                watchlist.getId(),
+                WatchlistItem.Status.ACTIVE
+        ) == 0;
         if (!userWatchlistEmpty) {
             return false;
         }

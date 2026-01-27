@@ -37,9 +37,12 @@ public class ScannerRunExecutor {
     private final ObjectMapper objectMapper;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void executeRun(Long runId, Long userId, ScannerRunRequest request) {
+    public void executeRun(Long runId, Long userId, String correlationId, ScannerRunRequest request) {
         MDC.put("runId", String.valueOf(runId));
         MDC.put("userId", String.valueOf(userId));
+        if (correlationId != null) {
+            MDC.put("correlationId", correlationId);
+        }
         log.info("EXECUTOR START: Processing runId={} for userId={}", runId, userId);
         try {
             ScannerRun run = scannerRunRepository.findById(runId)

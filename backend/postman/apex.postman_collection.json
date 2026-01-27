@@ -1,0 +1,178 @@
+{
+  "info": {
+    "name": "Apex Trading Bot API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Dev Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"userId\": 1,\n  \"role\": \"USER\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/dev/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dev",
+            "login"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Watchlist",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/watchlist",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "watchlist"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Seed Watchlist",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/dev/seed-watchlist?count=100",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "dev",
+            "seed-watchlist"
+          ],
+          "query": [
+            {
+              "key": "count",
+              "value": "100"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Run Scanner",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"universeType\": \"WATCHLIST\",\n  \"dryRun\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/scanner/run",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scanner",
+            "run"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Scanner Run Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/scanner/runs/{{runId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "scanner",
+            "runs",
+            "{{runId}}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Signals List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/signals/recent",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "signals",
+            "recent"
+          ]
+        }
+      }
+    }
+  ]
+}

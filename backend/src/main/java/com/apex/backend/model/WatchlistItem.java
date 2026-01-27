@@ -10,6 +10,8 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -39,10 +41,24 @@ public class WatchlistItem {
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    @Builder.Default
+    private Status status = Status.ACTIVE;
+
+    @Column(length = 500)
+    private String failureReason;
+
     @PrePersist
     void onCreate() {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
+    }
+
+    public enum Status {
+        PENDING,
+        ACTIVE,
+        FAILED
     }
 }

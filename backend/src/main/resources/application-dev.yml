@@ -8,3 +8,7 @@ logging:
   level:
     com.apex.backend: DEBUG
     org.hibernate.SQL: DEBUG
+
+apex:
+  dev:
+    endpoints: true

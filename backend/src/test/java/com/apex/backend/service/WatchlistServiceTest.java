@@ -50,7 +50,8 @@ class WatchlistServiceTest {
 
     @Test
     void addSymbolsRejectsOverLimit() {
-        when(watchlistItemRepository.countByWatchlistId(1L)).thenReturn(99L);
+        when(watchlistItemRepository.countByWatchlistIdAndStatus(1L, com.apex.backend.model.WatchlistItem.Status.ACTIVE))
+                .thenReturn(99L);
         assertThatThrownBy(() -> watchlistService.addSymbols(42L, List.of("NSE:AAA", "NSE:BBB")))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("at most 100");
@@ -89,7 +90,7 @@ class WatchlistServiceTest {
     void resolveSymbolsForStrategyOrDefaultFallsBackToUserWatchlist() {
         when(watchlistStockRepository.findActiveSymbolsByStrategyId(7L))
                 .thenReturn(List.of());
-        when(watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(1L))
+        when(watchlistItemRepository.findByWatchlistIdAndStatusOrderByCreatedAtAsc(1L, com.apex.backend.model.WatchlistItem.Status.ACTIVE))
                 .thenReturn(List.of(
                         com.apex.backend.model.WatchlistItem.builder().symbol("nse:aaa").build(),
                         com.apex.backend.model.WatchlistItem.builder().symbol("NSE:BBB").build()
