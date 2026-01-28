@@ -2,6 +2,7 @@ package com.apex.backend.service;
 
 import com.apex.backend.dto.ScanDiagnosticsBreakdown;
 import com.apex.backend.dto.ScanSignalResponse;
+import com.apex.backend.dto.ScanRunSummary;
 import com.apex.backend.dto.ScannerRunRequest;
 import com.apex.backend.dto.ScannerRunResponse;
 import com.apex.backend.dto.ScannerRunResultResponse;
@@ -69,6 +70,7 @@ public class ScannerRunService {
                     .passedStage1(0)
                     .passedStage2(0)
                     .finalSignals(0)
+                    .stagePassCounts(serialize(Map.of()))
                     .rejectedStage1ReasonCounts(serialize(Map.of()))
                     .rejectedStage2ReasonCounts(serialize(Map.of()))
                     .createdAt(Instant.now())
@@ -150,6 +152,9 @@ public class ScannerRunService {
                         if (r.getFinalSignals() == null) {
                             r.setFinalSignals(0);
                         }
+                        if (r.getStagePassCounts() == null) {
+                            r.setStagePassCounts(serialize(Map.of()));
+                        }
                         if (r.getRejectedStage1ReasonCounts() == null) {
                             r.setRejectedStage1ReasonCounts(serialize(Map.of()));
                         }
@@ -214,6 +219,23 @@ public class ScannerRunService {
         scannerRunRepository.save(run);
 
         return getStatus(userId, runId);
+    }
+
+    @Transactional(readOnly = true)
+    public ScanRunSummary getLatestSummary(Long userId) {
+        ScannerRun run = scannerRunRepository.findTopByUserIdOrderByIdDesc(userId)
+                .orElseThrow(() -> new NotFoundException("No scanner runs found"));
+
+        return ScanRunSummary.builder()
+                .scanId(run.getId())
+                .startedAt(run.getStartedAt())
+                .endedAt(run.getCompletedAt())
+                .symbolsScanned(defaultValue(run.getTotalSymbols()))
+                .stagePassCounts(deserializeCounts(run.getStagePassCounts()))
+                .signalsFound(defaultValue(run.getFinalSignals()))
+                .status(run.getStatus().name())
+                .errors(run.getErrorMessage() != null ? List.of(run.getErrorMessage()) : List.of())
+                .build();
     }
 
     private void validateRequest(ScannerRunRequest request) {

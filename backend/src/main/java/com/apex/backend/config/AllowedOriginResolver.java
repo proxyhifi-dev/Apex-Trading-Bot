@@ -24,25 +24,42 @@ public class AllowedOriginResolver {
 
     public List<String> resolveCorsAllowedOrigins() {
         List<String> envOrigins = parseOrigins(environment.getProperty("APEX_ALLOWED_ORIGINS"));
+        List<String> configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
         if (isProd()) {
-            return envOrigins;
+            if (!envOrigins.isEmpty()) {
+                return envOrigins;
+            }
+            if (!configured.isEmpty()) {
+                return configured;
+            }
+            throw new IllegalStateException("CORS allowed origins must be configured for production via " +
+                    "APEX_ALLOWED_ORIGINS or apex.security.cors.allowed-origins");
         }
         if (!envOrigins.isEmpty()) {
             return envOrigins;
         }
-        List<String> configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
         return configured.isEmpty() ? DEFAULT_DEV_ORIGINS : configured;
     }
 
     public List<String> resolveWebsocketAllowedOrigins() {
         List<String> envOrigins = parseOrigins(environment.getProperty("APEX_ALLOWED_ORIGINS"));
+        List<String> configured = parseOrigins(securityProperties.getWebsocket().getAllowedOrigins());
         if (isProd()) {
-            return envOrigins;
+            if (!envOrigins.isEmpty()) {
+                return envOrigins;
+            }
+            if (configured.isEmpty()) {
+                configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
+            }
+            if (!configured.isEmpty()) {
+                return configured;
+            }
+            throw new IllegalStateException("WebSocket allowed origins must be configured for production via " +
+                    "APEX_ALLOWED_ORIGINS or apex.security.websocket.allowed-origins");
         }
         if (!envOrigins.isEmpty()) {
             return envOrigins;
         }
-        List<String> configured = parseOrigins(securityProperties.getWebsocket().getAllowedOrigins());
         if (configured.isEmpty()) {
             configured = parseOrigins(securityProperties.getCors().getAllowedOrigins());
         }
