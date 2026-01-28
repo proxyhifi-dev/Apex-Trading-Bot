@@ -58,6 +58,8 @@ docker run --rm -p 8080:8080 \
 ## Environment Variables (single source of truth)
 > **No hardcoding policy**: base URLs, secrets, CORS origins, scanner universes, and time windows must be supplied via configuration or DB.
 
+Use `.env.example` as a baseline for local development, then copy to `.env` and adjust values.
+
 | Variable | Required | Default | Purpose |
 | --- | --- | --- | --- |
 | `SPRING_DATASOURCE_URL` | ✅ | — | JDBC URL for Postgres |
@@ -88,6 +90,7 @@ docker run --rm -p 8080:8080 \
 - `SPRING_DATASOURCE_USERNAME`
 - `SPRING_DATASOURCE_PASSWORD`
 - `JWT_SECRET`
+- `APEX_ALLOWED_ORIGINS` (must be non-empty in production)
 - `FYERS_API_APP_ID`
 - `FYERS_API_SECRET_KEY`
 - `FYERS_ACCESS_TOKEN` (for market data when OAuth tokens are not present)
@@ -144,6 +147,12 @@ curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}/results
 ```
 
+Latest summary:
+```bash
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/scanner/latest-summary
+```
+
 If you omit `strategyId`, the backend falls back to the user's default watchlist (`watchlist_items`).
 
 ## Scanner Verification
@@ -159,6 +168,9 @@ curl -H "Authorization: Bearer <token>" \
 
 curl -H "Authorization: Bearer <token>" \
   http://localhost:8080/api/scanner/runs/{runId}/results
+
+curl -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/scanner/latest-summary
 ```
 
 ### Run a scan + poll status (Windows cmd)
@@ -173,6 +185,19 @@ curl -H "Authorization: Bearer <token>" ^
 
 curl -H "Authorization: Bearer <token>" ^
   http://localhost:8080/api/scanner/runs/{runId}/results
+
+curl -H "Authorization: Bearer <token>" ^
+  http://localhost:8080/api/scanner/latest-summary
+```
+
+### Render verification checklist (curl)
+```bash
+curl -sS https://<your-render-host>/actuator/health
+
+curl -sS https://<your-render-host>/api/ui/config
+
+curl -sS -H "Authorization: Bearer <token>" \
+  https://<your-render-host>/api/scanner/latest-summary
 ```
 
 ### Database checks (psql)

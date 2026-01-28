@@ -15,4 +15,6 @@ public interface ScannerRunRepository extends JpaRepository<ScannerRun, Long> {
     List<ScannerRun> findByStatusAndStartedAtBefore(ScannerRun.Status status, Instant startedAt);
 
     Optional<ScannerRun> findTopByOrderByIdDesc();
+
+    Optional<ScannerRun> findTopByUserIdOrderByIdDesc(Long userId);
 }

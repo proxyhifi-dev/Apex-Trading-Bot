@@ -1,5 +1,6 @@
 package com.apex.backend.controller;
 
+import com.apex.backend.dto.ScanRunSummary;
 import com.apex.backend.dto.ScannerRunRequest;
 import com.apex.backend.dto.ScannerRunResponse;
 import com.apex.backend.dto.ScannerRunResultResponse;
@@ -54,6 +55,14 @@ public class ScannerController {
                                                             @PathVariable Long runId) {
         Long userId = requireUserId(principal);
         return ResponseEntity.ok(scannerRunService.getResults(userId, runId));
+    }
+
+    @GetMapping("/latest-summary")
+    @Operation(summary = "Get latest scanner run summary")
+    @ApiResponse(responseCode = "200")
+    public ResponseEntity<ScanRunSummary> latestSummary(@AuthenticationPrincipal UserPrincipal principal) {
+        Long userId = requireUserId(principal);
+        return ResponseEntity.ok(scannerRunService.getLatestSummary(userId));
     }
 
     @PostMapping("/runs/{runId}/cancel")

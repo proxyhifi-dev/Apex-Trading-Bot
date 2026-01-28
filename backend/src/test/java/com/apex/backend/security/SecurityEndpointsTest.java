@@ -11,7 +11,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest(properties = {
-        "jwt.secret=01234567890123456789012345678901"
+        "jwt.secret=01234567890123456789012345678901",
+        "APEX_ALLOWED_ORIGINS=https://example.com"
 })
 @AutoConfigureMockMvc
 class SecurityEndpointsTest {
@@ -23,6 +24,16 @@ class SecurityEndpointsTest {
     void uiConfigIsPublic() throws Exception {
         mockMvc.perform(get("/api/ui/config"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void uiConfigAllowsCorsForConfiguredOrigin() throws Exception {
+        mockMvc.perform(get("/api/ui/config")
+                        .header("Origin", "https://example.com"))
+                .andExpect(status().isOk())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers
+                        .header()
+                        .string("Access-Control-Allow-Origin", "https://example.com"));
     }
 
     @Test

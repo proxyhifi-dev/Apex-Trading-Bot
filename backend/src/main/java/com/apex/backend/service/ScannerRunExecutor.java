@@ -5,6 +5,7 @@ import com.apex.backend.dto.ScanDiagnosticsReason;
 import com.apex.backend.dto.ScanRequest;
 import com.apex.backend.dto.ScanResponse;
 import com.apex.backend.dto.ScanSignalResponse;
+import com.apex.backend.dto.ScanPipelineStats;
 import com.apex.backend.dto.ScannerRunRequest;
 import com.apex.backend.exception.BadRequestException;
 import com.apex.backend.exception.NotFoundException;
@@ -119,6 +120,7 @@ public class ScannerRunExecutor {
         run.setPassedStage1(defaultCount(diagnostics.getPassedStage1()));
         run.setPassedStage2(defaultCount(diagnostics.getPassedStage2()));
         run.setFinalSignals(defaultCount(diagnostics.getFinalSignals()));
+        run.setStagePassCounts(serialize(defaultStagePassCounts(response.getPipeline())));
         run.setRejectedStage1ReasonCounts(serialize(defaultReasonMap(diagnostics.getRejectedStage1ReasonCounts())));
         run.setRejectedStage2ReasonCounts(serialize(defaultReasonMap(diagnostics.getRejectedStage2ReasonCounts())));
     }
@@ -197,6 +199,7 @@ public class ScannerRunExecutor {
         run.setPassedStage1(0);
         run.setPassedStage2(0);
         run.setFinalSignals(0);
+        run.setStagePassCounts(serialize(defaultStagePassCounts(null)));
         run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of(ScanDiagnosticsReason.EMPTY_UNIVERSE.name(), 1L)));
         run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
     }
@@ -206,6 +209,7 @@ public class ScannerRunExecutor {
         run.setPassedStage1(0);
         run.setPassedStage2(0);
         run.setFinalSignals(0);
+        run.setStagePassCounts(serialize(defaultStagePassCounts(null)));
         run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
         run.setRejectedStage2ReasonCounts(serialize(java.util.Map.of()));
     }
@@ -216,6 +220,33 @@ public class ScannerRunExecutor {
 
     private java.util.Map<String, Long> defaultReasonMap(java.util.Map<String, Long> reasons) {
         return reasons == null ? java.util.Map.of() : reasons;
+    }
+
+    private java.util.Map<String, Long> defaultStagePassCounts(ScanPipelineStats pipelineStats) {
+        if (pipelineStats == null) {
+            return java.util.Map.of(
+                    "trend", 0L,
+                    "volume", 0L,
+                    "breakout", 0L,
+                    "rsi", 0L,
+                    "adx", 0L,
+                    "atr", 0L,
+                    "momentum", 0L,
+                    "squeeze", 0L,
+                    "finalSignals", 0L
+            );
+        }
+        return java.util.Map.of(
+                "trend", (long) pipelineStats.getTrendPassed(),
+                "volume", (long) pipelineStats.getVolumePassed(),
+                "breakout", (long) pipelineStats.getBreakoutPassed(),
+                "rsi", (long) pipelineStats.getRsiPassed(),
+                "adx", (long) pipelineStats.getAdxPassed(),
+                "atr", (long) pipelineStats.getAtrPassed(),
+                "momentum", (long) pipelineStats.getMomentumPassed(),
+                "squeeze", (long) pipelineStats.getSqueezePassed(),
+                "finalSignals", (long) pipelineStats.getFinalSignals()
+        );
     }
 
     private void markRunFailed(ScannerRun run, String message) {
@@ -235,6 +266,9 @@ public class ScannerRunExecutor {
         }
         if (run.getFinalSignals() == null) {
             run.setFinalSignals(0);
+        }
+        if (run.getStagePassCounts() == null) {
+            run.setStagePassCounts(serialize(defaultStagePassCounts(null)));
         }
         if (run.getRejectedStage1ReasonCounts() == null) {
             run.setRejectedStage1ReasonCounts(serialize(java.util.Map.of()));
