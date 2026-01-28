@@ -97,6 +97,7 @@ public class GlobalExceptionHandler {
                 .path(request.getRequestURI())
                 .status(status.value())
                 .error(status.getReasonPhrase())
+                .errorCode(status.name())
                 .message(message)
                 .requestId(requestId)
                 .correlationId(correlationId)

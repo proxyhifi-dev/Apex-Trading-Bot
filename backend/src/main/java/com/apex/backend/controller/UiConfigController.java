@@ -4,10 +4,12 @@ import com.apex.backend.dto.UiConfigDTO;
 import com.apex.backend.dto.UiEndpointDTO;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
+import org.springframework.core.env.Environment;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,13 +20,19 @@ public class UiConfigController {
 
     private final String apiBaseUrl;
     private final String wsBaseUrl;
+    private final boolean devModeEnabled;
+    private final Environment environment;
 
     public UiConfigController(
         @Value("${apex.ui.api-base-url:http://127.0.0.1:8080/api}") String apiBaseUrl,
-        @Value("${apex.ui.ws-url:ws://127.0.0.1:8080/ws}") String wsBaseUrl
+        @Value("${apex.ui.ws-url:ws://127.0.0.1:8080/ws}") String wsBaseUrl,
+        @Value("${apex.dev.endpoints:false}") boolean devModeEnabled,
+        Environment environment
     ) {
         this.apiBaseUrl = apiBaseUrl;
         this.wsBaseUrl = wsBaseUrl;
+        this.devModeEnabled = devModeEnabled;
+        this.environment = environment;
     }
 
     @GetMapping("/config")
@@ -37,6 +45,9 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("POST").path("/api/auth/login").description("Login user").build(),
             UiEndpointDTO.builder().method("POST").path("/api/auth/refresh").description("Refresh access token").build(),
             UiEndpointDTO.builder().method("GET").path("/api/auth/fyers/status").description("Fyers connection status").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/dev/login").description("Dev-only login helper").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/dev/seed-watchlist?count=100").description("Dev-only seed watchlist").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/dev/seed-instruments?count=100").description("Dev-only seed instruments").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/profile").description("Profile snapshot").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/summary?type=PAPER|LIVE").description("Summary snapshot").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/capital").description("Capital info").build(),
@@ -120,12 +131,23 @@ public class UiConfigController {
         entityFields.put("EmergencyStopResponse", List.of("message", "closedTrades", "globalHalt", "timestamp"));
 
         UiConfigDTO config = UiConfigDTO.builder()
-            .apiBaseUrl(apiBaseUrl)
-            .wsBaseUrl(wsBaseUrl)
-            .endpoints(endpoints)
-            .entityFields(entityFields)
-            .build();
+                .apiBaseUrl(apiBaseUrl)
+                .wsBaseUrl(wsBaseUrl)
+                .devMode(devModeEnabled || isDevProfile())
+                .serverTime(Instant.now())
+                .endpoints(endpoints)
+                .entityFields(entityFields)
+                .build();
 
         return ResponseEntity.ok(config);
+    }
+
+    private boolean isDevProfile() {
+        for (String profile : environment.getActiveProfiles()) {
+            if ("dev".equalsIgnoreCase(profile) || "local".equalsIgnoreCase(profile)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -8,6 +8,7 @@ import com.apex.backend.dto.ScannerRunStatusResponse;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.ScannerRunService;
+import com.apex.backend.service.ScannerRunSweeper;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 public class ScannerController {
 
     private final ScannerRunService scannerRunService;
+    private final ScannerRunSweeper scannerRunSweeper;
 
     @PostMapping("/run")
     @Operation(summary = "Run an on-demand scan")
@@ -71,6 +73,14 @@ public class ScannerController {
                                                            @PathVariable Long runId) {
         Long userId = requireUserId(principal);
         return ResponseEntity.ok(scannerRunService.cancel(userId, runId));
+    }
+
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh stuck scan runs")
+    public ResponseEntity<java.util.Map<String, Object>> refresh(@AuthenticationPrincipal UserPrincipal principal) {
+        requireUserId(principal);
+        int updated = scannerRunSweeper.sweepStuckRuns();
+        return ResponseEntity.ok(java.util.Map.of("updated", updated));
     }
 
     private Long requireUserId(UserPrincipal principal) {

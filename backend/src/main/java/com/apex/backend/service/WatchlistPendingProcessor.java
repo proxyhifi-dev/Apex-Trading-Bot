@@ -19,10 +19,15 @@ public class WatchlistPendingProcessor {
 
     @Scheduled(fixedDelayString = "${apex.watchlist.pending-interval-ms:120000}")
     @Transactional
-    public void processPendingItems() {
+    public void scheduledProcessPendingItems() {
+        processPendingItems();
+    }
+
+    @Transactional
+    public int processPendingItems() {
         List<WatchlistItem> pendingItems = watchlistItemRepository.findByStatus(WatchlistItem.Status.PENDING);
         if (pendingItems.isEmpty()) {
-            return;
+            return 0;
         }
         for (WatchlistItem item : pendingItems) {
             if (item.getSymbol() == null || item.getSymbol().isBlank()) {
@@ -36,5 +41,6 @@ public class WatchlistPendingProcessor {
             }
         }
         watchlistItemRepository.saveAll(pendingItems);
+        return pendingItems.size();
     }
 }

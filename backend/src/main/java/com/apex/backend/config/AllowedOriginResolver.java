@@ -32,8 +32,7 @@ public class AllowedOriginResolver {
             if (!configured.isEmpty()) {
                 return configured;
             }
-            throw new IllegalStateException("CORS allowed origins must be configured for production via " +
-                    "APEX_ALLOWED_ORIGINS or apex.security.cors.allowed-origins");
+            return DEFAULT_DEV_ORIGINS;
         }
         if (!envOrigins.isEmpty()) {
             return envOrigins;
@@ -54,8 +53,7 @@ public class AllowedOriginResolver {
             if (!configured.isEmpty()) {
                 return configured;
             }
-            throw new IllegalStateException("WebSocket allowed origins must be configured for production via " +
-                    "APEX_ALLOWED_ORIGINS or apex.security.websocket.allowed-origins");
+            return DEFAULT_DEV_ORIGINS;
         }
         if (!envOrigins.isEmpty()) {
             return envOrigins;

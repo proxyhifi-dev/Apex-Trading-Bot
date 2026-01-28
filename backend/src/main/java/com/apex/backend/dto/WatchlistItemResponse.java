@@ -14,4 +14,6 @@ import java.time.Instant;
 public class WatchlistItemResponse {
     private String symbol;
     private Instant addedAt;
+    private String status;
+    private String failureReason;
 }

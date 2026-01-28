@@ -6,8 +6,12 @@ import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.User;
 import com.apex.backend.security.JwtTokenProvider;
 import com.apex.backend.security.UserPrincipal;
+import com.apex.backend.service.InstrumentCacheService;
 import com.apex.backend.service.WatchlistService;
 import com.apex.backend.repository.UserRepository;
+import com.apex.backend.repository.InstrumentRepository;
+import com.apex.backend.model.Instrument;
+import com.apex.backend.model.InstrumentDefinition;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/dev")
@@ -32,6 +37,8 @@ public class DevController {
     private final JwtTokenProvider jwtTokenProvider;
     private final UserRepository userRepository;
     private final WatchlistService watchlistService;
+    private final InstrumentCacheService instrumentCacheService;
+    private final InstrumentRepository instrumentRepository;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody DevLoginRequest request) {
@@ -71,13 +78,60 @@ public class DevController {
         if (count <= 0 || count > WatchlistService.MAX_SYMBOLS) {
             throw new BadRequestException("count must be between 1 and " + WatchlistService.MAX_SYMBOLS);
         }
+        if (watchlistService.hasDefaultWatchlistItems(principal.getUserId())) {
+            return ResponseEntity.ok(Map.of(
+                    "seeded", false,
+                    "symbolsSeeded", 0
+            ));
+        }
         List<String> symbols = IntStream.rangeClosed(1, count)
                 .mapToObj(i -> String.format("NSE:DEV%03d", i))
                 .toList();
         watchlistService.replaceSymbols(principal.getUserId(), symbols);
         return ResponseEntity.ok(Map.of(
+                "seeded", true,
                 "count", symbols.size(),
                 "symbolsSeeded", symbols.size()
+        ));
+    }
+
+    @PostMapping("/seed-instruments")
+    public ResponseEntity<Map<String, Object>> seedInstruments(@AuthenticationPrincipal UserPrincipal principal,
+                                                               @RequestParam(defaultValue = "100") int count) {
+        if (principal == null || principal.getUserId() == null) {
+            throw new UnauthorizedException("Missing authentication");
+        }
+        if (count <= 0 || count > 1000) {
+            throw new BadRequestException("count must be between 1 and 1000");
+        }
+        List<InstrumentDefinition> definitions = instrumentCacheService.listDefinitions(count);
+        if (definitions.isEmpty()) {
+            throw new BadRequestException("No instrument definitions available to seed");
+        }
+
+        List<Instrument> toInsert = definitions.stream()
+                .filter(def -> def.getSymbol() != null && !def.getSymbol().isBlank())
+                .filter(def -> instrumentRepository.findBySymbolIgnoreCase(def.getSymbol()).isEmpty())
+                .map(def -> Instrument.builder()
+                        .symbol(def.getSymbol())
+                        .tradingSymbol(def.getSymbol())
+                        .name(def.getName())
+                        .exchange(def.getExchange())
+                        .segment(def.getSegment())
+                        .tickSize(def.getTickSize())
+                        .lotSize(def.getLotSize())
+                        .isin(def.getIsin())
+                        .build())
+                .collect(Collectors.toList());
+
+        if (!toInsert.isEmpty()) {
+            instrumentRepository.saveAll(toInsert);
+        }
+        return ResponseEntity.ok(Map.of(
+                "seeded", !toInsert.isEmpty(),
+                "requested", count,
+                "inserted", toInsert.size(),
+                "existing", instrumentRepository.count()
         ));
     }
 

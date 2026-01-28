@@ -42,9 +42,8 @@ public class WatchlistService {
 
     public Watchlist loadDefaultWithItems(Long userId) {
         Watchlist watchlist = getDefaultWatchlist(userId);
-        List<WatchlistItem> items = watchlistItemRepository.findByWatchlistIdAndStatusOrderByCreatedAtAsc(
-                watchlist.getId(),
-                WatchlistItem.Status.ACTIVE
+        List<WatchlistItem> items = watchlistItemRepository.findByWatchlistIdOrderByCreatedAtAsc(
+                watchlist.getId()
         );
         watchlist.setItems(items);
         return watchlist;
@@ -171,6 +170,11 @@ public class WatchlistService {
             return true;
         }
         return watchlistStockRepository.findActiveSymbolsByStrategyId(defaultStrategyId).isEmpty();
+    }
+
+    public boolean hasDefaultWatchlistItems(Long userId) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        return watchlistItemRepository.countByWatchlistId(watchlist.getId()) > 0;
     }
 
     List<String> normalizeSymbols(List<String> symbols) {

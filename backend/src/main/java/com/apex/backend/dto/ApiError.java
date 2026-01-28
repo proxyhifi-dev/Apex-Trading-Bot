@@ -18,6 +18,7 @@ public class ApiError {
     private String path;
     private int status;
     private String error;
+    private String errorCode;
     private String message;
     private String requestId;
     private String correlationId;

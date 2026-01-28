@@ -25,7 +25,12 @@ public class ScannerRunSweeper {
 
     @Scheduled(fixedDelayString = "${apex.scanner.sweeper-interval-ms:120000}")
     @Transactional
-    public void sweepStuckRuns() {
+    public void scheduledSweepStuckRuns() {
+        sweepStuckRuns();
+    }
+
+    @Transactional
+    public int sweepStuckRuns() {
         Instant now = Instant.now();
         List<ScannerRun> pendingRuns = scannerRunRepository.findByStatusAndCreatedAtBefore(
                 ScannerRun.Status.PENDING,
@@ -38,6 +43,7 @@ public class ScannerRunSweeper {
 
         pendingRuns.forEach(run -> markFailed(run, "stuck run cleanup"));
         runningRuns.forEach(run -> markFailed(run, "stuck run cleanup"));
+        return pendingRuns.size() + runningRuns.size();
     }
 
     private void markFailed(ScannerRun run, String reason) {

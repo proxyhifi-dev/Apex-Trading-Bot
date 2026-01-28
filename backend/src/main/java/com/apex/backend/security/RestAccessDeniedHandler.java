@@ -30,6 +30,7 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
                 .path(request.getRequestURI())
                 .status(HttpServletResponse.SC_FORBIDDEN)
                 .error("FORBIDDEN")
+                .errorCode("FORBIDDEN")
                 .message("Access denied")
                 .requestId(MDC.get("requestId"))
                 .correlationId(MDC.get("correlationId"))
