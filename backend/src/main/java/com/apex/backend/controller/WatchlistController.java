@@ -7,6 +7,7 @@ import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.model.Watchlist;
 import com.apex.backend.model.WatchlistItem;
 import com.apex.backend.security.UserPrincipal;
+import com.apex.backend.service.WatchlistPendingProcessor;
 import com.apex.backend.service.WatchlistService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.PutMapping;
 
 import java.util.List;
+import java.util.Map;
 
 @Slf4j
 @RestController
@@ -37,6 +39,7 @@ import java.util.List;
 public class WatchlistController {
 
     private final WatchlistService watchlistService;
+    private final WatchlistPendingProcessor watchlistPendingProcessor;
 
     @GetMapping
     @Operation(summary = "Get the default watchlist")
@@ -78,6 +81,14 @@ public class WatchlistController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/refresh")
+    @Operation(summary = "Refresh pending watchlist items")
+    public ResponseEntity<Map<String, Object>> refresh(@AuthenticationPrincipal UserPrincipal principal) {
+        requireUserId(principal);
+        int updated = watchlistPendingProcessor.processPendingItems();
+        return ResponseEntity.ok(Map.of("updated", updated));
+    }
+
     private Long requireUserId(UserPrincipal principal) {
         if (principal == null || principal.getUserId() == null) {
             throw new UnauthorizedException("Missing authentication");
@@ -105,6 +116,8 @@ public class WatchlistController {
         return WatchlistItemResponse.builder()
                 .symbol(item.getSymbol())
                 .addedAt(item.getCreatedAt())
+                .status(item.getStatus() != null ? item.getStatus().name() : null)
+                .failureReason(item.getFailureReason())
                 .build();
     }
 }

@@ -75,6 +75,17 @@ public class InstrumentCacheService {
                 .collect(Collectors.toList());
     }
 
+    public List<InstrumentDefinition> listDefinitions(int limit) {
+        return cache.values().stream()
+                .sorted((left, right) -> {
+                    String l = left.getSymbol() == null ? "" : left.getSymbol();
+                    String r = right.getSymbol() == null ? "" : right.getSymbol();
+                    return l.compareToIgnoreCase(r);
+                })
+                .limit(limit)
+                .toList();
+    }
+
     public InstrumentDTO toDto(InstrumentDefinition instrument) {
         return InstrumentDTO.builder()
                 .symbol(instrument.getSymbol())

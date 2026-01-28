@@ -14,6 +14,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.io.IOException;
+import java.time.Duration;
 
 @Slf4j
 @Service
@@ -29,6 +31,18 @@ public class FyersAuthService {
     @Value("${fyers.redirect-uri:}")
     private String redirectUri;
 
+    @Value("${fyers.api.http.connect-timeout-seconds:5}")
+    private int connectTimeoutSeconds;
+
+    @Value("${fyers.api.http.read-timeout-seconds:10}")
+    private int readTimeoutSeconds;
+
+    @Value("${fyers.api.http.write-timeout-seconds:10}")
+    private int writeTimeoutSeconds;
+
+    @Value("${fyers.api.http.max-retries:2}")
+    private int maxRetries;
+
     private static final String AUTH_CODE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode";
     private static final String VALIDATE_URL = "https://api-t1.fyers.in/api/v3/validate-authcode";
     private static final String PROFILE_URL = "https://api-t1.fyers.in/api/v3/profile";
@@ -36,12 +50,19 @@ public class FyersAuthService {
     @Value("${fyers.api.refresh-url:https://api-t1.fyers.in/api/v3/refresh-token}")
     private String refreshUrl;
 
-    private final OkHttpClient httpClient = new OkHttpClient();
+    private OkHttpClient httpClient;
     private final Gson gson = new Gson();
     private final UserRepository userRepository;
 
     @PostConstruct
     void validateConfig() {
+        this.httpClient = new OkHttpClient.Builder()
+                .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                .readTimeout(Duration.ofSeconds(readTimeoutSeconds))
+                .writeTimeout(Duration.ofSeconds(writeTimeoutSeconds))
+                .retryOnConnectionFailure(true)
+                .build();
+
         if (appId == null || appId.isBlank()) {
             log.warn("Missing config fyers.api.app-id (FYERS_API_APP_ID). Fyers endpoints will be unavailable.");
         }
@@ -53,7 +74,24 @@ public class FyersAuthService {
         }
     }
 
+    public void ensureAuthUrlConfig() {
+        if (appId == null || appId.isBlank()) {
+            throw new com.apex.backend.exception.BadRequestException("FYERS app-id is required");
+        }
+        if (redirectUri == null || redirectUri.isBlank()) {
+            throw new com.apex.backend.exception.BadRequestException("FYERS redirect URI is required");
+        }
+    }
+
+    private void ensureTokenExchangeConfig() {
+        ensureAuthUrlConfig();
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new com.apex.backend.exception.BadRequestException("FYERS secret key is required");
+        }
+    }
+
     public String generateAuthUrl(String state) {
+        ensureAuthUrlConfig();
         return UriComponentsBuilder.fromHttpUrl(AUTH_CODE_URL)
                 .queryParam("client_id", appId)
                 .queryParam("redirect_uri", redirectUri)
@@ -64,6 +102,7 @@ public class FyersAuthService {
     }
 
     public FyersTokens exchangeAuthCodeForToken(String authCode) throws Exception {
+        ensureTokenExchangeConfig();
         String appHash = generateAppHash();
 
         JsonObject requestBody = new JsonObject();
@@ -104,6 +143,7 @@ public class FyersAuthService {
     }
 
     public FyersTokens refreshAccessToken(String refreshToken) throws Exception {
+        ensureTokenExchangeConfig();
         if (refreshToken == null || refreshToken.isBlank()) {
             throw new Exception("Refresh token missing");
         }
@@ -143,7 +183,7 @@ public class FyersAuthService {
                 .get()
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (Response response = executeWithRetry(request, Math.max(1, maxRetries))) {
             String responseBody = response.body().string();
             if (!response.isSuccessful()) {
                 throw new Exception("Failed to get profile: " + responseBody);
@@ -202,6 +242,29 @@ public class FyersAuthService {
             hex.append(h);
         }
         return hex.toString();
+    }
+
+    private Response executeWithRetry(Request request, int attempts) throws IOException {
+        int remaining = Math.max(1, attempts);
+        IOException last = null;
+        while (remaining-- > 0) {
+            try {
+                return httpClient.newCall(request).execute();
+            } catch (IOException ex) {
+                last = ex;
+                if (remaining <= 0) {
+                    break;
+                }
+                log.warn("FYERS request failed, retrying: {}", ex.getMessage());
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Interrupted during retry", interrupted);
+                }
+            }
+        }
+        throw last;
     }
 
     public static class FyersProfile {

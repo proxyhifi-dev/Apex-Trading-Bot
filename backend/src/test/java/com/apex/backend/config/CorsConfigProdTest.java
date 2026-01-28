@@ -27,7 +27,11 @@ class CorsConfigProdTest {
     }
 
     @Test
-    void prodOriginsCannotBeEmpty() {
-        contextRunner.run(context -> assertThat(context).hasFailed());
+    void prodOriginsFallBackToDefaultsWhenMissing() {
+        contextRunner.run(context -> {
+            assertThat(context).hasNotFailed();
+            AllowedOriginResolver resolver = context.getBean(AllowedOriginResolver.class);
+            assertThat(resolver.resolveCorsAllowedOrigins()).contains("http://localhost:4200");
+        });
     }
 }

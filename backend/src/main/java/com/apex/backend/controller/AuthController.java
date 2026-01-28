@@ -46,33 +46,23 @@ public class AuthController {
 
     @GetMapping("/fyers/auth-url")
     public ResponseEntity<?> getFyersAuthUrl(@RequestHeader(value = "Authorization", required = false) String authHeader) {
-        try {
-            String state = "apex_" + System.currentTimeMillis();
-            
-            // If user is logged in, encode user ID in state for direct linking
-            if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                try {
-                    String jwt = authHeader.substring(7);
-                    Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
-                    state = "user_" + userId + "_" + System.currentTimeMillis();
-                    log.info("Generating Fyers auth URL for logged-in user: {}", userId);
-                } catch (Exception e) {
-                    log.warn("Invalid JWT token, generating anonymous auth URL");
-                }
+        String state = "apex_" + System.currentTimeMillis();
+
+        // If user is logged in, encode user ID in state for direct linking
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            try {
+                String jwt = authHeader.substring(7);
+                Long userId = jwtTokenProvider.getUserIdFromToken(jwt);
+                state = "user_" + userId + "_" + System.currentTimeMillis();
+                log.info("Generating Fyers auth URL for logged-in user: {}", userId);
+            } catch (Exception e) {
+                log.warn("Invalid JWT token, generating anonymous auth URL");
             }
-            
-            String url = fyersAuthService.generateAuthUrl(state);
-            log.info("Generated Fyers Auth URL with state: {}", state);
-            if (!url.contains("client_id=") || url.matches(".*client_id=(&|$).*")) {
-                return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                        .body(Map.of("error", "Generated FYERS authUrl is missing client_id. Check fyers.api.app-id config."));
-            }
-            return ResponseEntity.ok(Map.of("authUrl", url, "state", state));
-        } catch (Exception e) {
-            log.error("Failed to generate Fyers auth URL", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ErrorResponse("Failed to generate auth URL: " + e.getMessage()));
         }
+
+        String url = fyersAuthService.generateAuthUrl(state);
+        log.info("Generated Fyers Auth URL with state: {}", state);
+        return ResponseEntity.ok(Map.of("authUrl", url, "state", state));
     }
 
     @PostMapping("/fyers/callback")
