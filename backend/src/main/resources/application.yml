@@ -72,6 +72,8 @@ logging:
     console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [cid=%X{correlationId} oid=%X{orderId}] - %msg%n"
 
 apex:
+  dev:
+    enabled: ${APEX_DEV_ENABLED:false}
   scanner:
     enabled: true
     scheduler-enabled: false

@@ -12,22 +12,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest(properties = {
         "jwt.secret=01234567890123456789012345678901",
-        "fyers.api.app-id=",
-        "fyers.redirect-uri=",
-        "fyers.api.secret-key=",
         "APEX_ALLOWED_ORIGINS=https://example.com"
 })
 @AutoConfigureMockMvc
-class FyersAuthUrlControllerTest {
+class PaperPositionsUnauthorizedTest {
 
     @Autowired
     private MockMvc mockMvc;
 
     @Test
-    void missingFyersConfigReturnsBadRequest() throws Exception {
-        mockMvc.perform(get("/api/auth/fyers/auth-url"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("BAD_REQUEST"))
-                .andExpect(jsonPath("$.message").value("Missing FYERS config: FYERS_API_APP_ID, FYERS_REDIRECT_URI, FYERS_API_SECRET_KEY"));
+    void openPositionsWithoutAuthReturnsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/paper/positions/open"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.error").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.message").value("JWT missing/expired"))
+                .andExpect(jsonPath("$.path").value("/api/paper/positions/open"));
     }
 }

@@ -13,6 +13,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
@@ -66,6 +67,11 @@ public class GlobalExceptionHandler {
         return buildError(HttpStatus.CONFLICT, ex.getMessage(), List.of(), request, ex);
     }
 
+    @ExceptionHandler(FyersRateLimitException.class)
+    public ResponseEntity<ApiError> handleRateLimit(FyersRateLimitException ex, HttpServletRequest request) {
+        return buildError(HttpStatus.TOO_MANY_REQUESTS, "Rate limit exceeded", List.of(), request, ex);
+    }
+
     @ExceptionHandler(FyersCircuitOpenException.class)
     public ResponseEntity<ApiError> handleCircuitOpen(FyersCircuitOpenException ex, HttpServletRequest request) {
         return buildError(HttpStatus.SERVICE_UNAVAILABLE, "Broker circuit open", List.of(), request, ex);
@@ -74,6 +80,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler({RiskLimitExceededException.class, TradingException.class})
     public ResponseEntity<ApiError> handleUnprocessable(RuntimeException ex, HttpServletRequest request) {
         return buildError(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage(), List.of(), request, ex);
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiError> handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
+        HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
+        String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+        return buildError(status, message, List.of(), request, ex);
     }
 
     @ExceptionHandler(Exception.class)
@@ -90,14 +103,13 @@ public class GlobalExceptionHandler {
 
     private ResponseEntity<ApiError> buildError(HttpStatus status, String message, List<ApiErrorDetail> details,
                                                 HttpServletRequest request, Exception ex) {
-        String requestId = MDC.get("requestId");
-        String correlationId = MDC.get("correlationId");
+        String requestId = resolveId("requestId", "X-Request-Id", request);
+        String correlationId = resolveId("correlationId", "X-Correlation-Id", request);
         ApiError error = ApiError.builder()
                 .timestamp(Instant.now())
                 .path(request.getRequestURI())
                 .status(status.value())
-                .error(status.getReasonPhrase())
-                .errorCode(status.name())
+                .error(status.name())
                 .message(message)
                 .requestId(requestId)
                 .correlationId(correlationId)
@@ -105,5 +117,13 @@ public class GlobalExceptionHandler {
                 .build();
         log.warn("{} {} -> {} {}", request.getMethod(), request.getRequestURI(), status.value(), message, ex);
         return ResponseEntity.status(status).body(error);
+    }
+
+    private String resolveId(String mdcKey, String header, HttpServletRequest request) {
+        String value = MDC.get(mdcKey);
+        if (value == null || value.isBlank()) {
+            value = request.getHeader(header);
+        }
+        return value;
     }
 }

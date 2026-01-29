@@ -26,12 +26,13 @@ public class UiConfigController {
     public UiConfigController(
         @Value("${apex.ui.api-base-url:http://127.0.0.1:8080/api}") String apiBaseUrl,
         @Value("${apex.ui.ws-url:ws://127.0.0.1:8080/ws}") String wsBaseUrl,
-        @Value("${apex.dev.endpoints:false}") boolean devModeEnabled,
+        @Value("${apex.dev.enabled:false}") boolean devModeEnabled,
+        @Value("${apex.dev.endpoints:false}") boolean legacyDevEndpoints,
         Environment environment
     ) {
         this.apiBaseUrl = apiBaseUrl;
         this.wsBaseUrl = wsBaseUrl;
-        this.devModeEnabled = devModeEnabled;
+        this.devModeEnabled = devModeEnabled || legacyDevEndpoints;
         this.environment = environment;
     }
 
@@ -46,7 +47,7 @@ public class UiConfigController {
             UiEndpointDTO.builder().method("POST").path("/api/auth/refresh").description("Refresh access token").build(),
             UiEndpointDTO.builder().method("GET").path("/api/auth/fyers/status").description("Fyers connection status").build(),
             UiEndpointDTO.builder().method("POST").path("/api/dev/login").description("Dev-only login helper").build(),
-            UiEndpointDTO.builder().method("POST").path("/api/dev/seed-watchlist?count=100").description("Dev-only seed watchlist").build(),
+            UiEndpointDTO.builder().method("POST").path("/api/dev/seed-watchlist?count=100&universe=NIFTY100").description("Dev-only seed watchlist").build(),
             UiEndpointDTO.builder().method("POST").path("/api/dev/seed-instruments?count=100").description("Dev-only seed instruments").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/profile").description("Profile snapshot").build(),
             UiEndpointDTO.builder().method("GET").path("/api/account/summary?type=PAPER|LIVE").description("Summary snapshot").build(),

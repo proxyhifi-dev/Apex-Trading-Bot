@@ -41,4 +41,20 @@ public class RateLimitService {
                 .computeIfAbsent(key, ignored -> RateLimiter.of("trade-" + key, tradeConfig))
                 .acquirePermission();
     }
+
+    public RateLimitDecision allowScannerWithRetryAfter(String key) {
+        RateLimiter limiter = scannerLimiters
+                .computeIfAbsent(key, ignored -> RateLimiter.of("scanner-" + key, scannerConfig));
+        boolean allowed = limiter.acquirePermission();
+        return new RateLimitDecision(allowed, scannerConfig.getLimitRefreshPeriod().toSeconds());
+    }
+
+    public RateLimitDecision allowTradeWithRetryAfter(String key) {
+        RateLimiter limiter = tradeLimiters
+                .computeIfAbsent(key, ignored -> RateLimiter.of("trade-" + key, tradeConfig));
+        boolean allowed = limiter.acquirePermission();
+        return new RateLimitDecision(allowed, tradeConfig.getLimitRefreshPeriod().toSeconds());
+    }
+
+    public record RateLimitDecision(boolean allowed, long retryAfterSeconds) {}
 }

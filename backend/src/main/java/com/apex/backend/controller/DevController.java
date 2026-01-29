@@ -7,13 +7,13 @@ import com.apex.backend.model.User;
 import com.apex.backend.security.JwtTokenProvider;
 import com.apex.backend.security.UserPrincipal;
 import com.apex.backend.service.InstrumentCacheService;
+import com.apex.backend.service.UniverseService;
 import com.apex.backend.service.WatchlistService;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.repository.InstrumentRepository;
 import com.apex.backend.model.Instrument;
 import com.apex.backend.model.InstrumentDefinition;
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,16 +22,16 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.context.annotation.Conditional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.stream.IntStream;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/dev")
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "apex.dev.endpoints", havingValue = "true")
+@Conditional(com.apex.backend.config.DevEndpointCondition.class)
 public class DevController {
 
     private final JwtTokenProvider jwtTokenProvider;
@@ -39,6 +39,7 @@ public class DevController {
     private final WatchlistService watchlistService;
     private final InstrumentCacheService instrumentCacheService;
     private final InstrumentRepository instrumentRepository;
+    private final UniverseService universeService;
 
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(@RequestBody DevLoginRequest request) {
@@ -71,27 +72,22 @@ public class DevController {
 
     @PostMapping("/seed-watchlist")
     public ResponseEntity<Map<String, Object>> seedWatchlist(@AuthenticationPrincipal UserPrincipal principal,
-                                                             @RequestParam(defaultValue = "100") int count) {
+                                                             @RequestParam(defaultValue = "100") int count,
+                                                             @RequestParam(defaultValue = "NIFTY100") String universe) {
         if (principal == null || principal.getUserId() == null) {
             throw new UnauthorizedException("Missing authentication");
         }
         if (count <= 0 || count > WatchlistService.MAX_SYMBOLS) {
             throw new BadRequestException("count must be between 1 and " + WatchlistService.MAX_SYMBOLS);
         }
-        if (watchlistService.hasDefaultWatchlistItems(principal.getUserId())) {
-            return ResponseEntity.ok(Map.of(
-                    "seeded", false,
-                    "symbolsSeeded", 0
-            ));
-        }
-        List<String> symbols = IntStream.rangeClosed(1, count)
-                .mapToObj(i -> String.format("NSE:DEV%03d", i))
+        List<String> symbols = universeService.loadUniverse(universe).stream()
+                .limit(count)
                 .toList();
-        watchlistService.replaceSymbols(principal.getUserId(), symbols);
+        WatchlistService.SeedResult result = watchlistService.seedSymbols(principal.getUserId(), symbols);
         return ResponseEntity.ok(Map.of(
-                "seeded", true,
-                "count", symbols.size(),
-                "symbolsSeeded", symbols.size()
+                "added", result.added(),
+                "skipped", result.skipped(),
+                "total", result.total()
         ));
     }
 

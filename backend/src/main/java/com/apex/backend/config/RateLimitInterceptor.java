@@ -33,16 +33,18 @@ public class RateLimitInterceptor implements HandlerInterceptor {
             return true;
         }
         if (isScannerRequest(path, method)) {
-            return handleRateLimit(rateLimitService.allowScanner(resolveKey(request)), request, response);
+            return handleRateLimit(rateLimitService.allowScannerWithRetryAfter(resolveKey(request)), request, response);
         }
         if (isTradeRequest(path, method)) {
-            return handleRateLimit(rateLimitService.allowTrade(resolveKey(request)), request, response);
+            return handleRateLimit(rateLimitService.allowTradeWithRetryAfter(resolveKey(request)), request, response);
         }
         return true;
     }
 
-    private boolean handleRateLimit(boolean allowed, HttpServletRequest request, HttpServletResponse response) throws Exception {
-        if (allowed) {
+    private boolean handleRateLimit(RateLimitService.RateLimitDecision decision,
+                                    HttpServletRequest request,
+                                    HttpServletResponse response) throws Exception {
+        if (decision.allowed()) {
             return true;
         }
         ApiError error = ApiError.builder()
@@ -56,6 +58,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
                 .build();
         response.setStatus(429);
         response.setContentType("application/json");
+        response.setHeader("Retry-After", String.valueOf(decision.retryAfterSeconds()));
         objectMapper.writeValue(response.getOutputStream(), error);
         return false;
     }
