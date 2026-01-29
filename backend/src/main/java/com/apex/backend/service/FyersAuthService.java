@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.List;
 
 @Slf4j
 @Service
@@ -75,19 +76,25 @@ public class FyersAuthService {
     }
 
     public void ensureAuthUrlConfig() {
+        List<String> missing = new java.util.ArrayList<>();
         if (appId == null || appId.isBlank()) {
-            throw new com.apex.backend.exception.BadRequestException("FYERS app-id is required");
+            missing.add("FYERS_API_APP_ID");
         }
         if (redirectUri == null || redirectUri.isBlank()) {
-            throw new com.apex.backend.exception.BadRequestException("FYERS redirect URI is required");
+            missing.add("FYERS_REDIRECT_URI");
+        }
+        if (secretKey == null || secretKey.isBlank()) {
+            missing.add("FYERS_API_SECRET_KEY");
+        }
+        if (!missing.isEmpty()) {
+            log.warn("Missing FYERS config keys: {}", String.join(", ", missing));
+            throw new com.apex.backend.exception.BadRequestException(
+                    "Missing FYERS config: " + String.join(", ", missing));
         }
     }
 
     private void ensureTokenExchangeConfig() {
         ensureAuthUrlConfig();
-        if (secretKey == null || secretKey.isBlank()) {
-            throw new com.apex.backend.exception.BadRequestException("FYERS secret key is required");
-        }
     }
 
     public String generateAuthUrl(String state) {

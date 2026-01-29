@@ -1,6 +1,5 @@
 package com.apex.backend.controller;
 
-import com.apex.backend.dto.ApiErrorResponse;
 import com.apex.backend.dto.SignalDTO;
 import com.apex.backend.exception.UnauthorizedException;
 import com.apex.backend.repository.StockScreeningResultRepository;
@@ -11,7 +10,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,43 +35,31 @@ public class SignalsController {
     @PostMapping("/scan-now")
     @Operation(summary = "Trigger a scan to generate signals")
     public ResponseEntity<?> scanNow(@AuthenticationPrincipal UserPrincipal principal) {
-        try {
-            Long userId = requireUserId(principal);
-            if (watchlistService.isWatchlistEmpty(userId)) {
-                return ResponseEntity.ok(new MessageResponse("Watchlist empty"));
-            }
-            new Thread(() -> botScheduler.forceScan(userId)).start();
-            return ResponseEntity.ok(new MessageResponse("Scan triggered"));
-        } catch (Exception e) {
-            log.error("Failed to trigger scan", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiErrorResponse("Failed to trigger scan", e.getMessage()));
+        Long userId = requireUserId(principal);
+        if (watchlistService.isWatchlistEmpty(userId)) {
+            return ResponseEntity.ok(new MessageResponse("Watchlist empty"));
         }
+        new Thread(() -> botScheduler.forceScan(userId)).start();
+        return ResponseEntity.ok(new MessageResponse("Scan triggered"));
     }
 
     @GetMapping("/recent")
     @Operation(summary = "Get recent signals for the authenticated user")
     public ResponseEntity<?> recentSignals(@AuthenticationPrincipal UserPrincipal principal) {
-        try {
-            Long userId = requireUserId(principal);
-            List<SignalDTO> signals = screeningRepository.findTop50ByUserIdOrderByScanTimeDesc(userId)
-                    .stream()
-                    .map(result -> SignalDTO.builder()
-                            .id(result.getId())
-                            .symbol(result.getSymbol())
-                            .signalScore(result.getSignalScore())
-                            .grade(result.getGrade())
-                            .entryPrice(resolveEntryPrice(result.getEntryPrice(), result.getCurrentPrice()))
-                            .scanTime(result.getScanTime())
-                            .hasEntrySignal(true)
-                            .build())
-                    .collect(Collectors.toList());
-            return ResponseEntity.ok(signals);
-        } catch (Exception e) {
-            log.error("Failed to fetch recent signals", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body(new ApiErrorResponse("Failed to fetch recent signals", e.getMessage()));
-        }
+        Long userId = requireUserId(principal);
+        List<SignalDTO> signals = screeningRepository.findTop50ByUserIdOrderByScanTimeDesc(userId)
+                .stream()
+                .map(result -> SignalDTO.builder()
+                        .id(result.getId())
+                        .symbol(result.getSymbol())
+                        .signalScore(result.getSignalScore())
+                        .grade(result.getGrade())
+                        .entryPrice(resolveEntryPrice(result.getEntryPrice(), result.getCurrentPrice()))
+                        .scanTime(result.getScanTime())
+                        .hasEntrySignal(true)
+                        .build())
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(signals);
     }
 
     private Long requireUserId(UserPrincipal principal) {

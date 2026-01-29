@@ -177,6 +177,34 @@ public class WatchlistService {
         return watchlistItemRepository.countByWatchlistId(watchlist.getId()) > 0;
     }
 
+    public SeedResult seedSymbols(Long userId, List<String> symbols) {
+        Watchlist watchlist = getDefaultWatchlist(userId);
+        List<String> normalized = normalizeSymbols(symbols);
+        if (normalized.isEmpty()) {
+            throw new BadRequestException("Symbols are required");
+        }
+        List<WatchlistItem> existingItems = watchlistItemRepository
+                .findByWatchlistIdAndStatusOrderByCreatedAtAsc(watchlist.getId(), WatchlistItem.Status.ACTIVE);
+        java.util.Set<String> existingSymbols = existingItems.stream()
+                .map(WatchlistItem::getSymbol)
+                .collect(java.util.stream.Collectors.toSet());
+        List<String> toAdd = normalized.stream()
+                .filter(symbol -> !existingSymbols.contains(symbol))
+                .toList();
+        if (existingSymbols.size() + toAdd.size() > MAX_SYMBOLS) {
+            throw new BadRequestException("Watchlist can contain at most " + MAX_SYMBOLS + " symbols");
+        }
+        toAdd.forEach(symbol -> watchlistItemRepository.save(WatchlistItem.builder()
+                .watchlist(watchlist)
+                .symbol(symbol)
+                .status(WatchlistItem.Status.ACTIVE)
+                .build()));
+        int added = toAdd.size();
+        int total = normalized.size();
+        int skipped = total - added;
+        return new SeedResult(added, skipped, total);
+    }
+
     List<String> normalizeSymbols(List<String> symbols) {
         if (symbols == null) {
             return List.of();
@@ -207,4 +235,6 @@ public class WatchlistService {
             throw new BadRequestException("Symbols cannot exceed " + MAX_SYMBOLS);
         }
     }
+
+    public record SeedResult(int added, int skipped, int total) {}
 }

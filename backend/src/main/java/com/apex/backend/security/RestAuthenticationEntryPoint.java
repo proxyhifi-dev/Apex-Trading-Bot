@@ -30,7 +30,6 @@ public class RestAuthenticationEntryPoint implements AuthenticationEntryPoint {
                 .path(request.getRequestURI())
                 .status(HttpServletResponse.SC_UNAUTHORIZED)
                 .error("UNAUTHORIZED")
-                .errorCode("UNAUTHORIZED")
                 .message("JWT missing/expired")
                 .requestId(MDC.get("requestId"))
                 .correlationId(MDC.get("correlationId"))
