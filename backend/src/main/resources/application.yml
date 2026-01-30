@@ -350,12 +350,23 @@ data-quality:
 
 reconcile:
   enabled: true
-  interval-seconds: 300
+  interval-ms: 60000
   safe-mode-on-mismatch: true
   qty-tolerance: 1
   price-tolerance-pct: 0.25
   auto-cancel-pending-on-mismatch: true
   auto-flatten-on-mismatch: false
+
+exit-retry:
+  poll-interval-ms: 15000
+  retry-delay-seconds: 30
+  max-attempts: 10
+
+apex:
+  risk:
+    heat-max-pct: 0.06
+    enforce-enabled: true
+    enforce-interval-ms: 60000
 
 crisis:
   enabled: true

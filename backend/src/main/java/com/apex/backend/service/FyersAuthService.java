@@ -5,6 +5,7 @@ import com.google.gson.JsonObject;
 import jakarta.annotation.PostConstruct;
 import com.apex.backend.model.User;
 import com.apex.backend.repository.UserRepository;
+import com.apex.backend.service.secrets.SecretsManagerService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.*;
@@ -54,9 +55,15 @@ public class FyersAuthService {
     private OkHttpClient httpClient;
     private final Gson gson = new Gson();
     private final UserRepository userRepository;
+    private final AsyncDelayService asyncDelayService;
+    private final SecretsManagerService secretsManagerService;
 
     @PostConstruct
     void validateConfig() {
+        appId = secretsManagerService.resolve("FYERS_API_APP_ID", appId);
+        secretKey = secretsManagerService.resolve("FYERS_API_SECRET_KEY", secretKey);
+        redirectUri = secretsManagerService.resolve("FYERS_REDIRECT_URI", redirectUri);
+
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
                 .readTimeout(Duration.ofSeconds(readTimeoutSeconds))
@@ -263,12 +270,7 @@ public class FyersAuthService {
                     break;
                 }
                 log.warn("FYERS request failed, retrying: {}", ex.getMessage());
-                try {
-                    Thread.sleep(200);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw new IOException("Interrupted during retry", interrupted);
-                }
+                asyncDelayService.awaitMillis(200);
             }
         }
         throw last;

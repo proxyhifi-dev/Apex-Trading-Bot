@@ -26,8 +26,29 @@ public class RiskGatekeeper {
     private final AdvancedTradingProperties advancedTradingProperties;
     private final TradeCooldownService tradeCooldownService;
     private final CrisisModeService crisisModeService;
+    private final SystemGuardService systemGuardService;
 
     public RiskGateDecision evaluate(RiskGateRequest request) {
+        if (!request.exitOrder() && systemGuardService.isEmergencyModeActive()) {
+            return RiskGateDecision.reject(
+                    RiskRejectCode.EMERGENCY_MODE,
+                    "System emergency active",
+                    null,
+                    null,
+                    request.symbol(),
+                    null
+            );
+        }
+        if (!request.exitOrder() && systemGuardService.getState().isSafeMode()) {
+            return RiskGateDecision.reject(
+                    RiskRejectCode.SAFE_MODE,
+                    "Safe mode active",
+                    null,
+                    null,
+                    request.symbol(),
+                    null
+            );
+        }
         if (crisisModeService.isCrisisModeActive()) {
             return RiskGateDecision.reject(
                 RiskRejectCode.CRISIS_MODE,
@@ -219,6 +240,8 @@ public class RiskGatekeeper {
         DATA_GAP,                // Missing candles/gaps in data
         CORP_ACTION_BLACKOUT,    // Corporate action blackout
         MARKET_CLOSED,           // Market is closed
-        MANUAL_HALTED            // Trading manually halted
+        MANUAL_HALTED,           // Trading manually halted
+        SAFE_MODE,
+        EMERGENCY_MODE
     }
 }

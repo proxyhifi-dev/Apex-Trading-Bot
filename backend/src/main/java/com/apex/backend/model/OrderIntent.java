@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -15,6 +16,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Slf4j
 public class OrderIntent {
 
     @Id
@@ -87,8 +89,18 @@ public class OrderIntent {
                     orderState, newState, clientOrderId)
             );
         }
+        if (orderState == newState) {
+            return;
+        }
+        OrderState previous = this.orderState;
         this.orderState = newState;
         this.status = newState.name(); // Keep legacy field in sync
         this.updatedAt = LocalDateTime.now();
+        log.info("Order state transition requestId={} correlationId={} tradeId={} from={} to={}",
+                clientOrderId,
+                correlationId,
+                null,
+                previous,
+                newState);
     }
 }

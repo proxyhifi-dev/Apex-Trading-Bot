@@ -22,11 +22,11 @@ public class StopLossEnforcementService {
 
     private final TradeRepository tradeRepository;
     private final ExecutionEngine executionEngine;
-    private final FyersAuthService fyersAuthService;
     private final SystemGuardService systemGuardService;
     private final AlertService alertService;
     private final MetricsService metricsService;
     private final AuditEventService auditEventService;
+    private final ExitRetryService exitRetryService;
 
     @Value("${execution.stop-ack-timeout-seconds:5}")
     private int stopAckTimeoutSeconds;
@@ -56,9 +56,7 @@ public class StopLossEnforcementService {
         trade.transitionTo(PositionState.ERROR);
         tradeRepository.save(trade);
 
-        if (!trade.isPaperTrade()) {
-            flattenPosition(trade);
-        }
+        flattenPosition(trade);
 
         systemGuardService.setSafeMode(true, "STOP_LOSS_ACK_TIMEOUT: " + trade.getSymbol(), Instant.now());
         alertService.sendAlert("STOP_LOSS_ENFORCEMENT", "Stop-loss ack timeout for " + trade.getSymbol());
@@ -66,7 +64,6 @@ public class StopLossEnforcementService {
 
     private void flattenPosition(Trade trade) {
         try {
-            String token = fyersAuthService.getFyersToken(trade.getUserId());
             ExecutionEngine.ExecutionRequestPayload exitRequest = new ExecutionEngine.ExecutionRequestPayload(
                     trade.getUserId(),
                     trade.getSymbol(),
@@ -89,6 +86,7 @@ public class StopLossEnforcementService {
             metricsService.recordEmergencyFlatten();
         } catch (Exception e) {
             log.error("Failed to flatten position for trade {}: {}", trade.getId(), e.getMessage());
+            exitRetryService.enqueueExitAndAttempt(trade, "STOP_LOSS_ENFORCE");
         }
     }
 }

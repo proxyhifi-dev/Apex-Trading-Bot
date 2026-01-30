@@ -301,6 +301,9 @@ public class TradeExecutionService {
     }
 
     private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
+        if (systemGuardService.isEmergencyModeActive()) {
+            return new GuardBlock(true, "GUARD", "EMERGENCY_MODE", "SYSTEM EMERGENCY active");
+        }
         if (systemGuardService.getState().isSafeMode()) {
             return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
         }

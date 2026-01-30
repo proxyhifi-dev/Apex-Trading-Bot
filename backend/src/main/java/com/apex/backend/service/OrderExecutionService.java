@@ -37,6 +37,7 @@ public class OrderExecutionService {
     private final OrderAuditRepository orderAuditRepository;
     private final IdempotencyService idempotencyService;
     private final MetricsService metricsService;
+    private final SystemGuardService systemGuardService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -101,6 +102,9 @@ public class OrderExecutionService {
     public OrderResponse placeOrder(Long userId, PlaceOrderRequest request) {
         String idempotencyKey = request.getClientOrderId();
         return idempotencyService.execute(userId, idempotencyKey, request, OrderResponse.class, () -> {
+            if (systemGuardService.isEmergencyModeActive() || systemGuardService.getState().isSafeMode()) {
+                throw new ConflictException("Trading halted by system guard");
+            }
             OrderValidationResult validation = validate(userId, request);
             if (!validation.isValid()) {
                 throw new BadRequestException(String.join("; ", validation.getErrors()));

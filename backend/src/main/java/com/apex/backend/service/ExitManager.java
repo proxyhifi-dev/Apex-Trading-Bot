@@ -10,7 +10,6 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -21,13 +20,12 @@ import java.util.Map;
 public class ExitManager {
 
     private final TradeRepository tradeRepository;
-    private final PaperTradingService paperTradingService;
     private final FyersService fyersService;
     private final StrategyProperties strategyProperties;
-    private final RiskManagementEngine riskManagementEngine;
     private final ExitPriorityEngine exitPriorityEngine;
     private final ExecutionEngine executionEngine;
-    private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
+    private final TradeCloseService tradeCloseService;
+    private final ExitRetryService exitRetryService;
 
     public long getOpenTradeCount(Long userId) {
         try {
@@ -55,7 +53,7 @@ public class ExitManager {
             log.info("Closing trade {} by target at price {}", tradeId, exitPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
             if (trade != null) {
-                finalizeTrade(trade, exitPrice, Trade.ExitReason.TARGET, "TARGET");
+                tradeCloseService.finalizeTrade(trade, exitPrice, Trade.ExitReason.TARGET, "TARGET");
             }
         } catch (Exception e) {
             log.error("Failed to close trade by target", e);
@@ -67,7 +65,7 @@ public class ExitManager {
             log.info("Closing trade {} by stop loss at price {}", tradeId, stopLossPrice);
             Trade trade = tradeRepository.findById(tradeId).orElse(null);
             if (trade != null) {
-                finalizeTrade(trade, stopLossPrice, Trade.ExitReason.STOP_LOSS, "MANUAL_SL");
+                tradeCloseService.finalizeTrade(trade, stopLossPrice, Trade.ExitReason.STOP_LOSS, "MANUAL_SL");
             }
         } catch (Exception e) {
             log.error("Failed to close trade by stop loss", e);
@@ -125,7 +123,7 @@ public class ExitManager {
                 ExitPriorityEngine.ExitDecision decision = exitPriorityEngine.evaluate(trade, currentPrice, barsHeld, false);
                 if (decision.shouldExit()) {
                     executeExitOrder(trade, currentPrice).ifPresent(fillPrice ->
-                            finalizeTrade(trade, fillPrice, decision.reason(), decision.reasonDetail())
+                            tradeCloseService.finalizeTrade(trade, fillPrice, decision.reason(), decision.reasonDetail())
                     );
                     continue;
                 }
@@ -250,6 +248,7 @@ public class ExitManager {
     private java.util.Optional<BigDecimal> executeExitOrder(Trade trade, BigDecimal referencePrice) {
         String side = trade.getTradeType() == Trade.TradeType.LONG ? "SELL" : "BUY";
         try {
+            tradeCloseService.markClosing(trade, "EXIT_SIGNAL");
             ExecutionEngine.ExecutionResult result = executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
                     trade.getUserId(),
                     trade.getSymbol(),
@@ -271,32 +270,13 @@ public class ExitManager {
                 return java.util.Optional.of(fillPrice);
             }
             log.warn("Exit order not filled for trade {}: {}", trade.getId(), result.status());
+            exitRetryService.enqueueExit(trade, "EXIT_NOT_FILLED");
             return java.util.Optional.empty();
         } catch (Exception e) {
             log.error("Failed to place exit order for trade {}", trade.getId(), e);
+            exitRetryService.enqueueExit(trade, "EXIT_EXCEPTION");
             return java.util.Optional.empty();
         }
-    }
-
-    private void finalizeTrade(Trade trade, BigDecimal exitPrice, Trade.ExitReason reason, String detail) {
-        trade.setExitPrice(exitPrice);
-        trade.setExitTime(LocalDateTime.now());
-        trade.setStatus(Trade.TradeStatus.CLOSED);
-        trade.setExitReason(reason);
-        trade.setExitReasonDetail(detail);
-        BigDecimal pnl = MoneyUtils.multiply(exitPrice.subtract(trade.getEntryPrice()), trade.getQuantity());
-        if (trade.getTradeType() == Trade.TradeType.SHORT) {
-            pnl = pnl.negate();
-        }
-        trade.setRealizedPnl(MoneyUtils.scale(pnl));
-        tradeRepository.save(trade);
-        riskManagementEngine.removeOpenPosition(trade.getSymbol());
-        riskManagementEngine.updateDailyLoss(pnl.doubleValue());
-        tradingGuardService.onTradeClosed(trade.getUserId(), trade.getRealizedPnl(), Instant.now());
-        if (trade.isPaperTrade()) {
-            paperTradingService.recordExit(trade.getUserId(), trade);
-        }
-        log.info("Trade {} closed successfully. P&L: {}", trade.getId(), pnl);
     }
 
     private void updateRMetrics(Trade trade, BigDecimal currentPrice) {

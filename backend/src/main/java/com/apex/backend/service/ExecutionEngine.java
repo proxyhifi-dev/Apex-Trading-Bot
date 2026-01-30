@@ -36,6 +36,7 @@ public class ExecutionEngine {
     private final RiskGatekeeper riskGatekeeper;
     private final ExecutionProperties executionProperties;
     private final BroadcastService broadcastService;
+    private final AsyncDelayService asyncDelayService;
 
     @Value("${execution.poll.max-attempts:12}")
     private int maxPollAttempts;
@@ -50,6 +51,7 @@ public class ExecutionEngine {
                 : request.clientOrderId();
         String correlationId = UUID.randomUUID().toString();
         org.slf4j.MDC.put("orderId", clientOrderId);
+        org.slf4j.MDC.put("requestId", clientOrderId);
         org.slf4j.MDC.put("correlationId", correlationId);
         try {
             Optional<OrderIntent> existing = orderIntentRepository.findByClientOrderId(clientOrderId);
@@ -179,6 +181,8 @@ public class ExecutionEngine {
             return result;
         } finally {
             org.slf4j.MDC.remove("orderId");
+            org.slf4j.MDC.remove("requestId");
+            org.slf4j.MDC.remove("correlationId");
         }
     }
 
@@ -362,11 +366,7 @@ public class ExecutionEngine {
     }
 
     private void sleep() {
-        try {
-            Thread.sleep(pollDelayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        asyncDelayService.awaitMillis(pollDelayMs);
     }
 
     public record ExecutionRequestPayload(
