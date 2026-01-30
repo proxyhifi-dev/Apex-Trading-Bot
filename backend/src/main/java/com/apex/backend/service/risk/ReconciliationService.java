@@ -385,7 +385,7 @@ public class ReconciliationService {
                         "RECON-UNKNOWN-FLAT-" + brokerPosition.symbol(),
                         0.0,
                         List.of(),
-                        brokerPosition.averagePrice() != null ? brokerPosition.averagePrice().doubleValue() : 0.0,
+                        brokerPosition.avgPrice() != null ? brokerPosition.avgPrice().doubleValue() : 0.0,
                         null,
                         true,
                         null,
