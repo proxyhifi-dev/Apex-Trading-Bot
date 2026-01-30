@@ -6,6 +6,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -99,7 +100,7 @@ public class OrderIntent {
         log.info("Order state transition requestId={} correlationId={} tradeId={} from={} to={}",
                 clientOrderId,
                 correlationId,
-                null,
+                MDC.get("tradeId"),
                 previous,
                 newState);
     }

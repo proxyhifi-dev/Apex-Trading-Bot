@@ -105,7 +105,9 @@ public class ExitRetryService {
                     List.of(),
                     trade.getEntryPrice().doubleValue(),
                     trade.getCurrentStopLoss() != null ? trade.getCurrentStopLoss().doubleValue() : null,
-                    true
+                    true,
+                    trade.getId(),
+                    null
             ));
             if (result.status() == ExecutionEngine.ExecutionStatus.FILLED) {
                 tradeCloseService.finalizeTrade(trade,

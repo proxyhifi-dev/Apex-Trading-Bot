@@ -203,7 +203,9 @@ public class TradeExecutionService {
                 candles,
                 entryPrice.doubleValue(),
                 stopLoss.doubleValue(),
-                false
+                false,
+                null,
+                signal.getId()
         ));
         if (executionResult.status() != ExecutionEngine.ExecutionStatus.FILLED) {
             dlqService.logFailure("EXECUTE_TRADE", signal.getSymbol(), executionResult.status().name());

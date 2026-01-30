@@ -80,6 +80,7 @@ public class StopLossEnforcementService {
                     trade.getEntryPrice().doubleValue(),
                     null,
                     true,
+                    trade.getId(),
                     null
             );
             executionEngine.execute(exitRequest);

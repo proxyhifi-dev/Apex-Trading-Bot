@@ -218,6 +218,7 @@ public class ReconciliationService {
                                 trade.getEntryPrice().doubleValue(),
                                 null,
                                 true,
+                                trade.getId(),
                                 null
                         ));
                         tradesFlattened++;
@@ -387,6 +388,7 @@ public class ReconciliationService {
                         brokerPosition.avgPrice() != null ? brokerPosition.avgPrice().doubleValue() : 0.0,
                         null,
                         true,
+                        null,
                         null
                 ));
                 log.warn("Flattened unknown broker position {} for user {}", brokerPosition.symbol(), userId);

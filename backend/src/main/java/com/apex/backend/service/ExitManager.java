@@ -262,7 +262,9 @@ public class ExitManager {
                     List.of(),
                     referencePrice.doubleValue(),
                     trade.getCurrentStopLoss() != null ? trade.getCurrentStopLoss().doubleValue() : null,
-                    true
+                    true,
+                    trade.getId(),
+                    null
             ));
             if (result.status() == ExecutionEngine.ExecutionStatus.FILLED) {
                 BigDecimal fillPrice = result.averagePrice() != null ? result.averagePrice() : referencePrice;
