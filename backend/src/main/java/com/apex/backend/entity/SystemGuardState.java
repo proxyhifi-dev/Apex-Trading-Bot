@@ -28,6 +28,13 @@ public class SystemGuardState {
     @Column(nullable = false)
     private boolean crisisMode;
 
+    @Column(nullable = false)
+    private boolean emergencyMode;
+
+    private String emergencyReason;
+
+    private Instant emergencyStartedAt;
+
     private String crisisReason;
 
     private String crisisDetail;

@@ -203,7 +203,9 @@ public class TradeExecutionService {
                 candles,
                 entryPrice.doubleValue(),
                 stopLoss.doubleValue(),
-                false
+                false,
+                null,
+                signal.getId()
         ));
         if (executionResult.status() != ExecutionEngine.ExecutionStatus.FILLED) {
             dlqService.logFailure("EXECUTE_TRADE", signal.getSymbol(), executionResult.status().name());
@@ -301,6 +303,9 @@ public class TradeExecutionService {
     }
 
     private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
+        if (systemGuardService.isEmergencyModeActive()) {
+            return new GuardBlock(true, "GUARD", "EMERGENCY_MODE", "SYSTEM EMERGENCY active");
+        }
         if (systemGuardService.getState().isSafeMode()) {
             return new GuardBlock(true, "GUARD", "SAFE_MODE", "SAFE MODE: reconciliation mismatch");
         }

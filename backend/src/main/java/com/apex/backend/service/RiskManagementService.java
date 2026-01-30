@@ -1,13 +1,23 @@
 package com.apex.backend.service;
 
 import com.apex.backend.dto.RiskStatusDto;
+import com.apex.backend.model.OrderIntent;
+import com.apex.backend.model.OrderState;
 import com.apex.backend.model.Trade;
+import com.apex.backend.model.User;
+import com.apex.backend.repository.OrderIntentRepository;
 import com.apex.backend.repository.TradeRepository;
+import com.apex.backend.repository.UserRepository;
+import com.apex.backend.service.risk.BrokerPort;
+import com.apex.backend.service.risk.FyersBrokerPort;
+import com.apex.backend.service.risk.PaperBrokerPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -17,6 +27,14 @@ public class RiskManagementService {
     
     private final TradeRepository tradeRepository;
     private final PortfolioService portfolioService;
+    private final PortfolioHeatService portfolioHeatService;
+    private final SystemGuardService systemGuardService;
+    private final EmergencyPanicService emergencyPanicService;
+    private final UserRepository userRepository;
+    private final SettingsService settingsService;
+    private final FyersBrokerPort fyersBrokerPort;
+    private final PaperBrokerPort paperBrokerPort;
+    private final OrderIntentRepository orderIntentRepository;
     
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
@@ -26,6 +44,12 @@ public class RiskManagementService {
     
     @Value("${apex.risk.max-position-size:10000}")
     private double maxPositionSize;
+
+    @Value("${apex.risk.heat-max-pct:0.06}")
+    private double maxHeatPct;
+
+    @Value("${apex.risk.enforce-enabled:true}")
+    private boolean enforceEnabled;
     
     /**
      * Get comprehensive risk status
@@ -85,18 +109,58 @@ public class RiskManagementService {
             return true; // Default to risk exceeded on error
         }
     }
+
+    @Scheduled(fixedDelayString = "${apex.risk.enforce-interval-ms:60000}")
+    public void enforceRiskLimits() {
+        if (!enforceEnabled) {
+            return;
+        }
+        List<User> users = userRepository.findAll();
+        for (User user : users) {
+            Long userId = user.getId();
+            if (userId == null) {
+                continue;
+            }
+            boolean paper = settingsService.isPaperModeForUser(userId);
+            double dailyPnl = getTodaysPnL(userId, paper);
+            if (dailyPnl < -dailyLossLimit) {
+                log.error("Daily loss breached for user {} pnl={} limit={}", userId, dailyPnl, dailyLossLimit);
+                emergencyPanicService.triggerGlobalEmergency("DAILY_LOSS_BREACH");
+                return;
+            }
+            double equity = portfolioService.getAvailableEquity(paper, userId);
+            double heat = portfolioHeatService.currentPortfolioHeat(userId, java.math.BigDecimal.valueOf(equity));
+            if (heat > maxHeatPct) {
+                log.warn("Portfolio heat breached for user {} heat={} max={}", userId, heat, maxHeatPct);
+                systemGuardService.setSafeMode(true, "PORTFOLIO_HEAT", java.time.Instant.now());
+                cancelPendingOrders(userId, paper);
+            }
+        }
+    }
     
     /**
      * Get today's P&L
      */
     public double getTodaysPnL() {
         try {
-            List<Trade> closedTradesToday = tradeRepository.findAll().stream()
+            return getTodaysPnL(null, null);
+        } catch (Exception e) {
+            log.error("Failed to calculate today's PnL", e);
+            return 0;
+        }
+    }
+
+    private double getTodaysPnL(Long userId, Boolean paper) {
+        try {
+            List<Trade> trades = tradeRepository.findAll();
+            List<Trade> closedTradesToday = trades.stream()
                 .filter(t -> t.getStatus() == Trade.TradeStatus.CLOSED)
-                .filter(t -> t.getExitTime() != null && 
+                .filter(t -> t.getExitTime() != null &&
                     t.getExitTime().toLocalDate().equals(LocalDateTime.now().toLocalDate()))
+                .filter(t -> userId == null || userId.equals(t.getUserId()))
+                .filter(t -> paper == null || t.isPaperTrade() == paper)
                 .toList();
-            
+
             return closedTradesToday.stream()
                 .mapToDouble(t -> t.getRealizedPnl() != null ? t.getRealizedPnl().doubleValue() : 0)
                 .sum();
@@ -209,6 +273,33 @@ public class RiskManagementService {
         } catch (Exception e) {
             log.error("Error validating trade", e);
             return false;
+        }
+    }
+
+    private void cancelPendingOrders(Long userId, boolean paperMode) {
+        BrokerPort brokerPort = paperMode ? paperBrokerPort : fyersBrokerPort;
+        List<String> failed = new ArrayList<>();
+        for (BrokerPort.BrokerOrder order : brokerPort.openOrders(userId)) {
+            try {
+                brokerPort.cancelOrder(userId, order.orderId());
+            } catch (Exception ex) {
+                failed.add(order.orderId());
+            }
+        }
+        if (!paperMode) {
+            List<OrderIntent> intents = orderIntentRepository.findByUserIdAndOrderStateIn(
+                    userId,
+                    List.of(OrderState.CREATED, OrderState.SENT, OrderState.ACKED, OrderState.PART_FILLED, OrderState.CANCEL_REQUESTED)
+            );
+            for (OrderIntent intent : intents) {
+                if (intent.getOrderState() != OrderState.CANCEL_REQUESTED) {
+                    intent.transitionTo(OrderState.CANCEL_REQUESTED);
+                    orderIntentRepository.save(intent);
+                }
+            }
+        }
+        if (!failed.isEmpty()) {
+            log.warn("Failed to cancel some orders on risk heat: userId={} orders={}", userId, failed);
         }
     }
 }

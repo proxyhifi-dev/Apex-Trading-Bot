@@ -81,9 +81,9 @@ public class BotScheduler {
                 return;
             }
 
-            if (systemGuardService.getState().isSafeMode()) {
-                log.warn("⛔ System guard safe mode enabled. Skipping cycle.");
-                botStatusService.markPaused("System guard safe mode");
+            if (systemGuardService.getState().isSafeMode() || systemGuardService.isEmergencyModeActive()) {
+                log.warn("⛔ System guard halted trading. Skipping cycle.");
+                botStatusService.markPaused("System guard halt");
                 return;
             }
 

@@ -12,8 +12,10 @@ import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.service.BroadcastService;
 import com.apex.backend.service.DecisionAuditService;
+import com.apex.backend.service.ExecutionEngine;
 import com.apex.backend.service.SettingsService;
 import com.apex.backend.service.SystemGuardService;
+import com.apex.backend.service.AuditEventService;
 import com.apex.backend.util.MoneyUtils;
 import org.junit.jupiter.api.Test;
 
@@ -81,6 +83,8 @@ class ReconciliationServiceTest {
         SettingsService settingsService = mock(SettingsService.class);
         BroadcastService broadcastService = mock(BroadcastService.class);
         DecisionAuditService decisionAuditService = mock(DecisionAuditService.class);
+        ExecutionEngine executionEngine = mock(ExecutionEngine.class);
+        AuditEventService auditEventService = mock(AuditEventService.class);
         FyersBrokerPort fyersBrokerPort = mock(FyersBrokerPort.class);
         PaperBrokerPort paperBrokerPort = mock(PaperBrokerPort.class);
 
@@ -106,7 +110,9 @@ class ReconciliationServiceTest {
                 broadcastService,
                 decisionAuditService,
                 fyersBrokerPort,
-                paperBrokerPort
+                paperBrokerPort,
+                executionEngine,
+                auditEventService
         );
         setField(service, "enabled", true);
         setField(service, "safeModeOnMismatch", true);

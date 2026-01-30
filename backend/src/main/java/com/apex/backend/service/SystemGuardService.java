@@ -24,6 +24,7 @@ public class SystemGuardService {
                         .id(SINGLETON_ID)
                         .safeMode(false)
                         .crisisMode(false)
+                        .emergencyMode(false)
                         .updatedAt(Instant.now())
                         .build()));
     }
@@ -107,5 +108,32 @@ public class SystemGuardService {
             return false;
         }
         return true;
+    }
+
+    @Transactional
+    public SystemGuardState setEmergencyMode(boolean emergencyMode, String reason, Instant startedAt) {
+        SystemGuardState state = getState();
+        state.setEmergencyMode(emergencyMode);
+        if (emergencyMode) {
+            state.setEmergencyReason(reason);
+            state.setEmergencyStartedAt(startedAt != null ? startedAt : Instant.now());
+            riskEventService.record(0L, "SYSTEM_EMERGENCY", reason, "startedAt=" + state.getEmergencyStartedAt());
+        } else {
+            state.setEmergencyReason(null);
+            state.setEmergencyStartedAt(null);
+        }
+        state.setUpdatedAt(Instant.now());
+        return systemGuardStateRepository.save(state);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isEmergencyModeActive() {
+        return getState().isEmergencyMode();
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTradingBlocked() {
+        SystemGuardState state = getState();
+        return state.isSafeMode() || state.isEmergencyMode() || isCrisisModeActive();
     }
 }

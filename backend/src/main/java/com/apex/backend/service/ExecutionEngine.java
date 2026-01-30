@@ -36,6 +36,7 @@ public class ExecutionEngine {
     private final RiskGatekeeper riskGatekeeper;
     private final ExecutionProperties executionProperties;
     private final BroadcastService broadcastService;
+    private final AsyncDelayService asyncDelayService;
 
     @Value("${execution.poll.max-attempts:12}")
     private int maxPollAttempts;
@@ -50,7 +51,11 @@ public class ExecutionEngine {
                 : request.clientOrderId();
         String correlationId = UUID.randomUUID().toString();
         org.slf4j.MDC.put("orderId", clientOrderId);
+        org.slf4j.MDC.put("requestId", clientOrderId);
         org.slf4j.MDC.put("correlationId", correlationId);
+        if (request.tradeId() != null) {
+            org.slf4j.MDC.put("tradeId", request.tradeId().toString());
+        }
         try {
             Optional<OrderIntent> existing = orderIntentRepository.findByClientOrderId(clientOrderId);
             if (existing.isPresent()) {
@@ -179,6 +184,9 @@ public class ExecutionEngine {
             return result;
         } finally {
             org.slf4j.MDC.remove("orderId");
+            org.slf4j.MDC.remove("requestId");
+            org.slf4j.MDC.remove("correlationId");
+            org.slf4j.MDC.remove("tradeId");
         }
     }
 
@@ -362,11 +370,7 @@ public class ExecutionEngine {
     }
 
     private void sleep() {
-        try {
-            Thread.sleep(pollDelayMs);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        asyncDelayService.awaitMillis(pollDelayMs);
     }
 
     public record ExecutionRequestPayload(
@@ -383,6 +387,7 @@ public class ExecutionEngine {
             double referencePrice,
             Double stopLoss,
             boolean exitOrder,
+            Long tradeId,
             Long signalId  // Link to StockScreeningResult
     ) {
         public ExecutionRequestPayload(Long userId, String symbol, int quantity,
@@ -391,7 +396,7 @@ public class ExecutionEngine {
                 Double atr, List<Candle> candles, double referencePrice,
                 Double stopLoss, boolean exitOrder) {
             this(userId, symbol, quantity, orderType, side, limitPrice, paper,
-                clientOrderId, atr, candles, referencePrice, stopLoss, exitOrder, null);
+                clientOrderId, atr, candles, referencePrice, stopLoss, exitOrder, null, null);
         }
     }
 
