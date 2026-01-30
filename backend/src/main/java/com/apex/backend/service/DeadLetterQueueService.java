@@ -3,7 +3,6 @@ package com.apex.backend.service;
 import com.apex.backend.model.FailedOperation;
 // ✅ FIXED: Added missing import
 import com.apex.backend.repository.FailedOperationRepository;
-import com.apex.backend.repository.FailedOperationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

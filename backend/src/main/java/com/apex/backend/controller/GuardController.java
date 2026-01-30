@@ -1,6 +1,7 @@
 package com.apex.backend.controller;
 
 import com.apex.backend.entity.SystemGuardState;
+import com.apex.backend.service.EmergencyPanicService;
 import com.apex.backend.service.SystemGuardService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +23,7 @@ import java.util.Map;
 public class GuardController {
 
     private final SystemGuardService systemGuardService;
+    private final EmergencyPanicService emergencyPanicService;
     private final Environment environment;
 
     @Value("${apex.admin.token:}")
@@ -35,6 +37,9 @@ public class GuardController {
         SystemGuardState state = systemGuardService.getState();
         return ResponseEntity.ok(new GuardStateResponse(
                 state.isSafeMode(),
+                state.isEmergencyMode(),
+                state.getEmergencyReason(),
+                state.getEmergencyStartedAt(),
                 state.getLastReconcileAt(),
                 state.getLastMismatchAt(),
                 state.getLastMismatchReason()
@@ -56,6 +61,48 @@ public class GuardController {
         SystemGuardState state = systemGuardService.clearSafeMode();
         return ResponseEntity.ok(new GuardStateResponse(
                 state.isSafeMode(),
+                state.isEmergencyMode(),
+                state.getEmergencyReason(),
+                state.getEmergencyStartedAt(),
+                state.getLastReconcileAt(),
+                state.getLastMismatchAt(),
+                state.getLastMismatchReason()
+        ));
+    }
+
+    @PostMapping("/emergency/trigger")
+    public ResponseEntity<?> triggerEmergency(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        String expected = (adminToken != null && !adminToken.isBlank()) ? adminToken : legacyAdminToken;
+        if (!isDevProfile() && (expected == null || expected.isBlank() || !expected.equals(token))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Not authorized to trigger emergency"));
+        }
+        emergencyPanicService.triggerGlobalEmergency("MANUAL_TRIGGER");
+        SystemGuardState state = systemGuardService.getState();
+        return ResponseEntity.ok(new GuardStateResponse(
+                state.isSafeMode(),
+                state.isEmergencyMode(),
+                state.getEmergencyReason(),
+                state.getEmergencyStartedAt(),
+                state.getLastReconcileAt(),
+                state.getLastMismatchAt(),
+                state.getLastMismatchReason()
+        ));
+    }
+
+    @PostMapping("/emergency/clear")
+    public ResponseEntity<?> clearEmergency(@RequestHeader(value = "X-Admin-Token", required = false) String token) {
+        String expected = (adminToken != null && !adminToken.isBlank()) ? adminToken : legacyAdminToken;
+        if (!isDevProfile() && (expected == null || expected.isBlank() || !expected.equals(token))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Not authorized to clear emergency"));
+        }
+        SystemGuardState state = systemGuardService.setEmergencyMode(false, null, null);
+        return ResponseEntity.ok(new GuardStateResponse(
+                state.isSafeMode(),
+                state.isEmergencyMode(),
+                state.getEmergencyReason(),
+                state.getEmergencyStartedAt(),
                 state.getLastReconcileAt(),
                 state.getLastMismatchAt(),
                 state.getLastMismatchReason()
@@ -71,5 +118,6 @@ public class GuardController {
         return false;
     }
 
-    public record GuardStateResponse(boolean safeMode, Instant lastReconcileAt, Instant lastMismatchAt, String lastMismatchReason) {}
+    public record GuardStateResponse(boolean safeMode, boolean emergencyMode, String emergencyReason, Instant emergencyStartedAt,
+                                     Instant lastReconcileAt, Instant lastMismatchAt, String lastMismatchReason) {}
 }

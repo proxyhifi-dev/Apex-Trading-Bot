@@ -1,6 +1,6 @@
 package com.apex.backend.service;
 
-import com.apex.backend.config.StrategyConfig;
+import com.apex.backend.config.StrategyProperties;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.TradeRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,12 +9,13 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -25,83 +26,59 @@ class ExitManagerTest {
     private TradeRepository tradeRepository;
 
     @Mock
-    private PaperTradingService paperTradingService;
-
-    @Mock
     private FyersService fyersService;
 
     @Mock
-    private RiskManagementEngine riskManagementEngine;
+    private ExitPriorityEngine exitPriorityEngine;
 
-    private StrategyConfig strategyConfig;
+    @Mock
+    private ExecutionEngine executionEngine;
+
+    @Mock
+    private TradeCloseService tradeCloseService;
+
+    @Mock
+    private ExitRetryService exitRetryService;
+
+    private StrategyProperties strategyProperties;
 
     private ExitManager exitManager;
 
     @BeforeEach
     void setUp() {
-        strategyConfig = new StrategyConfig();
-        StrategyConfig.Risk risk = new StrategyConfig.Risk();
-        risk.setTargetMultiplier(2.0);
-        strategyConfig.setRisk(risk);
-        exitManager = new ExitManager(tradeRepository, paperTradingService, fyersService, strategyConfig, riskManagementEngine);
+        strategyProperties = new StrategyProperties();
+        exitManager = new ExitManager(tradeRepository, fyersService, strategyProperties, exitPriorityEngine, executionEngine,
+                tradeCloseService, exitRetryService);
     }
 
     @Test
-    void manageExits_closesTradeOnStopLoss() {
+    void manageExits_closesTradeOnExitDecision() {
         Trade trade = Trade.builder()
                 .id(1L)
                 .symbol("NSE:ABC-EQ")
                 .tradeType(Trade.TradeType.LONG)
                 .quantity(10)
-                .entryPrice(100.0)
-                .stopLoss(95.0)
-                .currentStopLoss(95.0)
-                .atr(2.0)
-                .highestPrice(100.0)
+                .entryPrice(BigDecimal.valueOf(100))
+                .stopLoss(BigDecimal.valueOf(95))
+                .currentStopLoss(BigDecimal.valueOf(95))
+                .atr(BigDecimal.valueOf(2))
+                .highestPrice(BigDecimal.valueOf(100))
                 .isPaperTrade(true)
+                .entryTime(LocalDateTime.now().minusMinutes(10))
                 .status(Trade.TradeStatus.OPEN)
                 .build();
 
-        when(tradeRepository.findByStatus(Trade.TradeStatus.OPEN)).thenReturn(List.of(trade));
-        when(fyersService.getLtpBatch(List.of("NSE:ABC-EQ"))).thenReturn(Map.of("NSE:ABC-EQ", 94.0));
-        when(tradeRepository.save(any(Trade.class))).thenReturn(trade);
+        when(tradeRepository.findByUserIdAndStatus(1L, Trade.TradeStatus.OPEN)).thenReturn(List.of(trade));
+        when(fyersService.getLtpBatch(List.of("NSE:ABC-EQ"))).thenReturn(Map.of("NSE:ABC-EQ", BigDecimal.valueOf(94)));
+        when(exitPriorityEngine.evaluate(eq(trade), any(BigDecimal.class), any(Integer.class), eq(false)))
+                .thenReturn(ExitPriorityEngine.ExitDecision.exit(BigDecimal.valueOf(94), BigDecimal.valueOf(95),
+                        Trade.ExitReason.STOP_LOSS, "STOP"));
+        when(executionEngine.execute(any())).thenReturn(new ExecutionEngine.ExecutionResult(
+                "CLIENT", "BRK", ExecutionEngine.ExecutionStatus.FILLED, 10, BigDecimal.valueOf(94), null
+        ));
 
-        exitManager.manageExits();
+        exitManager.manageExits(1L);
 
-        assertThat(trade.getStatus()).isEqualTo(Trade.TradeStatus.CLOSED);
-        assertThat(trade.getExitReason()).isEqualTo(Trade.ExitReason.STOP_LOSS);
-        assertThat(trade.getExitPrice()).isEqualTo(94.0);
-        assertThat(trade.getExitTime()).isNotNull();
-        verify(tradeRepository, atLeastOnce()).save(any(Trade.class));
-        verify(riskManagementEngine).removeOpenPosition(trade.getSymbol());
-    }
-
-    @Test
-    void manageExits_closesTradeOnTarget() {
-        Trade trade = Trade.builder()
-                .id(2L)
-                .symbol("NSE:XYZ-EQ")
-                .tradeType(Trade.TradeType.LONG)
-                .quantity(5)
-                .entryPrice(100.0)
-                .stopLoss(95.0)
-                .currentStopLoss(95.0)
-                .atr(2.0)
-                .highestPrice(100.0)
-                .isPaperTrade(true)
-                .status(Trade.TradeStatus.OPEN)
-                .build();
-
-        when(tradeRepository.findByStatus(Trade.TradeStatus.OPEN)).thenReturn(List.of(trade));
-        when(fyersService.getLtpBatch(List.of("NSE:XYZ-EQ"))).thenReturn(Map.of("NSE:XYZ-EQ", 105.0));
-        when(tradeRepository.save(any(Trade.class))).thenReturn(trade);
-
-        exitManager.manageExits();
-
-        assertThat(trade.getStatus()).isEqualTo(Trade.TradeStatus.CLOSED);
-        assertThat(trade.getExitReason()).isEqualTo(Trade.ExitReason.TARGET);
-        assertThat(trade.getExitPrice()).isEqualTo(105.0);
-        verify(tradeRepository, atLeastOnce()).save(any(Trade.class));
-        verify(riskManagementEngine).removeOpenPosition(trade.getSymbol());
+        verify(tradeCloseService).finalizeTrade(eq(trade), eq(BigDecimal.valueOf(94)), eq(Trade.ExitReason.STOP_LOSS), eq("STOP"));
     }
 }

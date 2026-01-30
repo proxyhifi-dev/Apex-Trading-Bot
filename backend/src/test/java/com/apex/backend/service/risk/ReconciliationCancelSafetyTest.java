@@ -7,8 +7,10 @@ import com.apex.backend.repository.TradeRepository;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.service.BroadcastService;
 import com.apex.backend.service.DecisionAuditService;
+import com.apex.backend.service.ExecutionEngine;
 import com.apex.backend.service.SettingsService;
 import com.apex.backend.service.SystemGuardService;
+import com.apex.backend.service.AuditEventService;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -35,6 +37,8 @@ class ReconciliationCancelSafetyTest {
         SystemGuardService systemGuardService = mock(SystemGuardService.class);
         BroadcastService broadcastService = mock(BroadcastService.class);
         DecisionAuditService decisionAuditService = mock(DecisionAuditService.class);
+        ExecutionEngine executionEngine = mock(ExecutionEngine.class);
+        AuditEventService auditEventService = mock(AuditEventService.class);
         FyersBrokerPort fyersBrokerPort = mock(FyersBrokerPort.class);
         PaperBrokerPort paperBrokerPort = mock(PaperBrokerPort.class);
 
@@ -49,7 +53,9 @@ class ReconciliationCancelSafetyTest {
                 broadcastService,
                 decisionAuditService,
                 fyersBrokerPort,
-                paperBrokerPort
+                paperBrokerPort,
+                executionEngine,
+                auditEventService
         );
         ReflectionTestUtils.setField(reconciliationService, "autoCancelPendingOnMismatch", true);
 

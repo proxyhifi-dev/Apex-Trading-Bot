@@ -27,6 +27,7 @@ public class StopLossPlacementService {
     private final TradeRepository tradeRepository;
     private final BroadcastService broadcastService;
     private final AlertService alertService;
+    private final AsyncDelayService asyncDelayService;
     @Qualifier("tradingExecutor")
     private final Executor tradingExecutor;
 
@@ -116,19 +117,11 @@ public class StopLossPlacementService {
                         return true; // Order exists and is not rejected/cancelled/expired = ACKED
                     }
                 }
-                Thread.sleep(pollIntervalMs);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return false;
+                asyncDelayService.awaitMillis(pollIntervalMs);
             } catch (Exception e) {
                 log.warn("Error checking stop-loss order status: {}", e.getMessage());
                 // Continue polling
-                try {
-                    Thread.sleep(pollIntervalMs);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    return false;
-                }
+                asyncDelayService.awaitMillis(pollIntervalMs);
             }
         }
         

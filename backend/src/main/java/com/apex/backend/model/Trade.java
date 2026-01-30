@@ -2,6 +2,9 @@ package com.apex.backend.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import lombok.extern.slf4j.Slf4j;
+
+import org.slf4j.MDC;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -12,6 +15,7 @@ import java.time.LocalDateTime;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@Slf4j
 public class Trade {
 
     @Id
@@ -94,7 +98,7 @@ public class Trade {
     @Enumerated(EnumType.STRING)
     @Column(name = "position_state", nullable = false)
     @Builder.Default
-    private PositionState positionState = PositionState.PLANNED;
+    private PositionState positionState = PositionState.OPENING;
 
     @Column(name = "stop_order_id")
     private String stopOrderId;  // Broker orderId for stop-loss
@@ -118,7 +122,17 @@ public class Trade {
                     positionState, newState, id)
             );
         }
+        if (positionState == newState) {
+            return;
+        }
+        PositionState previous = this.positionState;
         this.positionState = newState;
+        log.info("Trade state transition tradeId={} requestId={} correlationId={} from={} to={}",
+                id,
+                MDC.get("requestId"),
+                MDC.get("correlationId"),
+                previous,
+                newState);
     }
 
     public enum TradeType { LONG, SHORT }

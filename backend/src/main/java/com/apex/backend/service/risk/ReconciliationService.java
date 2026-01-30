@@ -76,7 +76,7 @@ public class ReconciliationService {
     @Value("${reconcile.auto-flatten-on-mismatch:false}")
     private boolean autoFlattenOnMismatch;
 
-    @Scheduled(fixedDelayString = "${reconcile.interval-seconds:300}000")
+    @Scheduled(fixedDelayString = "${reconcile.interval-ms:60000}")
     public void runScheduled() {
         try {
             reconcile();
@@ -117,6 +117,8 @@ public class ReconciliationService {
                     || positionMismatches.size() > positionMismatchStart;
             if (mismatchForUser) {
                 handleMismatch(userId, brokerPort, dbOrders);
+                cancelUnknownOrders(userId, brokerPort, dbOrders, brokerOrders);
+                flattenUnknownPositions(userId, brokerPort, dbPositions, brokerPositions);
             }
         }
 
@@ -216,6 +218,7 @@ public class ReconciliationService {
                                 trade.getEntryPrice().doubleValue(),
                                 null,
                                 true,
+                                trade.getId(),
                                 null
                         ));
                         tradesFlattened++;
@@ -339,6 +342,59 @@ public class ReconciliationService {
         }
         if (autoFlattenOnMismatch) {
             log.warn("Auto-flatten requested but not configured; skipping");
+        }
+    }
+
+    private void cancelUnknownOrders(Long userId, BrokerPort brokerPort, List<OrderSnapshot> dbOrders,
+                                     List<BrokerPort.BrokerOrder> brokerOrders) {
+        Set<String> dbIds = dbOrders.stream()
+                .map(OrderSnapshot::orderId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        for (BrokerPort.BrokerOrder brokerOrder : brokerOrders) {
+            if (brokerOrder.orderId() == null || dbIds.contains(brokerOrder.orderId())) {
+                continue;
+            }
+            try {
+                brokerPort.cancelOrder(userId, brokerOrder.orderId());
+                log.warn("Cancelled unknown broker order {} for user {}", brokerOrder.orderId(), userId);
+            } catch (Exception ex) {
+                log.warn("Failed to cancel unknown broker order {} for user {}: {}", brokerOrder.orderId(), userId, ex.getMessage());
+            }
+        }
+    }
+
+    private void flattenUnknownPositions(Long userId, BrokerPort brokerPort, List<PositionSnapshot> dbPositions,
+                                         List<BrokerPort.BrokerPosition> brokerPositions) {
+        Set<String> dbSymbols = dbPositions.stream().map(PositionSnapshot::symbol).collect(Collectors.toSet());
+        for (BrokerPort.BrokerPosition brokerPosition : brokerPositions) {
+            if (brokerPosition.symbol() == null || dbSymbols.contains(brokerPosition.symbol())) {
+                continue;
+            }
+            try {
+                executionEngine.execute(new ExecutionEngine.ExecutionRequestPayload(
+                        userId,
+                        brokerPosition.symbol(),
+                        Math.abs(brokerPosition.netQty()),
+                        ExecutionCostModel.OrderType.MARKET,
+                        brokerPosition.netQty() > 0
+                                ? ExecutionCostModel.ExecutionSide.SELL
+                                : ExecutionCostModel.ExecutionSide.BUY,
+                        null,
+                        settingsService.isPaperModeForUser(userId),
+                        "RECON-UNKNOWN-FLAT-" + brokerPosition.symbol(),
+                        0.0,
+                        List.of(),
+                        brokerPosition.averagePrice() != null ? brokerPosition.averagePrice().doubleValue() : 0.0,
+                        null,
+                        true,
+                        null,
+                        null
+                ));
+                log.warn("Flattened unknown broker position {} for user {}", brokerPosition.symbol(), userId);
+            } catch (Exception ex) {
+                log.warn("Failed to flatten unknown broker position {} for user {}: {}", brokerPosition.symbol(), userId, ex.getMessage());
+            }
         }
     }
 
