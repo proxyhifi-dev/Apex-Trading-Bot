@@ -42,6 +42,9 @@ public class FyersHttpClient {
     @org.springframework.beans.factory.annotation.Value("${fyers.api.app-id:}")
     private String appId;
 
+    @org.springframework.beans.factory.annotation.Value("${fyers.api.rate-limit-backoff-seconds:5}")
+    private long rateLimitBackoffSeconds;
+
     @PostConstruct
     void init() {
         fyersCircuitBreaker.getEventPublisher().onStateTransition(event -> {
@@ -78,6 +81,9 @@ public class FyersHttpClient {
         boolean success = false;
         Supplier<String> supplier = () -> doRequest(url, token, method, body);
         try {
+            if (brokerStatusService.isRateLimited("FYERS")) {
+                throw new FyersRateLimitException("FYERS rate limit backoff active");
+            }
             Supplier<String> decorated = Retry.decorateSupplier(fyersRetry, supplier);
             decorated = CircuitBreaker.decorateSupplier(fyersCircuitBreaker, decorated);
             decorated = RateLimiter.decorateSupplier(fyersRateLimiter, decorated);
@@ -90,7 +96,8 @@ public class FyersHttpClient {
             metricsService.incrementBrokerFailures();
             throw new FyersCircuitOpenException("FYERS circuit breaker open", e);
         } catch (FyersRateLimitException e) {
-            brokerStatusService.markDegraded("FYERS", "RATE_LIMIT");
+            brokerStatusService.markRateLimited("FYERS", "RATE_LIMIT",
+                    java.time.LocalDateTime.now().plusSeconds(Math.max(1, rateLimitBackoffSeconds)));
             metricsService.incrementBrokerFailures();
             throw e;
         } catch (Exception e) {
@@ -120,6 +127,8 @@ public class FyersHttpClient {
             return response.getBody();
         } catch (HttpClientErrorException.TooManyRequests e) {
             log.warn("FYERS rate limit 429 for {}: {}", url, e.getMessage());
+            brokerStatusService.markRateLimited("FYERS", "RATE_LIMIT",
+                    java.time.LocalDateTime.now().plusSeconds(Math.max(1, rateLimitBackoffSeconds)));
             throw new FyersRateLimitException("FYERS rate limit", e);
         } catch (ResourceAccessException | HttpServerErrorException e) {
             log.warn("FYERS network/server error for {}: {}", url, e.getMessage());

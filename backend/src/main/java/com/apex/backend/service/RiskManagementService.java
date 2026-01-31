@@ -35,12 +35,20 @@ public class RiskManagementService {
     private final FyersBrokerPort fyersBrokerPort;
     private final PaperBrokerPort paperBrokerPort;
     private final OrderIntentRepository orderIntentRepository;
+    private final OrderStateMachine orderStateMachine;
+    private final AuditEventService auditEventService;
     
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
     
     @Value("${apex.risk.daily-loss-limit:2000}")
     private double dailyLossLimit;
+
+    @Value("${apex.risk.daily-max-loss:2000}")
+    private double dailyMaxLoss;
+
+    @Value("${apex.risk.max-consecutive-losses:3}")
+    private int maxConsecutiveLosses;
     
     @Value("${apex.risk.max-position-size:10000}")
     private double maxPositionSize;
@@ -123,9 +131,21 @@ public class RiskManagementService {
             }
             boolean paper = settingsService.isPaperModeForUser(userId);
             double dailyPnl = getTodaysPnL(userId, paper);
-            if (dailyPnl < -dailyLossLimit) {
-                log.error("Daily loss breached for user {} pnl={} limit={}", userId, dailyPnl, dailyLossLimit);
+            if (dailyPnl < -dailyMaxLoss) {
+                log.error("Daily loss breached for user {} pnl={} limit={}", userId, dailyPnl, dailyMaxLoss);
+                auditEventService.recordEvent(userId, "risk_event", "DAILY_LOSS_BREACH",
+                        "Daily loss breached",
+                        java.util.Map.of("pnl", dailyPnl, "limit", dailyMaxLoss));
                 emergencyPanicService.triggerGlobalEmergency("DAILY_LOSS_BREACH");
+                return;
+            }
+            int consecutiveLosses = countConsecutiveLosses(userId, paper);
+            if (consecutiveLosses >= maxConsecutiveLosses) {
+                log.error("Consecutive loss limit breached for user {} losses={} max={}", userId, consecutiveLosses, maxConsecutiveLosses);
+                auditEventService.recordEvent(userId, "risk_event", "CONSECUTIVE_LOSS_BREACH",
+                        "Consecutive loss limit breached",
+                        java.util.Map.of("losses", consecutiveLosses, "max", maxConsecutiveLosses));
+                emergencyPanicService.triggerGlobalEmergency("CONSECUTIVE_LOSS_BREACH");
                 return;
             }
             double equity = portfolioService.getAvailableEquity(paper, userId);
@@ -293,13 +313,41 @@ public class RiskManagementService {
             );
             for (OrderIntent intent : intents) {
                 if (intent.getOrderState() != OrderState.CANCEL_REQUESTED) {
-                    intent.transitionTo(OrderState.CANCEL_REQUESTED);
-                    orderIntentRepository.save(intent);
+                    orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "RISK_HEAT_CANCEL");
                 }
             }
         }
         if (!failed.isEmpty()) {
             log.warn("Failed to cancel some orders on risk heat: userId={} orders={}", userId, failed);
         }
+    }
+
+    private int countConsecutiveLosses(Long userId, boolean paperMode) {
+        List<Trade> closedTrades = tradeRepository.findAll().stream()
+                .filter(t -> t.getStatus() == Trade.TradeStatus.CLOSED)
+                .filter(t -> userId.equals(t.getUserId()))
+                .filter(t -> t.isPaperTrade() == paperMode)
+                .sorted((a, b) -> {
+                    if (a.getExitTime() == null && b.getExitTime() == null) {
+                        return 0;
+                    }
+                    if (a.getExitTime() == null) {
+                        return 1;
+                    }
+                    if (b.getExitTime() == null) {
+                        return -1;
+                    }
+                    return b.getExitTime().compareTo(a.getExitTime());
+                })
+                .toList();
+        int count = 0;
+        for (Trade trade : closedTrades) {
+            if (trade.getRealizedPnl() != null && trade.getRealizedPnl().doubleValue() < 0) {
+                count++;
+            } else {
+                break;
+            }
+        }
+        return count;
     }
 }

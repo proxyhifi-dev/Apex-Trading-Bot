@@ -11,4 +11,6 @@ public interface OrderIntentRepository extends JpaRepository<OrderIntent, Long> 
     Optional<OrderIntent> findByClientOrderId(String clientOrderId);
     
     List<OrderIntent> findByUserIdAndOrderStateIn(Long userId, List<OrderState> states);
+
+    long countByOrderStateIn(List<OrderState> states);
 }

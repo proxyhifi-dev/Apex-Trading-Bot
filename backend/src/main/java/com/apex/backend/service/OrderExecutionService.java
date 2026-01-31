@@ -102,7 +102,7 @@ public class OrderExecutionService {
     public OrderResponse placeOrder(Long userId, PlaceOrderRequest request) {
         String idempotencyKey = request.getClientOrderId();
         return idempotencyService.execute(userId, idempotencyKey, request, OrderResponse.class, () -> {
-            if (systemGuardService.isEmergencyModeActive() || systemGuardService.getState().isSafeMode()) {
+            if (systemGuardService.isTradingBlocked()) {
                 throw new ConflictException("Trading halted by system guard");
             }
             OrderValidationResult validation = validate(userId, request);

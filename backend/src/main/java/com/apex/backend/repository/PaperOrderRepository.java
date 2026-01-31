@@ -11,4 +11,5 @@ public interface PaperOrderRepository extends JpaRepository<PaperOrder, Long> {
     List<PaperOrder> findByUserIdAndStatus(Long userId, String status);
     List<PaperOrder> findByUserId(Long userId);
     void deleteByUserId(Long userId);
+    long countByStatus(String status);
 }

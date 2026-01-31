@@ -19,6 +19,7 @@ public class FyersTokenService {
     public String getAccessToken(Long userId) {
         return userRepository.findById(userId)
                 .filter(user -> Boolean.TRUE.equals(user.getFyersConnected()))
+                .filter(user -> Boolean.TRUE.equals(user.getFyersTokenActive()))
                 .map(user -> user.getFyersToken())
                 .orElse(null);
     }
@@ -27,6 +28,7 @@ public class FyersTokenService {
     public Optional<String> refreshAccessToken(Long userId) {
         String refreshToken = userRepository.findById(userId)
                 .filter(user -> Boolean.TRUE.equals(user.getFyersConnected()))
+                .filter(user -> Boolean.TRUE.equals(user.getFyersTokenActive()))
                 .map(user -> user.getFyersRefreshToken())
                 .orElse(null);
         if (refreshToken == null || refreshToken.isBlank()) {
@@ -40,6 +42,7 @@ public class FyersTokenService {
                     user.setFyersRefreshToken(tokens.refreshToken());
                 }
                 user.setFyersConnected(true);
+                user.setFyersTokenActive(true);
                 userRepository.save(user);
             });
             return Optional.of(tokens.accessToken());
