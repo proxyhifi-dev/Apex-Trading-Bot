@@ -21,16 +21,15 @@ public class TradeCloseService {
     private final RiskManagementEngine riskManagementEngine;
     private final com.apex.backend.service.risk.CircuitBreakerService tradingGuardService;
     private final PaperTradingService paperTradingService;
+    private final TradeStateMachine tradeStateMachine;
 
     public boolean markClosing(Trade trade, String reason) {
         if (trade == null || trade.getStatus() == Trade.TradeStatus.CLOSED) {
             return false;
         }
         if (trade.getPositionState() != PositionState.CLOSING && trade.getPositionState() != PositionState.CLOSED) {
-            trade.transitionTo(PositionState.CLOSING);
             trade.setExitReasonDetail(reason);
-            tradeRepository.save(trade);
-            return true;
+            return tradeStateMachine.transition(trade, PositionState.CLOSING, "MARK_CLOSING", reason);
         }
         return false;
     }
@@ -47,7 +46,7 @@ public class TradeCloseService {
         trade.setStatus(Trade.TradeStatus.CLOSED);
         trade.setExitReason(reason);
         trade.setExitReasonDetail(detail);
-        trade.transitionTo(PositionState.CLOSED);
+        tradeStateMachine.transition(trade, PositionState.CLOSED, "FINALIZE", detail);
         BigDecimal pnl = MoneyUtils.multiply(exitPrice.subtract(trade.getEntryPrice()), trade.getQuantity());
         if (trade.getTradeType() == Trade.TradeType.SHORT) {
             pnl = pnl.negate();

@@ -37,6 +37,7 @@ public class ExecutionEngine {
     private final ExecutionProperties executionProperties;
     private final BroadcastService broadcastService;
     private final AsyncDelayService asyncDelayService;
+    private final OrderStateMachine orderStateMachine;
 
     @Value("${execution.poll.max-attempts:12}")
     private int maxPollAttempts;
@@ -86,8 +87,7 @@ public class ExecutionEngine {
                         .createdAt(LocalDateTime.now())
                         .updatedAt(LocalDateTime.now())
                         .build());
-                rejectedIntent.transitionTo(OrderState.REJECTED);
-                orderIntentRepository.save(rejectedIntent);
+                orderStateMachine.transition(rejectedIntent, OrderState.REJECTED, "RISK_REJECT");
                 
                 String reasonCode = riskDecision.reason() != null ? riskDecision.reason().name() : "RISK_REJECTED";
                 metricsService.recordReject(reasonCode);
@@ -151,7 +151,7 @@ public class ExecutionEngine {
             }
 
             // Transition to SENT state
-            intent.transitionTo(OrderState.SENT);
+            orderStateMachine.transition(intent, OrderState.SENT, "SEND");
             intent.setSentAt(LocalDateTime.now());
             orderIntentRepository.save(intent);
             log.info("Order sent to broker: {} correlationId: {}", clientOrderId, correlationId);
@@ -165,7 +165,7 @@ public class ExecutionEngine {
                     clientOrderId
             );
             intent.setBrokerOrderId(orderId);
-            intent.transitionTo(OrderState.ACKED);
+            orderStateMachine.transition(intent, OrderState.ACKED, "ACK");
             intent.setAckedAt(LocalDateTime.now());
             intent.setLastBrokerStatus("ACKED");
             orderIntentRepository.save(intent);
@@ -197,14 +197,14 @@ public class ExecutionEngine {
             // Check timeout
             if (intent.getExpiresAt() != null && LocalDateTime.now().isAfter(intent.getExpiresAt())) {
                 log.warn("Order timeout: {} correlationId: {}", intent.getClientOrderId(), intent.getCorrelationId());
-                intent.transitionTo(OrderState.EXPIRED);
+                orderStateMachine.transition(intent, OrderState.EXPIRED, "TIMEOUT");
                 intent.setLastBrokerStatus("TIMEOUT");
                 orderIntentRepository.save(intent);
                 
                 if (executionProperties.isCancelOnTimeout()) {
                     try {
                         fyersService.cancelOrder(intent.getBrokerOrderId(), token);
-                        intent.transitionTo(OrderState.CANCEL_REQUESTED);
+                        orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "PARTIAL_CANCEL");
                         orderIntentRepository.save(intent);
                         log.info("Cancel requested for timed-out order: {}", intent.getClientOrderId());
                     } catch (Exception e) {
@@ -236,10 +236,10 @@ public class ExecutionEngine {
                 if (execStatus == ExecutionStatus.FILLED) {
                     applyFinalFill(intent, status);
                 } else if (execStatus == ExecutionStatus.REJECTED) {
-                    intent.transitionTo(OrderState.REJECTED);
+                    orderStateMachine.transition(intent, OrderState.REJECTED, "BROKER_REJECT");
                     orderIntentRepository.save(intent);
                 } else if (execStatus == ExecutionStatus.CANCELLED) {
-                    intent.transitionTo(OrderState.CANCELLED);
+                    orderStateMachine.transition(intent, OrderState.CANCELLED, "BROKER_CANCEL");
                     orderIntentRepository.save(intent);
                 }
                 log.info("Order terminal state: {} state: {} correlationId: {}", 
@@ -253,9 +253,9 @@ public class ExecutionEngine {
         
         // Max attempts reached
         if (intent.getExpiresAt() != null && LocalDateTime.now().isAfter(intent.getExpiresAt())) {
-            intent.transitionTo(OrderState.EXPIRED);
+            orderStateMachine.transition(intent, OrderState.EXPIRED, "EXPIRED");
         } else {
-            intent.transitionTo(OrderState.UNKNOWN);
+            orderStateMachine.transition(intent, OrderState.UNKNOWN, "UNKNOWN");
         }
         orderIntentRepository.save(intent);
         log.warn("Order polling exhausted: {} final state: {} correlationId: {}", 
@@ -270,7 +270,7 @@ public class ExecutionEngine {
         if (status.averagePrice() != null) {
             intent.setAveragePrice(status.averagePrice());
         }
-        intent.transitionTo(OrderState.PART_FILLED);
+        orderStateMachine.transition(intent, OrderState.PART_FILLED, "PARTIAL_FILL");
         intent.setLastBrokerStatus(status.status());
         orderIntentRepository.save(intent);
         
@@ -308,7 +308,7 @@ public class ExecutionEngine {
         log.info("Canceling remaining quantity: {} for order: {} correlationId: {}", 
             remainingQty, intent.getClientOrderId(), intent.getCorrelationId());
         
-        intent.transitionTo(OrderState.CANCEL_REQUESTED);
+        orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "CANCEL_REMAINING");
         orderIntentRepository.save(intent);
         
         try {
@@ -318,7 +318,7 @@ public class ExecutionEngine {
         } catch (Exception e) {
             log.error("Failed to cancel remaining qty for order: {} correlationId: {}", 
                 intent.getClientOrderId(), intent.getCorrelationId(), e);
-            intent.transitionTo(OrderState.UNKNOWN);
+            orderStateMachine.transition(intent, OrderState.UNKNOWN, "CANCEL_UNKNOWN");
             orderIntentRepository.save(intent);
         }
     }
@@ -332,7 +332,7 @@ public class ExecutionEngine {
         if (status.averagePrice() != null && status.averagePrice().compareTo(BigDecimal.ZERO) > 0) {
             intent.setAveragePrice(status.averagePrice());
         }
-        intent.transitionTo(OrderState.FILLED);
+        orderStateMachine.transition(intent, OrderState.FILLED, "FILLED");
         intent.setLastBrokerStatus(status.status());
         orderIntentRepository.save(intent);
         metricsService.recordOrderFilled();

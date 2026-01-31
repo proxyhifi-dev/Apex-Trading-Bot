@@ -16,8 +16,12 @@ import com.apex.backend.service.DecisionAuditService;
 import com.apex.backend.service.SettingsService;
 import com.apex.backend.service.SystemGuardService;
 import com.apex.backend.service.AuditEventService;
+import com.apex.backend.service.EmergencyPanicService;
+import com.apex.backend.service.ExitRetryService;
 import com.apex.backend.service.ExecutionCostModel;
 import com.apex.backend.service.ExecutionEngine;
+import com.apex.backend.service.OrderStateMachine;
+import com.apex.backend.service.TradeStateMachine;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +58,10 @@ public class ReconciliationService {
     private final PaperBrokerPort paperBrokerPort;
     private final ExecutionEngine executionEngine;
     private final AuditEventService auditEventService;
+    private final ExitRetryService exitRetryService;
+    private final TradeStateMachine tradeStateMachine;
+    private final EmergencyPanicService emergencyPanicService;
+    private final OrderStateMachine orderStateMachine;
 
     private final java.util.concurrent.atomic.AtomicReference<ReconcileReport> lastReport =
             new java.util.concurrent.atomic.AtomicReference<>(new ReconcileReport(false, List.of(), List.of(), List.of()));
@@ -75,6 +83,9 @@ public class ReconciliationService {
 
     @Value("${reconcile.auto-flatten-on-mismatch:false}")
     private boolean autoFlattenOnMismatch;
+
+    @Value("${reconcile.panic-on-mismatch:false}")
+    private boolean panicOnMismatch;
 
     @Scheduled(fixedDelayString = "${reconcile.interval-ms:60000}")
     public void runScheduled() {
@@ -127,6 +138,14 @@ public class ReconciliationService {
         if (hasMismatch && safeModeOnMismatch) {
             String summary = summary(orderMismatches, statusMismatches, positionMismatches);
             state = systemGuardService.setSafeMode(true, summary, now);
+            auditEventService.recordEvent(0L, "reconciliation_mismatch", "MISMATCH",
+                    "Reconciliation mismatch detected", Map.of(
+                            "orders", orderMismatches,
+                            "statuses", statusMismatches,
+                            "positions", positionMismatches));
+            if (panicOnMismatch && !positionMismatches.isEmpty()) {
+                emergencyPanicService.triggerGlobalEmergency("RECONCILE_POSITION_MISMATCH");
+            }
         }
         decisionAuditService.record("SYSTEM", "N/A", "RECONCILE", Map.of(
                 "mismatch", hasMismatch,
@@ -176,7 +195,7 @@ public class ReconciliationService {
                         brokerPort.cancelOrder(userId, dbOrder.orderId());
                         OrderIntent intent = dbOrder.markCancelRequested();
                         if (intent != null) {
-                            orderIntentRepository.save(intent);
+                            orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "RECONCILE_REPAIR");
                         }
                         cancelRequested++;
                     } catch (Exception e) {
@@ -190,9 +209,8 @@ public class ReconciliationService {
                 List<Trade> trades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
                 for (Trade trade : trades) {
                     if (trade.getPositionState() != com.apex.backend.model.PositionState.ERROR) {
-                        trade.transitionTo(com.apex.backend.model.PositionState.ERROR);
                         trade.setExitReasonDetail("RECONCILE_QUARANTINE");
-                        tradeRepository.save(trade);
+                        tradeStateMachine.transition(trade, com.apex.backend.model.PositionState.ERROR, "RECONCILE_QUARANTINE", "Manual quarantine");
                         tradesQuarantined++;
                     }
                 }
@@ -312,36 +330,38 @@ public class ReconciliationService {
     }
 
     void handleMismatch(Long userId, BrokerPort brokerPort, List<OrderSnapshot> dbOrders) {
-        if (autoCancelPendingOnMismatch) {
-            int attempted = 0;
-            int skipped = 0;
-            int failed = 0;
-            for (OrderSnapshot dbOrder : dbOrders) {
-                if (dbOrder.open()) {
-                    if (dbOrder.orderId() == null || dbOrder.orderId().isBlank()) {
-                        skipped++;
-                        continue;
+        int attempted = 0;
+        int skipped = 0;
+        int failed = 0;
+        for (OrderSnapshot dbOrder : dbOrders) {
+            if (dbOrder.open()) {
+                if (dbOrder.orderId() == null || dbOrder.orderId().isBlank()) {
+                    skipped++;
+                    continue;
+                }
+                attempted++;
+                try {
+                    brokerPort.cancelOrder(userId, dbOrder.orderId());
+                    OrderIntent intent = dbOrder.markCancelRequested();
+                    if (intent != null) {
+                        orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "RECONCILE_MISMATCH");
                     }
-                    attempted++;
-                    try {
-                        brokerPort.cancelOrder(userId, dbOrder.orderId());
-                        OrderIntent intent = dbOrder.markCancelRequested();
-                        if (intent != null) {
-                            orderIntentRepository.save(intent);
-                        }
-                        log.debug("Cancel requested for orderId={}", dbOrder.orderId());
-                    } catch (Exception ex) {
-                        failed++;
-                        log.debug("Cancel failed for orderId={}: {}", dbOrder.orderId(), ex.getMessage());
-                    }
+                    log.debug("Cancel requested for orderId={}", dbOrder.orderId());
+                } catch (Exception ex) {
+                    failed++;
+                    log.debug("Cancel failed for orderId={}: {}", dbOrder.orderId(), ex.getMessage());
                 }
             }
-            if (attempted > 0 || skipped > 0 || failed > 0) {
-                log.info("Reconcile cancel summary: attempted={}, skipped={}, failed={}", attempted, skipped, failed);
-            }
+        }
+        if (attempted > 0 || skipped > 0 || failed > 0) {
+            log.info("Reconcile cancel summary: attempted={}, skipped={}, failed={}", attempted, skipped, failed);
         }
         if (autoFlattenOnMismatch) {
-            log.warn("Auto-flatten requested but not configured; skipping");
+            List<Trade> trades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
+            for (Trade trade : trades) {
+                tradeStateMachine.transition(trade, com.apex.backend.model.PositionState.ERROR, "RECONCILE_MISMATCH", "Auto-flatten");
+                exitRetryService.enqueueExitAndAttempt(trade, "RECONCILE_MISMATCH");
+            }
         }
     }
 
@@ -505,9 +525,6 @@ public class ReconciliationService {
         }
 
         public OrderIntent markCancelRequested() {
-            if (intent != null && intent.getOrderState() != OrderState.CANCEL_REQUESTED) {
-                intent.transitionTo(OrderState.CANCEL_REQUESTED);
-            }
             return intent;
         }
     }

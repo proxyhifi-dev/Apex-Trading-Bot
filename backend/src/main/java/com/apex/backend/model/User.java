@@ -77,6 +77,10 @@ public class User {
     @Builder.Default
     private Boolean fyersConnected = false;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean fyersTokenActive = true;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {
