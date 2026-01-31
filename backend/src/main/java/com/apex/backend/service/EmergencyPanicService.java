@@ -35,10 +35,17 @@ public class EmergencyPanicService {
     private final TradeRepository tradeRepository;
     private final ExitRetryService exitRetryService;
     private final RiskEventService riskEventService;
+    private final AuditEventService auditEventService;
+    private final OrderStateMachine orderStateMachine;
 
     @Transactional
     public SystemGuardState triggerGlobalEmergency(String reason) {
-        SystemGuardState state = systemGuardService.setEmergencyMode(true, reason, Instant.now());
+        SystemGuardState before = systemGuardService.getState();
+        boolean alreadyPanic = before.isPanicMode();
+        SystemGuardState state = systemGuardService.setPanicMode(true, reason, Instant.now());
+        if (alreadyPanic) {
+            return state;
+        }
         List<User> users = userRepository.findAll();
         for (User user : users) {
             Long userId = user.getId();
@@ -49,6 +56,8 @@ public class EmergencyPanicService {
         }
         revokeAllTokens();
         riskEventService.record(0L, "PANIC_TRIGGERED", reason, "users=" + users.size());
+        auditEventService.recordEvent(0L, "panic_triggered", "GLOBAL", "Global panic triggered",
+                java.util.Map.of("reason", reason, "users", users.size()));
         log.warn("Global emergency panic triggered: reason={} users={}", reason, users.size());
         return state;
     }
@@ -70,8 +79,7 @@ public class EmergencyPanicService {
                 );
                 for (OrderIntent intent : intents) {
                     if (intent.getOrderState() != OrderState.CANCEL_REQUESTED) {
-                        intent.transitionTo(OrderState.CANCEL_REQUESTED);
-                        orderIntentRepository.save(intent);
+                        orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "PANIC_CANCEL");
                     }
                 }
             } else {
@@ -98,6 +106,7 @@ public class EmergencyPanicService {
             user.setFyersToken(null);
             user.setFyersRefreshToken(null);
             user.setFyersConnected(false);
+            user.setFyersTokenActive(false);
         }
         userRepository.saveAll(users);
     }

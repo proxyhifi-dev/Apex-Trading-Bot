@@ -25,6 +25,8 @@ public class SystemGuardService {
                         .safeMode(false)
                         .crisisMode(false)
                         .emergencyMode(false)
+                        .panicMode(false)
+                        .systemMode(SystemGuardState.SystemMode.RUNNING)
                         .updatedAt(Instant.now())
                         .build()));
     }
@@ -34,9 +36,12 @@ public class SystemGuardService {
         SystemGuardState state = getState();
         state.setSafeMode(safeMode);
         if (safeMode) {
+            state.setSystemMode(SystemGuardState.SystemMode.SAFE);
             state.setLastMismatchAt(mismatchAt != null ? mismatchAt : Instant.now());
             state.setLastMismatchReason(reason);
             riskEventService.record(0L, "GUARD_SAFE_MODE", reason, "enteredAt=" + state.getLastMismatchAt());
+        } else if (!state.isPanicMode()) {
+            state.setSystemMode(SystemGuardState.SystemMode.RUNNING);
         }
         state.setUpdatedAt(Instant.now());
         return systemGuardStateRepository.save(state);
@@ -47,6 +52,9 @@ public class SystemGuardService {
         SystemGuardState state = getState();
         state.setSafeMode(false);
         state.setLastMismatchReason(null);
+        if (!state.isPanicMode()) {
+            state.setSystemMode(SystemGuardState.SystemMode.RUNNING);
+        }
         state.setUpdatedAt(Instant.now());
         riskEventService.record(0L, "GUARD_SAFE_MODE_EXIT", "Safe mode cleared", null);
         return systemGuardStateRepository.save(state);
@@ -117,10 +125,14 @@ public class SystemGuardService {
         if (emergencyMode) {
             state.setEmergencyReason(reason);
             state.setEmergencyStartedAt(startedAt != null ? startedAt : Instant.now());
+            state.setSystemMode(SystemGuardState.SystemMode.PANIC);
             riskEventService.record(0L, "SYSTEM_EMERGENCY", reason, "startedAt=" + state.getEmergencyStartedAt());
         } else {
             state.setEmergencyReason(null);
             state.setEmergencyStartedAt(null);
+            if (!state.isPanicMode()) {
+                state.setSystemMode(SystemGuardState.SystemMode.RUNNING);
+            }
         }
         state.setUpdatedAt(Instant.now());
         return systemGuardStateRepository.save(state);
@@ -131,9 +143,42 @@ public class SystemGuardService {
         return getState().isEmergencyMode();
     }
 
+    @Transactional
+    public SystemGuardState setPanicMode(boolean panicMode, String reason, Instant startedAt) {
+        SystemGuardState state = getState();
+        if (panicMode && state.isPanicMode()) {
+            return state;
+        }
+        state.setPanicMode(panicMode);
+        if (panicMode) {
+            Instant now = startedAt != null ? startedAt : Instant.now();
+            state.setPanicReason(reason);
+            state.setPanicStartedAt(now);
+            state.setLastPanicReason(reason);
+            state.setLastPanicAt(now);
+            state.setSystemMode(SystemGuardState.SystemMode.PANIC);
+            riskEventService.record(0L, "PANIC_TRIGGERED", reason, "startedAt=" + now);
+        } else {
+            state.setPanicReason(null);
+            state.setPanicStartedAt(null);
+            state.setSystemMode(SystemGuardState.SystemMode.SAFE);
+        }
+        state.setUpdatedAt(Instant.now());
+        return systemGuardStateRepository.save(state);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isPanicModeActive() {
+        return getState().isPanicMode();
+    }
+
     @Transactional(readOnly = true)
     public boolean isTradingBlocked() {
         SystemGuardState state = getState();
-        return state.isSafeMode() || state.isEmergencyMode() || isCrisisModeActive();
+        return state.isSafeMode()
+                || state.isEmergencyMode()
+                || state.isPanicMode()
+                || isCrisisModeActive()
+                || state.getSystemMode() != SystemGuardState.SystemMode.RUNNING;
     }
 }
