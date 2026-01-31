@@ -229,12 +229,14 @@ public class FyersAuthService {
             user.setFyersRefreshToken(tokens.refreshToken());
         }
         user.setFyersConnected(true);
+        user.setFyersTokenActive(true);
         userRepository.save(user);
     }
 
     public String getFyersToken(Long userId) {
         return userRepository.findById(userId)
                 .filter(User::getFyersConnected)
+                .filter(user -> Boolean.TRUE.equals(user.getFyersTokenActive()))
                 .map(User::getFyersToken)
                 .orElse(null);
     }
@@ -242,6 +244,7 @@ public class FyersAuthService {
     public String getFyersRefreshToken(Long userId) {
         return userRepository.findById(userId)
                 .filter(User::getFyersConnected)
+                .filter(user -> Boolean.TRUE.equals(user.getFyersTokenActive()))
                 .map(User::getFyersRefreshToken)
                 .orElse(null);
     }

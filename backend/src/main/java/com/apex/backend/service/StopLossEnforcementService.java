@@ -27,9 +27,14 @@ public class StopLossEnforcementService {
     private final MetricsService metricsService;
     private final AuditEventService auditEventService;
     private final ExitRetryService exitRetryService;
+    private final TradeStateMachine tradeStateMachine;
+    private final EmergencyPanicService emergencyPanicService;
 
     @Value("${execution.stop-ack-timeout-seconds:5}")
     private int stopAckTimeoutSeconds;
+
+    @Value("${apex.risk.stop-loss-failure-mode:SAFE}")
+    private String stopLossFailureMode;
 
     @Scheduled(fixedDelayString = "${execution.stop-ack-enforce-interval-seconds:5}000")
     @Transactional
@@ -53,12 +58,15 @@ public class StopLossEnforcementService {
                 Map.of("tradeId", trade.getId(), "symbol", trade.getSymbol(), "reason", reason));
         metricsService.recordStopLossFailure();
 
-        trade.transitionTo(PositionState.ERROR);
-        tradeRepository.save(trade);
+        tradeStateMachine.transition(trade, PositionState.ERROR, "STOP_LOSS_FAIL", reason);
 
         flattenPosition(trade);
 
-        systemGuardService.setSafeMode(true, "STOP_LOSS_ACK_TIMEOUT: " + trade.getSymbol(), Instant.now());
+        if ("PANIC".equalsIgnoreCase(stopLossFailureMode)) {
+            emergencyPanicService.triggerGlobalEmergency("STOP_LOSS_FAIL:" + trade.getSymbol());
+        } else {
+            systemGuardService.setSafeMode(true, "STOP_LOSS_ACK_TIMEOUT: " + trade.getSymbol(), Instant.now());
+        }
         alertService.sendAlert("STOP_LOSS_ENFORCEMENT", "Stop-loss ack timeout for " + trade.getSymbol());
     }
 
