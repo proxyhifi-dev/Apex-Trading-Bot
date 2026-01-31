@@ -372,15 +372,6 @@ exit-retry:
   max-attempts: 10
   max-delay-seconds: 300
 
-apex:
-  risk:
-    daily-max-loss: 2000
-    max-consecutive-losses: 3
-    stop-loss-failure-mode: SAFE
-    heat-max-pct: 0.06
-    enforce-enabled: true
-    enforce-interval-ms: 60000
-
 crisis:
   enabled: true
   index-symbol: NSE:NIFTY50-EQ
