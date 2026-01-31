@@ -118,6 +118,13 @@ apex:
     ws-url: ${APEX_UI_WS_URL:ws://127.0.0.1:8080/ws}
   bootstrap:
     default-users: true
+  risk:
+    daily-max-loss: 2000
+    max-consecutive-losses: 3
+    stop-loss-failure-mode: SAFE
+    heat-max-pct: 0.06
+    enforce-enabled: true
+    enforce-interval-ms: 60000
   security:
     cors:
       allowed-origins: ${APEX_ALLOWED_ORIGINS:}
