@@ -99,11 +99,11 @@ public class SmartSignalGenerator {
         }
 
         Instant now = Instant.now();
-        if (systemGuardService.getState().isSafeMode()) {
-            decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", "SAFE_MODE"));
+        if (systemGuardService.isTradingBlocked()) {
+            decisionAuditService.record(symbol, "5m", "GUARD", Map.of("reason", "TRADING_BLOCKED"));
             return SignalDecision.builder()
                     .hasSignal(false)
-                    .reason("SAFE MODE: reconciliation mismatch")
+                    .reason("System guard block")
                     .diagnostics(SignalDiagnostics.withReason(ScanRejectReason.SAFE_MODE))
                     .build();
         }
