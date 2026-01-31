@@ -23,6 +23,8 @@ public interface TradeRepository extends JpaRepository<Trade, Long> {
 
     long countByUserIdAndStatus(Long userId, Trade.TradeStatus status);
 
+    long countByStatus(Trade.TradeStatus status);
+
     @Query("SELECT SUM(t.realizedPnl) FROM Trade t WHERE t.userId = :userId AND t.isPaperTrade = :isPaper AND t.status = 'CLOSED'")
     java.math.BigDecimal getTotalPnlByUserAndMode(@Param("userId") Long userId, @Param("isPaper") boolean isPaper);
 }

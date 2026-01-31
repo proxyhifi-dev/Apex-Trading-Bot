@@ -31,6 +31,8 @@ public class BrokerStatus {
 
     private LocalDateTime degradedAt;
 
+    private LocalDateTime nextAllowedAt;
+
     private LocalDateTime updatedAt;
 
     public enum Status {
