@@ -57,6 +57,7 @@ public class TradeExecutionService {
     private final BroadcastService broadcastService;
     private final CrisisModeService crisisModeService;
     private final TradeCooldownService tradeCooldownService;
+    private final TradeStateMachine tradeStateMachine;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
@@ -166,20 +167,20 @@ public class TradeExecutionService {
             return;
         }
 
-        if (systemGuardService.getState().isSafeMode()) {
-            metricsService.recordReject("SAFE_MODE");
+        if (systemGuardService.isTradingBlocked()) {
+            metricsService.recordReject("TRADING_BLOCKED");
             decisionAuditService.record(signal.getSymbol(), "5m", "GUARD", Map.of(
-                    "reason", "SAFE_MODE_BEFORE_EXECUTION"
+                    "reason", "TRADING_BLOCKED"
             ));
             signal.setApprovalStatus(StockScreeningResult.ApprovalStatus.REJECTED);
             screeningRepo.save(signal);
             broadcastService.broadcastBotStatus(Map.of(
                     "status", "BLOCKED",
-                    "reason", "SAFE MODE: reconciliation mismatch",
+                    "reason", "System guard block",
                     "timestamp", LocalDateTime.now()
             ));
             broadcastService.broadcastReject(new BroadcastService.RejectEvent(
-                    "SAFE_MODE",
+                    "TRADING_BLOCKED",
                     null,
                     null,
                     signal.getSymbol(),
@@ -256,8 +257,7 @@ public class TradeExecutionService {
                 }
                 
                 // Stop placed successfully
-                trade.transitionTo(com.apex.backend.model.PositionState.OPEN);
-                tradeRepo.save(trade);
+                tradeStateMachine.transition(trade, com.apex.backend.model.PositionState.OPEN, "STOP_ACKED", "Protective stop acked");
                 log.info("Protective stop placed for trade: {} symbol: {}", trade.getId(), trade.getSymbol());
             } else {
                 log.warn("No FYERS token available for stop placement, trade: {}", trade.getId());
@@ -268,8 +268,7 @@ public class TradeExecutionService {
             trade.setStopOrderId("PAPER-STOP-" + System.currentTimeMillis());
             trade.setStopOrderState(com.apex.backend.model.OrderState.ACKED);
             trade.setStopAckedAt(LocalDateTime.now());
-            trade.transitionTo(com.apex.backend.model.PositionState.OPEN);
-            tradeRepo.save(trade);
+            tradeStateMachine.transition(trade, com.apex.backend.model.PositionState.OPEN, "PAPER_STOP_ACKED", "Paper mode stop ack");
         }
         
         decisionAuditService.record(signal.getSymbol(), "5m", "SIGNAL_SCORE", Map.of(
@@ -303,6 +302,9 @@ public class TradeExecutionService {
     }
 
     private GuardBlock evaluateGuards(Long userId, String symbol, List<com.apex.backend.model.Candle> candles, DecisionResult pipelineDecision, Instant now) {
+        if (systemGuardService.isPanicModeActive()) {
+            return new GuardBlock(true, "GUARD", "PANIC_MODE", "SYSTEM PANIC active");
+        }
         if (systemGuardService.isEmergencyModeActive()) {
             return new GuardBlock(true, "GUARD", "EMERGENCY_MODE", "SYSTEM EMERGENCY active");
         }

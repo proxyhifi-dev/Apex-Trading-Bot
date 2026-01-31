@@ -29,6 +29,16 @@ public class RiskGatekeeper {
     private final SystemGuardService systemGuardService;
 
     public RiskGateDecision evaluate(RiskGateRequest request) {
+        if (!request.exitOrder() && systemGuardService.isPanicModeActive()) {
+            return RiskGateDecision.reject(
+                    RiskRejectCode.EMERGENCY_MODE,
+                    "System panic active",
+                    null,
+                    null,
+                    request.symbol(),
+                    null
+            );
+        }
         if (!request.exitOrder() && systemGuardService.isEmergencyModeActive()) {
             return RiskGateDecision.reject(
                     RiskRejectCode.EMERGENCY_MODE,

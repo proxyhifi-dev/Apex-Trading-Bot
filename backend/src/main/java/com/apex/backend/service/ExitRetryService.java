@@ -27,12 +27,18 @@ public class ExitRetryService {
     private final ExecutionEngine executionEngine;
     private final TradeCloseService tradeCloseService;
     private final DeadLetterQueueService deadLetterQueueService;
+    private final AuditEventService auditEventService;
+    private final EmergencyPanicService emergencyPanicService;
+    private final AlertService alertService;
 
     @Value("${exit-retry.max-attempts:10}")
     private int maxAttempts;
 
     @Value("${exit-retry.retry-delay-seconds:30}")
     private int retryDelaySeconds;
+
+    @Value("${exit-retry.max-delay-seconds:300}")
+    private int maxDelaySeconds;
 
     @Scheduled(fixedDelayString = "${exit-retry.poll-interval-ms:15000}")
     public void processQueue() {
@@ -132,13 +138,21 @@ public class ExitRetryService {
 
     private void scheduleRetry(ExitRetryRequest request, String error) {
         request.setLastError(error);
-        request.setNextAttemptAt(Instant.now().plusSeconds(retryDelaySeconds));
+        int attempt = Math.max(1, request.getAttempts());
+        long delay = Math.min(maxDelaySeconds, (long) retryDelaySeconds * (1L << Math.min(attempt - 1, 8)));
+        request.setNextAttemptAt(Instant.now().plusSeconds(delay));
         request.setUpdatedAt(Instant.now());
         if (request.getAttempts() >= maxAttempts && !request.isDlqLogged()) {
             deadLetterQueueService.logFailure("EXIT_RETRY", "tradeId=" + request.getTradeId(), error);
             request.setDlqLogged(true);
+            auditEventService.recordEvent(request.getUserId(), "risk_event", "EXIT_RETRY_DLQ",
+                    "Exit retry exhausted attempts",
+                    java.util.Map.of("tradeId", request.getTradeId(), "attempts", request.getAttempts(), "error", error));
+            emergencyPanicService.triggerGlobalEmergency("EXIT_RETRY_DLQ");
+            alertService.sendAlert("EXIT_RETRY_DLQ", "Exit retry dead-lettered tradeId=" + request.getTradeId());
         }
         exitRetryRepository.save(request);
-        log.warn("Exit retry scheduled tradeId={} attempts={} error={}", request.getTradeId(), request.getAttempts(), error);
+        log.warn("Exit retry scheduled tradeId={} attempts={} delaySeconds={} error={}",
+                request.getTradeId(), request.getAttempts(), delay, error);
     }
 }
