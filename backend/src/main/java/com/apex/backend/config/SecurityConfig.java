@@ -56,8 +56,9 @@ public class SecurityConfig {
                 .requestMatchers("/api/ui/config").permitAll()
                 .requestMatchers("/api/dev/login").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
-                .requestMatchers("/v3/api-docs/**").permitAll()
-                .requestMatchers("/swagger-ui/**").permitAll()
+                .requestMatchers("/actuator/info", "/actuator/info/**").permitAll()
+                .requestMatchers("/v3/api-docs", "/v3/api-docs/**").permitAll()
+                .requestMatchers("/swagger-ui.html", "/swagger-ui/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
 
                 // 🔐 EVERYTHING ELSE NEEDS JWT

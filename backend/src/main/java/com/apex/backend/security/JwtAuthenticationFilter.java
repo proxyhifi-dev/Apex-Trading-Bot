@@ -11,9 +11,11 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
+import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 import java.util.Collections;
+import java.util.List;
 
 /**
  * JWT Authentication Filter
@@ -25,6 +27,21 @@ import java.util.Collections;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
+    private final AntPathMatcher pathMatcher = new AntPathMatcher();
+    private final List<String> publicPaths = List.of(
+            "/actuator/health",
+            "/actuator/health/**",
+            "/actuator/info",
+            "/actuator/info/**",
+            "/v3/api-docs",
+            "/v3/api-docs/**",
+            "/swagger-ui.html",
+            "/swagger-ui/**",
+            "/api/ui/config",
+            "/api/auth/**",
+            "/api/dev/login",
+            "/ws/**"
+    );
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
@@ -55,6 +72,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        return publicPaths.stream().anyMatch(pattern -> pathMatcher.match(pattern, path));
     }
 
     /**
