@@ -62,6 +62,7 @@ public class ReconciliationService {
     private final TradeStateMachine tradeStateMachine;
     private final EmergencyPanicService emergencyPanicService;
     private final OrderStateMachine orderStateMachine;
+    private final com.apex.backend.service.ScheduledTaskGuard scheduledTaskGuard;
 
     private final java.util.concurrent.atomic.AtomicReference<ReconcileReport> lastReport =
             new java.util.concurrent.atomic.AtomicReference<>(new ReconcileReport(false, List.of(), List.of(), List.of()));
@@ -89,11 +90,7 @@ public class ReconciliationService {
 
     @Scheduled(fixedDelayString = "${reconcile.interval-ms:60000}")
     public void runScheduled() {
-        try {
-            reconcile();
-        } catch (Exception e) {
-            log.error("Reconciliation task failed", e);
-        }
+        scheduledTaskGuard.run("reconciliation", this::reconcile);
     }
 
     @Transactional

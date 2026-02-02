@@ -193,7 +193,7 @@ public class FyersAuthService {
     public FyersProfile getUserProfile(String fyersToken) throws Exception {
         Request request = new Request.Builder()
                 .url(PROFILE_URL)
-                .header("Authorization", fyersToken)
+                .header("Authorization", "Bearer " + fyersToken)
                 .get()
                 .build();
 

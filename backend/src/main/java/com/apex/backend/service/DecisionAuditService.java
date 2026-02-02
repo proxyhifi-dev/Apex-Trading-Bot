@@ -20,6 +20,7 @@ public class DecisionAuditService {
 
     private final DecisionAuditRepository decisionAuditRepository;
     private final AdvancedTradingProperties advancedTradingProperties;
+    private final ScheduledTaskGuard scheduledTaskGuard;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public void record(String symbol, String timeframe, String decisionType, Map<String, Object> details) {
@@ -41,7 +42,7 @@ public class DecisionAuditService {
 
     @Scheduled(cron = "0 30 2 * * *")
     public void cleanupOldAudits() {
-        try {
+        scheduledTaskGuard.run("decisionAuditCleanup", () -> {
             int retentionDays = advancedTradingProperties.getAudit().getRetentionDays();
             if (retentionDays <= 0) {
                 return;
@@ -51,8 +52,6 @@ public class DecisionAuditService {
             if (removed > 0) {
                 log.info("Pruned {} decision audits older than {} days", removed, retentionDays);
             }
-        } catch (Exception e) {
-            log.warn("Failed to prune decision audits", e);
-        }
+        });
     }
 }

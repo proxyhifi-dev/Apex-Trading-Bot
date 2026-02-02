@@ -29,6 +29,7 @@ public class StopLossEnforcementService {
     private final ExitRetryService exitRetryService;
     private final TradeStateMachine tradeStateMachine;
     private final EmergencyPanicService emergencyPanicService;
+    private final ScheduledTaskGuard scheduledTaskGuard;
 
     @Value("${execution.stop-ack-timeout-seconds:5}")
     private int stopAckTimeoutSeconds;
@@ -39,12 +40,14 @@ public class StopLossEnforcementService {
     @Scheduled(fixedDelayString = "${execution.stop-ack-enforce-interval-seconds:5}000")
     @Transactional
     public void enforceOverdueStops() {
-        LocalDateTime cutoff = LocalDateTime.now().minusSeconds(stopAckTimeoutSeconds);
-        List<Trade> overdue = tradeRepository.findByPositionStateAndStopAckedAtIsNullAndEntryTimeBefore(
-                PositionState.OPENING, cutoff);
-        for (Trade trade : overdue) {
-            enforce(trade, "STOP_ACK_TIMEOUT");
-        }
+        scheduledTaskGuard.run("stopLossEnforcement", () -> {
+            LocalDateTime cutoff = LocalDateTime.now().minusSeconds(stopAckTimeoutSeconds);
+            List<Trade> overdue = tradeRepository.findByPositionStateAndStopAckedAtIsNullAndEntryTimeBefore(
+                    PositionState.OPENING, cutoff);
+            for (Trade trade : overdue) {
+                enforce(trade, "STOP_ACK_TIMEOUT");
+            }
+        });
     }
 
     @Transactional

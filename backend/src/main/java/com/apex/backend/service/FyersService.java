@@ -31,9 +31,9 @@ public class FyersService {
 
     @Value("${fyers.api.access-token:}")
     private String accessToken;
-    @Value("${fyers.api.base-url:https://api-t1.fyers.in/api/v3}")
+    @Value("${fyers.api.base-url:https://api.fyers.in/api/v2}")
     private String apiBaseUrl;
-    @Value("${fyers.data.base-url:https://api-t1.fyers.in/data}")
+    @Value("${fyers.data.base-url:https://api.fyers.in/api/v2}")
     private String dataBaseUrl;
 
     private final Environment environment;
@@ -185,7 +185,7 @@ public class FyersService {
         String response = executeGetRequest(url, token, userId);
         if (response == null) throw new RuntimeException("Empty Response");
 
-        JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+        JsonObject json = parseResponse(response, "history");
         List<Candle> candles = new ArrayList<>();
 
         if (json.has("s") && json.get("s").getAsString().equals("ok")) {
@@ -234,12 +234,21 @@ public class FyersService {
             body.put("clientId", clientOrderId);
 
             String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body), userId);
-            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-            if (json.has("id")) {
-                return json.get("id").getAsString();
+            JsonObject json = parseResponse(response, "placeOrder");
+            String id = json.has("id") ? json.get("id").getAsString() : null;
+            if (id != null && !id.isBlank()) {
+                return id;
             }
-            return "ORD-" + System.currentTimeMillis();
+            Optional<String> reconciled = reconcileOrderId(userId, clientOrderId);
+            if (reconciled.isPresent()) {
+                return reconciled.get();
+            }
+            throw new RuntimeException("Order placement missing broker id");
         } catch (Exception e) {
+            Optional<String> reconciled = reconcileOrderId(userId, clientOrderId);
+            if (reconciled.isPresent()) {
+                return reconciled.get();
+            }
             metricsService.incrementBrokerFailures();
             alertService.sendAlert("BROKER_ERROR", e.getMessage());
             log.error("❌ Order Failed: {}", e.getMessage());
@@ -263,7 +272,7 @@ public class FyersService {
         try {
             // FYERS uses DELETE method for order cancellation
             String response = fyersHttpClient.delete(url, resolvedToken, userId);
-            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject json = parseResponse(response, "cancelOrder");
             if (json.has("id")) {
                 return json.get("id").getAsString();
             }
@@ -307,7 +316,7 @@ public class FyersService {
                 body.put("validity", request.getValidity().name());
             }
             String response = fyersHttpClient.put(url, resolvedToken, gson.toJson(body), userId);
-            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject json = parseResponse(response, "modifyOrder");
             if (json.has("id")) {
                 return json.get("id").getAsString();
             }
@@ -337,7 +346,7 @@ public class FyersService {
             body.put("clientId", clientOrderId);
 
             String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
-            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            JsonObject json = parseResponse(response, "placeStopLossOrder");
             if (json.has("id")) {
                 return json.get("id").getAsString();
             }
@@ -376,6 +385,7 @@ public class FyersService {
                 return Optional.empty();
             }
             JsonNode root = objectMapper.readTree(response);
+            assertFyersOk(root, "getOrderDetails");
             JsonNode dataNode = root.path("data");
             if (dataNode.isObject()) {
                 return Optional.of(parseOrderNode(orderId, dataNode));
@@ -414,51 +424,51 @@ public class FyersService {
     }
 
     public Map<String, Object> getProfile(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/profile", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/profile", token, null, "profile");
     }
 
     public Map<String, Object> getProfileForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/profile", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/profile", null, userId, "profile");
     }
 
     public Map<String, Object> getFunds(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/funds", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/funds", token, null, "funds");
     }
 
     public Map<String, Object> getFundsForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/funds", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/funds", null, userId, "funds");
     }
 
     public Map<String, Object> getHoldings(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/holdings", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/holdings", token, null, "holdings");
     }
 
     public Map<String, Object> getHoldingsForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/holdings", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/holdings", null, userId, "holdings");
     }
 
     public Map<String, Object> getPositions(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/positions", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/positions", token, null, "positions");
     }
 
     public Map<String, Object> getPositionsForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/positions", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/positions", null, userId, "positions");
     }
 
     public Map<String, Object> getOrders(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/orders", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/orders", token, null, "orders");
     }
 
     public Map<String, Object> getOrdersForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/orders", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/orders", null, userId, "orders");
     }
 
     public Map<String, Object> getTrades(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/tradebook", token, null);
+        return fetchJsonAsMap(apiBaseUrl + "/tradebook", token, null, "tradebook");
     }
 
     public Map<String, Object> getTradesForUser(Long userId) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/tradebook", null, userId);
+        return fetchJsonAsMap(apiBaseUrl + "/tradebook", null, userId, "tradebook");
     }
 
     private String executeGetRequest(String url, String token, Long userId) {
@@ -470,13 +480,14 @@ public class FyersService {
         if (symbols.isEmpty()) {
             return Collections.emptyMap();
         }
-        String url = dataBaseUrl + "/quotes?symbols=" + String.join(",", symbols);
+        String url = apiBaseUrl + "/quotes?symbols=" + String.join(",", symbols);
         try {
             String response = executeGetRequest(url, token, userId);
             if (response == null) {
                 return Collections.emptyMap();
             }
             JsonNode root = objectMapper.readTree(response);
+            assertFyersOk(root, "quotes");
             Map<String, BigDecimal> ltpMap = new HashMap<>();
             if ("ok".equalsIgnoreCase(root.path("s").asText())) {
                 for (JsonNode item : root.path("d")) {
@@ -500,13 +511,62 @@ public class FyersService {
         }
     }
 
-    private Map<String, Object> fetchJsonAsMap(String url, String token, Long userId) throws IOException {
+    private Map<String, Object> fetchJsonAsMap(String url, String token, Long userId, String context) throws IOException {
         String resolvedToken = resolveTokenForUser(token, userId);
         String response = executeGetRequest(url, resolvedToken, userId);
         if (response == null) {
             return Collections.emptyMap();
         }
-        return objectMapper.readValue(response, Map.class);
+        JsonNode root = objectMapper.readTree(response);
+        assertFyersOk(root, context);
+        return objectMapper.convertValue(root, Map.class);
+    }
+
+    private JsonObject parseResponse(String response, String context) {
+        JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+        assertFyersOk(json, context);
+        return json;
+    }
+
+    private void assertFyersOk(JsonObject json, String context) {
+        if (json.has("s") && "error".equalsIgnoreCase(json.get("s").getAsString())) {
+            String message = json.has("message") ? json.get("message").getAsString() : "Unknown error";
+            String code = json.has("code") ? json.get("code").getAsString() : "UNKNOWN";
+            throw new FyersApiException("FYERS " + context + " failed: " + message + " code=" + code, 422, null);
+        }
+    }
+
+    private void assertFyersOk(JsonNode root, String context) {
+        if (root.has("s") && "error".equalsIgnoreCase(root.path("s").asText())) {
+            String message = root.path("message").asText("Unknown error");
+            String code = root.path("code").asText("UNKNOWN");
+            throw new FyersApiException("FYERS " + context + " failed: " + message + " code=" + code, 422, null);
+        }
+    }
+
+    private Optional<String> reconcileOrderId(Long userId, String clientOrderId) {
+        if (userId == null || clientOrderId == null || clientOrderId.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            Map<String, Object> orders = getOrdersForUser(userId);
+            JsonNode root = objectMapper.valueToTree(orders);
+            JsonNode dataNode = root.path("data");
+            if (dataNode.isArray()) {
+                for (JsonNode order : dataNode) {
+                    String clientId = order.path("clientId").asText(order.path("client_id").asText(null));
+                    if (clientOrderId.equalsIgnoreCase(clientId)) {
+                        String id = order.path("id").asText(null);
+                        if (id != null && !id.isBlank()) {
+                            return Optional.of(id);
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Order reconciliation failed clientOrderId={} error={}", clientOrderId, e.getMessage());
+        }
+        return Optional.empty();
     }
 
     private String resolveToken(String token) {

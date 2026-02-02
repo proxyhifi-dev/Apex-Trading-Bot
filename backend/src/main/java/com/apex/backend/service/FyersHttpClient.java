@@ -20,6 +20,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
@@ -28,6 +29,7 @@ import org.springframework.web.client.RestTemplate;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -45,26 +47,30 @@ public class FyersHttpClient {
     private final FyersTokenService fyersTokenService;
     private final AuditEventService auditEventService;
     private final LogBroadcastService logBroadcastService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @org.springframework.beans.factory.annotation.Value("${fyers.api.app-id:}")
-    private String appId;
+    private final AtomicLong lastUnreachableEventAt = new AtomicLong(0L);
 
     @org.springframework.beans.factory.annotation.Value("${fyers.api.rate-limit-backoff-seconds:5}")
     private long rateLimitBackoffSeconds;
 
     @PostConstruct
     void init() {
-        fyersCircuitBreaker.getEventPublisher().onStateTransition(event -> {
-            switch (event.getStateTransition().getToState()) {
-                case OPEN, HALF_OPEN -> brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
-                case CLOSED -> brokerStatusService.markNormal("FYERS");
-                default -> {
+        try {
+            fyersCircuitBreaker.getEventPublisher().onStateTransition(event -> {
+                switch (event.getStateTransition().getToState()) {
+                    case OPEN, HALF_OPEN -> brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
+                    case CLOSED -> brokerStatusService.markNormal("FYERS");
+                    default -> {
+                    }
                 }
-            }
-        });
-        Gauge.builder("broker_circuit_state", fyersCircuitBreaker, breaker -> mapState(breaker.getState()))
-                .tag("broker", "FYERS")
-                .register(meterRegistry);
+            });
+            Gauge.builder("broker_circuit_state", fyersCircuitBreaker, breaker -> mapState(breaker.getState()))
+                    .tag("broker", "FYERS")
+                    .register(meterRegistry);
+        } catch (Exception e) {
+            log.error("Failed to initialize FYERS circuit metrics", e);
+        }
     }
 
     public String get(String url, String token) {
@@ -159,7 +165,7 @@ public class FyersHttpClient {
         try {
             HttpHeaders headers = new HttpHeaders();
             if (token != null && !token.isBlank()) {
-                headers.set("Authorization", appId + ":" + token);
+                headers.set("Authorization", "Bearer " + token);
             }
             if (method == HttpMethod.POST || method == HttpMethod.PUT) {
                 headers.setContentType(MediaType.APPLICATION_JSON);
@@ -206,5 +212,13 @@ public class FyersHttpClient {
         metadata.put("timestamp", Instant.now().toString());
         auditEventService.recordEvent(userId, "BROKER", "FYERS_HTTP_ERROR",
                 "FYERS request failed: " + reason, metadata);
+
+        if (e instanceof ResourceAccessException) {
+            long now = System.currentTimeMillis();
+            long last = lastUnreachableEventAt.get();
+            if (now - last > 60000 && lastUnreachableEventAt.compareAndSet(last, now)) {
+                eventPublisher.publishEvent(new BrokerUnreachableEvent("FYERS", "RESOURCE_ACCESS", Instant.now()));
+            }
+        }
     }
 }

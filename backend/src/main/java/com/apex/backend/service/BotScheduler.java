@@ -52,9 +52,13 @@ public class BotScheduler {
 
     @PostConstruct
     public void logSchedulerMode() {
-        if (!config.getScanner().isSchedulerEnabled()
-                || config.getScanner().getMode() != StrategyConfig.Scanner.Mode.SCHEDULED) {
-            log.info("Scanner scheduler disabled (manual-only mode)");
+        try {
+            if (!config.getScanner().isSchedulerEnabled()
+                    || config.getScanner().getMode() != StrategyConfig.Scanner.Mode.SCHEDULED) {
+                log.info("Scanner scheduler disabled (manual-only mode)");
+            }
+        } catch (Exception e) {
+            log.error("Failed to evaluate scheduler mode", e);
         }
     }
     

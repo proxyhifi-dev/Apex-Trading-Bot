@@ -1,6 +1,7 @@
 package com.apex.backend.security;
 
 import jakarta.annotation.PostConstruct;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,7 @@ import java.util.Base64;
  * - "enc:v1:" + Base64(iv + ciphertext)
  */
 @Service
+@Slf4j
 public class TokenEncryptionService {
 
     private static final String PREFIX = "enc:v1:";
@@ -35,11 +37,17 @@ public class TokenEncryptionService {
     private static final SecureRandom RNG = new SecureRandom();
 
     private final Environment environment;
+    private final com.apex.backend.service.SystemGuardService systemGuardService;
+    private final com.apex.backend.service.AuditEventService auditEventService;
 
     private volatile SecretKey secretKey;
 
-    public TokenEncryptionService(Environment environment) {
+    public TokenEncryptionService(Environment environment,
+                                  com.apex.backend.service.SystemGuardService systemGuardService,
+                                  com.apex.backend.service.AuditEventService auditEventService) {
         this.environment = environment;
+        this.systemGuardService = systemGuardService;
+        this.auditEventService = auditEventService;
     }
 
     @PostConstruct
@@ -53,9 +61,10 @@ public class TokenEncryptionService {
 
         if (isBlank(keyB64)) {
             if (isProd) {
-                throw new IllegalStateException(
-                        "SECURITY_TOKEN_ENCRYPTION_KEY is required in production to encrypt broker tokens at rest."
-                );
+                String reason = "SECURITY_TOKEN_ENCRYPTION_KEY missing";
+                log.error(reason);
+                markSafeMode(reason, "TOKEN_ENCRYPTION_KEY_MISSING",
+                        "Token encryption key missing in production", null);
             }
             this.secretKey = null; // encryption disabled in dev if key missing
             return;
@@ -65,13 +74,21 @@ public class TokenEncryptionService {
         try {
             keyBytes = Base64.getDecoder().decode(keyB64.trim());
         } catch (IllegalArgumentException e) {
-            throw new IllegalStateException("SECURITY_TOKEN_ENCRYPTION_KEY must be Base64 encoded.", e);
+            String reason = "SECURITY_TOKEN_ENCRYPTION_KEY invalid Base64";
+            log.error(reason, e);
+            markSafeMode(reason, "TOKEN_ENCRYPTION_KEY_INVALID",
+                    "Token encryption key invalid Base64", null);
+            this.secretKey = null;
+            return;
         }
 
         if (keyBytes.length != 32) {
-            throw new IllegalStateException(
-                    "SECURITY_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes (AES-256). Got: " + keyBytes.length
-            );
+            String reason = "SECURITY_TOKEN_ENCRYPTION_KEY invalid length";
+            log.error("{} length={}", reason, keyBytes.length);
+            markSafeMode(reason, "TOKEN_ENCRYPTION_KEY_INVALID",
+                    "Token encryption key invalid length", java.util.Map.of("length", keyBytes.length));
+            this.secretKey = null;
+            return;
         }
 
         this.secretKey = new SecretKeySpec(keyBytes, "AES");
@@ -120,7 +137,11 @@ public class TokenEncryptionService {
         if (!looksEncrypted(value)) return value;
 
         if (secretKey == null) {
-            throw new IllegalStateException("Encrypted token present but SECURITY_TOKEN_ENCRYPTION_KEY is not configured.");
+            String reason = "Encrypted token present but SECURITY_TOKEN_ENCRYPTION_KEY is not configured";
+            log.error(reason);
+            markSafeMode(reason, "TOKEN_ENCRYPTION_KEY_MISSING",
+                    "Encrypted token present but key missing", null);
+            return null;
         }
 
         try {
@@ -143,7 +164,11 @@ public class TokenEncryptionService {
             byte[] plain = cipher.doFinal(ciphertext);
             return new String(plain, StandardCharsets.UTF_8);
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to decrypt token. Check SECURITY_TOKEN_ENCRYPTION_KEY.", e);
+            String reason = "Failed to decrypt token. Check SECURITY_TOKEN_ENCRYPTION_KEY.";
+            log.error(reason, e);
+            markSafeMode(reason, "TOKEN_DECRYPT_FAILURE",
+                    "Failed to decrypt token", null);
+            return null;
         }
     }
 
@@ -181,5 +206,14 @@ public class TokenEncryptionService {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    private void markSafeMode(String reason, String action, String description, Object metadata) {
+        try {
+            systemGuardService.setSafeMode(true, reason, java.time.Instant.now());
+            auditEventService.recordEvent(0L, "security", action, description, metadata);
+        } catch (Exception e) {
+            log.warn("Failed to update safe mode for token encryption issue: {}", e.getMessage());
+        }
     }
 }

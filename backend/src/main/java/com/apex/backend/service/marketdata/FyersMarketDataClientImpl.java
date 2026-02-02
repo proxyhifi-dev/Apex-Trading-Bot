@@ -31,8 +31,8 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
     private final InstrumentService instrumentService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${fyers.data.base-url:https://api-t1.fyers.in/data}")
-    private String dataBaseUrl;
+    @Value("${fyers.api.base-url:https://api.fyers.in/api/v2}")
+    private String apiBaseUrl;
 
     @Value("${fyers.data.depth-path:/depth}")
     private String depthPath;
@@ -54,7 +54,7 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
             return Optional.empty();
         }
         String tradingSymbol = resolvedSymbol.get();
-        String url = dataBaseUrl + "/quotes?symbols=" + tradingSymbol;
+        String url = apiBaseUrl + "/quotes?symbols=" + tradingSymbol;
         try {
             String response = fyersHttpClient.get(url, token);
             if (response == null) {
@@ -88,7 +88,7 @@ public class FyersMarketDataClientImpl implements FyersMarketDataClient {
             return Optional.empty();
         }
         String tradingSymbol = resolvedSymbol.get();
-        String url = dataBaseUrl + depthPath + "?symbol=" + tradingSymbol;
+        String url = apiBaseUrl + depthPath + "?symbol=" + tradingSymbol;
         try {
             String response = fyersHttpClient.get(url, token);
             if (response == null) {

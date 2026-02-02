@@ -40,8 +40,6 @@ public class FyersWebSocketService {
     @Value("${fyers.ws.access-token:}")
     private String accessToken;
 
-    @Value("${fyers.api.app-id:}")
-    private String appId;
 
     @Value("${fyers.ws.subscribe.market-data-payload:}")
     private String marketDataSubscribePayload;
@@ -64,27 +62,27 @@ public class FyersWebSocketService {
 
     @PostConstruct
     void start() {
-        if (!enabled) {
-            log.info("FYERS WebSocket disabled via config");
-            return;
+        try {
+            if (!enabled) {
+                log.info("FYERS WebSocket disabled via config");
+                return;
+            }
+            if (accessToken == null || accessToken.isBlank()) {
+                log.warn("FYERS WebSocket enabled but no access token configured");
+                auditEventService.recordEvent(null, "BROKER", "FYERS_WS_DISABLED",
+                        "FYERS WebSocket enabled but access token is missing", Map.of("timestamp", Instant.now().toString()));
+                return;
+            }
+            webSocketClient = new OkHttpClient.Builder()
+                    .pingInterval(20, TimeUnit.SECONDS)
+                    .build();
+            connectMarketData();
+            connectOrderUpdates();
+        } catch (Exception e) {
+            log.error("FYERS WebSocket initialization failed", e);
+            auditEventService.recordEvent(null, "BROKER", "FYERS_WS_ERROR",
+                    "FYERS WebSocket initialization failed", Map.of("error", e.getMessage(), "timestamp", Instant.now().toString()));
         }
-        if (accessToken == null || accessToken.isBlank()) {
-            log.warn("FYERS WebSocket enabled but no access token configured");
-            auditEventService.recordEvent(null, "BROKER", "FYERS_WS_DISABLED",
-                    "FYERS WebSocket enabled but access token is missing", Map.of("timestamp", Instant.now().toString()));
-            return;
-        }
-        if (appId == null || appId.isBlank()) {
-            log.warn("FYERS WebSocket enabled but app-id missing");
-            auditEventService.recordEvent(null, "BROKER", "FYERS_WS_DISABLED",
-                    "FYERS WebSocket enabled but app-id is missing", Map.of("timestamp", Instant.now().toString()));
-            return;
-        }
-        webSocketClient = new OkHttpClient.Builder()
-                .pingInterval(20, TimeUnit.SECONDS)
-                .build();
-        connectMarketData();
-        connectOrderUpdates();
     }
 
     private void connectMarketData() {
@@ -104,7 +102,7 @@ public class FyersWebSocketService {
     private WebSocket openSocket(String url, String topic, String subscribePayload) {
         Request request = new Request.Builder()
                 .url(url)
-                .header("Authorization", appId + ":" + accessToken)
+                .header("Authorization", "Bearer " + accessToken)
                 .build();
         return webSocketClient.newWebSocket(request, new WebSocketListener() {
             @Override

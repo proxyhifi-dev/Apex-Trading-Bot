@@ -37,6 +37,7 @@ public class RiskManagementService {
     private final OrderIntentRepository orderIntentRepository;
     private final OrderStateMachine orderStateMachine;
     private final AuditEventService auditEventService;
+    private final ScheduledTaskGuard scheduledTaskGuard;
     
     @Value("${apex.trading.capital:100000}")
     private double initialCapital;
@@ -120,42 +121,44 @@ public class RiskManagementService {
 
     @Scheduled(fixedDelayString = "${apex.risk.enforce-interval-ms:60000}")
     public void enforceRiskLimits() {
-        if (!enforceEnabled) {
-            return;
-        }
-        List<User> users = userRepository.findAll();
-        for (User user : users) {
-            Long userId = user.getId();
-            if (userId == null) {
-                continue;
-            }
-            boolean paper = settingsService.isPaperModeForUser(userId);
-            double dailyPnl = getTodaysPnL(userId, paper);
-            if (dailyPnl < -dailyMaxLoss) {
-                log.error("Daily loss breached for user {} pnl={} limit={}", userId, dailyPnl, dailyMaxLoss);
-                auditEventService.recordEvent(userId, "risk_event", "DAILY_LOSS_BREACH",
-                        "Daily loss breached",
-                        java.util.Map.of("pnl", dailyPnl, "limit", dailyMaxLoss));
-                emergencyPanicService.triggerGlobalEmergency("DAILY_LOSS_BREACH");
+        scheduledTaskGuard.run("riskLimitEnforcement", () -> {
+            if (!enforceEnabled) {
                 return;
             }
-            int consecutiveLosses = countConsecutiveLosses(userId, paper);
-            if (consecutiveLosses >= maxConsecutiveLosses) {
-                log.error("Consecutive loss limit breached for user {} losses={} max={}", userId, consecutiveLosses, maxConsecutiveLosses);
-                auditEventService.recordEvent(userId, "risk_event", "CONSECUTIVE_LOSS_BREACH",
-                        "Consecutive loss limit breached",
-                        java.util.Map.of("losses", consecutiveLosses, "max", maxConsecutiveLosses));
-                emergencyPanicService.triggerGlobalEmergency("CONSECUTIVE_LOSS_BREACH");
-                return;
+            List<User> users = userRepository.findAll();
+            for (User user : users) {
+                Long userId = user.getId();
+                if (userId == null) {
+                    continue;
+                }
+                boolean paper = settingsService.isPaperModeForUser(userId);
+                double dailyPnl = getTodaysPnL(userId, paper);
+                if (dailyPnl < -dailyMaxLoss) {
+                    log.error("Daily loss breached for user {} pnl={} limit={}", userId, dailyPnl, dailyMaxLoss);
+                    auditEventService.recordEvent(userId, "risk_event", "DAILY_LOSS_BREACH",
+                            "Daily loss breached",
+                            java.util.Map.of("pnl", dailyPnl, "limit", dailyMaxLoss));
+                    emergencyPanicService.triggerGlobalEmergency("DAILY_LOSS_BREACH");
+                    return;
+                }
+                int consecutiveLosses = countConsecutiveLosses(userId, paper);
+                if (consecutiveLosses >= maxConsecutiveLosses) {
+                    log.error("Consecutive loss limit breached for user {} losses={} max={}", userId, consecutiveLosses, maxConsecutiveLosses);
+                    auditEventService.recordEvent(userId, "risk_event", "CONSECUTIVE_LOSS_BREACH",
+                            "Consecutive loss limit breached",
+                            java.util.Map.of("losses", consecutiveLosses, "max", maxConsecutiveLosses));
+                    emergencyPanicService.triggerGlobalEmergency("CONSECUTIVE_LOSS_BREACH");
+                    return;
+                }
+                double equity = portfolioService.getAvailableEquity(paper, userId);
+                double heat = portfolioHeatService.currentPortfolioHeat(userId, java.math.BigDecimal.valueOf(equity));
+                if (heat > maxHeatPct) {
+                    log.warn("Portfolio heat breached for user {} heat={} max={}", userId, heat, maxHeatPct);
+                    systemGuardService.setSafeMode(true, "PORTFOLIO_HEAT", java.time.Instant.now());
+                    cancelPendingOrders(userId, paper);
+                }
             }
-            double equity = portfolioService.getAvailableEquity(paper, userId);
-            double heat = portfolioHeatService.currentPortfolioHeat(userId, java.math.BigDecimal.valueOf(equity));
-            if (heat > maxHeatPct) {
-                log.warn("Portfolio heat breached for user {} heat={} max={}", userId, heat, maxHeatPct);
-                systemGuardService.setSafeMode(true, "PORTFOLIO_HEAT", java.time.Instant.now());
-                cancelPendingOrders(userId, paper);
-            }
-        }
+        });
     }
     
     /**

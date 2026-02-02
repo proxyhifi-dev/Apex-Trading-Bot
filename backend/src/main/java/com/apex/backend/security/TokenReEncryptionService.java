@@ -18,22 +18,26 @@ public class TokenReEncryptionService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void reencryptLegacyTokens() {
-        for (User user : userRepository.findAll()) {
-            boolean updated = false;
-            String token = user.getFyersToken();
-            if (token != null && !token.isBlank() && !tokenEncryptionService.looksEncrypted(token)) {
-                user.setFyersToken(token);
-                updated = true;
+        try {
+            for (User user : userRepository.findAll()) {
+                boolean updated = false;
+                String token = user.getFyersToken();
+                if (token != null && !token.isBlank() && !tokenEncryptionService.looksEncrypted(token)) {
+                    user.setFyersToken(token);
+                    updated = true;
+                }
+                String refreshToken = user.getFyersRefreshToken();
+                if (refreshToken != null && !refreshToken.isBlank() && !tokenEncryptionService.looksEncrypted(refreshToken)) {
+                    user.setFyersRefreshToken(refreshToken);
+                    updated = true;
+                }
+                if (updated) {
+                    userRepository.save(user);
+                    log.info("Re-encrypted legacy broker tokens for user {}", user.getId());
+                }
             }
-            String refreshToken = user.getFyersRefreshToken();
-            if (refreshToken != null && !refreshToken.isBlank() && !tokenEncryptionService.looksEncrypted(refreshToken)) {
-                user.setFyersRefreshToken(refreshToken);
-                updated = true;
-            }
-            if (updated) {
-                userRepository.save(user);
-                log.info("Re-encrypted legacy broker tokens for user {}", user.getId());
-            }
+        } catch (Exception e) {
+            log.error("Legacy token re-encryption failed", e);
         }
     }
 }

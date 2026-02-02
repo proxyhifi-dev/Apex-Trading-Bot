@@ -30,6 +30,7 @@ public class ExitRetryService {
     private final AuditEventService auditEventService;
     private final EmergencyPanicService emergencyPanicService;
     private final AlertService alertService;
+    private final ScheduledTaskGuard scheduledTaskGuard;
 
     @Value("${exit-retry.max-attempts:10}")
     private int maxAttempts;
@@ -42,11 +43,13 @@ public class ExitRetryService {
 
     @Scheduled(fixedDelayString = "${exit-retry.poll-interval-ms:15000}")
     public void processQueue() {
-        Instant now = Instant.now();
-        List<ExitRetryRequest> pending = exitRetryRepository.findByResolvedFalseAndNextAttemptAtBefore(now);
-        for (ExitRetryRequest request : pending) {
-            attemptExit(request);
-        }
+        scheduledTaskGuard.run("exitRetryQueue", () -> {
+            Instant now = Instant.now();
+            List<ExitRetryRequest> pending = exitRetryRepository.findByResolvedFalseAndNextAttemptAtBefore(now);
+            for (ExitRetryRequest request : pending) {
+                attemptExit(request);
+            }
+        });
     }
 
     @Transactional

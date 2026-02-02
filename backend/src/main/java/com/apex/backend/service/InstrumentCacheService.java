@@ -41,7 +41,11 @@ public class InstrumentCacheService {
 
     @PostConstruct
     public void init() {
-        refresh();
+        try {
+            refresh();
+        } catch (Exception e) {
+            log.error("Instrument cache initialization failed", e);
+        }
     }
 
     public void refresh() {

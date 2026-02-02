@@ -20,6 +20,7 @@ public class CrisisModeService {
     private final SystemGuardService systemGuardService;
     private final BroadcastService broadcastService;
     private final RiskEventService riskEventService;
+    private final ScheduledTaskGuard scheduledTaskGuard;
 
     @Value("${crisis.enabled:true}")
     private boolean enabled;
@@ -41,25 +42,27 @@ public class CrisisModeService {
 
     @Scheduled(fixedDelayString = "${crisis.check-interval-ms:60000}")
     public void checkCrisisMode() {
-        if (!enabled) {
-            return;
-        }
+        scheduledTaskGuard.run("crisisModeCheck", () -> {
+            if (!enabled) {
+                return;
+            }
 
-        if (systemGuardService.isCrisisModeActive()) {
-            systemGuardService.clearCrisisModeIfExpired();
-            return;
-        }
+            if (systemGuardService.isCrisisModeActive()) {
+                systemGuardService.clearCrisisModeIfExpired();
+                return;
+            }
 
-        double indexChange = getIndexChangePct();
-        if (indexChange <= -dropThresholdPct) {
-            triggerCrisisMode("INDEX_DROP", String.format("%s dropped %.2f%%", indexSymbol, Math.abs(indexChange)));
-            return;
-        }
+            double indexChange = getIndexChangePct();
+            if (indexChange <= -dropThresholdPct) {
+                triggerCrisisMode("INDEX_DROP", String.format("%s dropped %.2f%%", indexSymbol, Math.abs(indexChange)));
+                return;
+            }
 
-        double vixValue = getVixValue();
-        if (vixValue > 0 && vixValue >= vixThreshold) {
-            triggerCrisisMode("VIX_SPIKE", String.format("VIX at %.2f", vixValue));
-        }
+            double vixValue = getVixValue();
+            if (vixValue > 0 && vixValue >= vixThreshold) {
+                triggerCrisisMode("VIX_SPIKE", String.format("VIX at %.2f", vixValue));
+            }
+        });
     }
 
     public boolean isCrisisModeActive() {

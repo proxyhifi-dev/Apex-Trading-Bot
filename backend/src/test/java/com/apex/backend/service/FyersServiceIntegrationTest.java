@@ -44,8 +44,8 @@ class FyersServiceIntegrationTest {
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
-        String apiBase = mockWebServer.url("/api/v3").toString().replaceAll("/$", "");
-        String dataBase = mockWebServer.url("/data").toString().replaceAll("/$", "");
+        String apiBase = mockWebServer.url("/api/v2").toString().replaceAll("/$", "");
+        String dataBase = mockWebServer.url("/api/v2").toString().replaceAll("/$", "");
         registry.add("fyers.api.base-url", () -> apiBase);
         registry.add("fyers.data.base-url", () -> dataBase);
         registry.add("fyers.api.app-id", () -> "app-id-123");
@@ -56,7 +56,7 @@ class FyersServiceIntegrationTest {
         registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
         registry.add("spring.datasource.url", () -> "jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1");
         registry.add("spring.datasource.username", () -> "sa");
-        registry.add("spring.datasource.password", () -> "");
+        registry.add("spring.datasource.password", () -> "sa");
         registry.add("spring.datasource.driver-class-name", () -> "org.h2.Driver");
     }
 
@@ -103,8 +103,8 @@ class FyersServiceIntegrationTest {
         assertThat(orderId).isEqualTo("order-123");
         RecordedRequest request = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         assertThat(request.getMethod()).isEqualTo("POST");
-        assertThat(request.getPath()).isEqualTo("/api/v3/orders");
-        assertThat(request.getHeader("Authorization")).isEqualTo("app-id-123:token-1");
+        assertThat(request.getPath()).isEqualTo("/api/v2/orders");
+        assertThat(request.getHeader("Authorization")).isEqualTo("Bearer token-1");
         assertThat(request.getBody().readUtf8())
                 .contains("\"symbol\":\"NSE:SBIN-EQ\"")
                 .contains("\"qty\":5")
@@ -126,8 +126,8 @@ class FyersServiceIntegrationTest {
         assertThat(orderId).isEqualTo("order-456");
         RecordedRequest recorded = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         assertThat(recorded.getMethod()).isEqualTo("PUT");
-        assertThat(recorded.getPath()).isEqualTo("/api/v3/orders");
-        assertThat(recorded.getHeader("Authorization")).isEqualTo("app-id-123:token-1");
+        assertThat(recorded.getPath()).isEqualTo("/api/v2/orders");
+        assertThat(recorded.getHeader("Authorization")).isEqualTo("Bearer token-1");
         assertThat(recorded.getBody().readUtf8())
                 .contains("\"id\":\"order-456\"")
                 .contains("\"qty\":10")
@@ -144,7 +144,7 @@ class FyersServiceIntegrationTest {
         assertThat(responseId).isEqualTo("order-789");
         RecordedRequest recorded = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         assertThat(recorded.getMethod()).isEqualTo("DELETE");
-        assertThat(recorded.getPath()).isEqualTo("/api/v3/orders/order-789");
+        assertThat(recorded.getPath()).isEqualTo("/api/v2/orders/order-789");
     }
 
     @Test
@@ -157,7 +157,7 @@ class FyersServiceIntegrationTest {
         assertThat(positions).containsKey("data");
         RecordedRequest recorded = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         assertThat(recorded.getMethod()).isEqualTo("GET");
-        assertThat(recorded.getPath()).isEqualTo("/api/v3/positions");
+        assertThat(recorded.getPath()).isEqualTo("/api/v2/positions");
     }
 
     @Test
@@ -171,7 +171,7 @@ class FyersServiceIntegrationTest {
         assertThat(quotes).containsKey("NSE:SBIN-EQ");
         RecordedRequest recorded = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         assertThat(recorded.getMethod()).isEqualTo("GET");
-        assertThat(recorded.getPath()).isEqualTo("/data/quotes?symbols=NSE:SBIN-EQ");
+        assertThat(recorded.getPath()).isEqualTo("/api/v2/quotes?symbols=NSE:SBIN-EQ");
     }
 
     @Test
@@ -188,8 +188,8 @@ class FyersServiceIntegrationTest {
         assertThat(positions).containsKey("data");
         RecordedRequest first = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
         RecordedRequest second = mockWebServer.takeRequest(1, TimeUnit.SECONDS);
-        assertThat(first.getHeader("Authorization")).isEqualTo("app-id-123:token-1");
-        assertThat(second.getHeader("Authorization")).isEqualTo("app-id-123:token-2");
+        assertThat(first.getHeader("Authorization")).isEqualTo("Bearer token-1");
+        assertThat(second.getHeader("Authorization")).isEqualTo("Bearer token-2");
     }
 
     @Test
