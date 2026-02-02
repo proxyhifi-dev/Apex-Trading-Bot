@@ -5,6 +5,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import com.apex.backend.exception.FyersRateLimitException;
+import com.apex.backend.exception.FyersServerException;
 import io.github.resilience4j.core.IntervalFunction;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
@@ -60,7 +61,7 @@ public class FyersResilienceConfig {
         RetryConfig config = RetryConfig.custom()
                 .maxAttempts(maxAttempts)
                 .intervalFunction(intervalFunction)
-                .retryExceptions(FyersRateLimitException.class, ResourceAccessException.class, HttpServerErrorException.class)
+                .retryExceptions(FyersRateLimitException.class, FyersServerException.class, ResourceAccessException.class, HttpServerErrorException.class)
                 .build();
         return Retry.of("fyers", config);
     }

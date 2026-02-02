@@ -52,7 +52,7 @@ public class FyersBrokerPort implements BrokerPort {
             if (token == null || token.isBlank()) {
                 return;
             }
-            fyersService.cancelOrder(brokerOrderId, token);
+            fyersService.cancelOrder(brokerOrderId, token, userId);
         } catch (Exception e) {
             log.warn("Failed to cancel FYERS order {}", brokerOrderId, e);
         }

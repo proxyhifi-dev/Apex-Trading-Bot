@@ -60,8 +60,12 @@ public class FyersService {
     }
 
     public Map<String, BigDecimal> getLtpBatch(List<String> symbols, String token) {
+        return getLtpBatch(symbols, token, null);
+    }
+
+    public Map<String, BigDecimal> getLtpBatch(List<String> symbols, String token, Long userId) {
         boolean tokenProvided = token != null && !token.isBlank();
-        String resolvedToken = resolveToken(token);
+        String resolvedToken = resolveTokenForUser(token, userId);
         if (resolvedToken == null || symbols == null || symbols.isEmpty()) {
             return Collections.emptyMap();
         }
@@ -90,7 +94,7 @@ public class FyersService {
             try {
                 rateLimiter.acquire();
                 acquired = true;
-                fetched = fetchQuotes(toFetch, resolvedToken, tokenProvided);
+                fetched = fetchQuotes(toFetch, resolvedToken, tokenProvided, userId);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 fetched = Collections.emptyMap();
@@ -118,8 +122,12 @@ public class FyersService {
     }
 
     public List<Candle> getHistoricalData(String symbol, int count, String resolution, String token) {
+        return getHistoricalData(symbol, count, resolution, token, null);
+    }
+
+    public List<Candle> getHistoricalData(String symbol, int count, String resolution, String token, Long userId) {
         boolean tokenProvided = token != null && !token.isBlank();
-        String resolvedToken = resolveToken(token);
+        String resolvedToken = resolveTokenForUser(token, userId);
         if (resolvedToken == null) return Collections.emptyList();
 
         Optional<String> resolvedSymbol = instrumentService.resolveTradingSymbol(symbol);
@@ -136,7 +144,7 @@ public class FyersService {
 
         try {
             rateLimiter.acquire();
-            List<Candle> data = fetchHistoryInternal(tradingSymbol, count, resolution, resolvedToken);
+            List<Candle> data = fetchHistoryInternal(tradingSymbol, count, resolution, resolvedToken, userId);
             if (!data.isEmpty()) {
                 candleCache.put(cacheKey, new CacheEntry(data, System.currentTimeMillis()));
             }
@@ -160,7 +168,7 @@ public class FyersService {
         }
     }
 
-    private List<Candle> fetchHistoryInternal(String symbol, int count, String resolution, String token) {
+    private List<Candle> fetchHistoryInternal(String symbol, int count, String resolution, String token, Long userId) {
         DateTimeFormatter dtf = DateTimeFormatter.ofPattern("yyyy-MM-dd");
         String toDate = LocalDateTime.now().format(dtf);
         String fromDate = LocalDateTime.now().minusDays(20).format(dtf);
@@ -174,7 +182,7 @@ public class FyersService {
                 .queryParam("cont_flag", 1)
                 .toUriString();
 
-        String response = executeGetRequest(url, token);
+        String response = executeGetRequest(url, token, userId);
         if (response == null) throw new RuntimeException("Empty Response");
 
         JsonObject json = JsonParser.parseString(response).getAsJsonObject();
@@ -199,7 +207,11 @@ public class FyersService {
     }
 
     public String placeOrder(String symbol, int qty, String side, String type, double price, String clientOrderId) {
-        String resolvedToken = resolveToken(null);
+        return placeOrder(symbol, qty, side, type, price, clientOrderId, null);
+    }
+
+    public String placeOrder(String symbol, int qty, String side, String type, double price, String clientOrderId, Long userId) {
+        String resolvedToken = resolveTokenForUser(null, userId);
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token");
         }
@@ -221,7 +233,7 @@ public class FyersService {
             body.put("validity", "DAY");
             body.put("clientId", clientOrderId);
 
-            String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body));
+            String response = fyersHttpClient.post(url, resolvedToken, gson.toJson(body), userId);
             JsonObject json = JsonParser.parseString(response).getAsJsonObject();
             if (json.has("id")) {
                 return json.get("id").getAsString();
@@ -236,7 +248,11 @@ public class FyersService {
     }
 
     public String cancelOrder(String brokerOrderId, String token) {
-        String resolvedToken = resolveToken(token);
+        return cancelOrder(brokerOrderId, token, null);
+    }
+
+    public String cancelOrder(String brokerOrderId, String token, Long userId) {
+        String resolvedToken = resolveTokenForUser(token, userId);
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token for cancel");
         }
@@ -246,7 +262,7 @@ public class FyersService {
         String url = apiBaseUrl + "/orders/" + brokerOrderId;
         try {
             // FYERS uses DELETE method for order cancellation
-            String response = fyersHttpClient.delete(url, resolvedToken);
+            String response = fyersHttpClient.delete(url, resolvedToken, userId);
             JsonObject json = JsonParser.parseString(response).getAsJsonObject();
             if (json.has("id")) {
                 return json.get("id").getAsString();
@@ -260,7 +276,11 @@ public class FyersService {
     }
 
     public String modifyOrder(String orderId, com.apex.backend.dto.OrderModifyRequest request) {
-        String resolvedToken = resolveToken(null);
+        return modifyOrder(orderId, request, null);
+    }
+
+    public String modifyOrder(String orderId, com.apex.backend.dto.OrderModifyRequest request, Long userId) {
+        String resolvedToken = resolveTokenForUser(null, userId);
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token");
         }
@@ -286,7 +306,7 @@ public class FyersService {
             if (request.getValidity() != null) {
                 body.put("validity", request.getValidity().name());
             }
-            String response = fyersHttpClient.put(url, resolvedToken, gson.toJson(body));
+            String response = fyersHttpClient.put(url, resolvedToken, gson.toJson(body), userId);
             JsonObject json = JsonParser.parseString(response).getAsJsonObject();
             if (json.has("id")) {
                 return json.get("id").getAsString();
@@ -300,7 +320,7 @@ public class FyersService {
     }
 
     public String placeStopLossOrder(String symbol, int qty, String side, double stopPrice, String clientOrderId, String token) {
-        String resolvedToken = resolveToken(token);
+        String resolvedToken = resolveTokenForUser(token, null);
         if (resolvedToken == null || resolvedToken.isBlank()) {
             throw new RuntimeException("No Token for stop-loss");
         }
@@ -339,7 +359,11 @@ public class FyersService {
     }
 
     public Optional<FyersOrderStatus> getOrderDetails(String orderId, String token) {
-        String resolvedToken = resolveToken(token);
+        return getOrderDetails(orderId, token, null);
+    }
+
+    public Optional<FyersOrderStatus> getOrderDetails(String orderId, String token, Long userId) {
+        String resolvedToken = resolveTokenForUser(token, userId);
         if (resolvedToken == null || orderId == null || orderId.isBlank()) {
             return Optional.empty();
         }
@@ -347,7 +371,7 @@ public class FyersService {
                 .queryParam("id", orderId)
                 .toUriString();
         try {
-            String response = executeGetRequest(url, resolvedToken);
+            String response = executeGetRequest(url, resolvedToken, userId);
             if (response == null) {
                 return Optional.empty();
             }
@@ -390,65 +414,65 @@ public class FyersService {
     }
 
     public Map<String, Object> getProfile(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/profile", token);
+        return fetchJsonAsMap(apiBaseUrl + "/profile", token, null);
     }
 
     public Map<String, Object> getProfileForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/profile", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/profile", null, userId);
     }
 
     public Map<String, Object> getFunds(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/funds", token);
+        return fetchJsonAsMap(apiBaseUrl + "/funds", token, null);
     }
 
     public Map<String, Object> getFundsForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/funds", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/funds", null, userId);
     }
 
     public Map<String, Object> getHoldings(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/holdings", token);
+        return fetchJsonAsMap(apiBaseUrl + "/holdings", token, null);
     }
 
     public Map<String, Object> getHoldingsForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/holdings", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/holdings", null, userId);
     }
 
     public Map<String, Object> getPositions(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/positions", token);
+        return fetchJsonAsMap(apiBaseUrl + "/positions", token, null);
     }
 
     public Map<String, Object> getPositionsForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/positions", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/positions", null, userId);
     }
 
     public Map<String, Object> getOrders(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/orders", token);
+        return fetchJsonAsMap(apiBaseUrl + "/orders", token, null);
     }
 
     public Map<String, Object> getOrdersForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/orders", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/orders", null, userId);
     }
 
     public Map<String, Object> getTrades(String token) throws IOException {
-        return fetchJsonAsMap(apiBaseUrl + "/tradebook", token);
+        return fetchJsonAsMap(apiBaseUrl + "/tradebook", token, null);
     }
 
     public Map<String, Object> getTradesForUser(Long userId) throws IOException {
-        return fetchJsonAsMapWithRefresh(apiBaseUrl + "/tradebook", userId);
+        return fetchJsonAsMap(apiBaseUrl + "/tradebook", null, userId);
     }
 
-    private String executeGetRequest(String url, String token) {
+    private String executeGetRequest(String url, String token, Long userId) {
         if (token == null) return null;
-        return fyersHttpClient.get(url, token);
+        return fyersHttpClient.get(url, token, userId);
     }
 
-    private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token, boolean tokenProvided) {
+    private Map<String, BigDecimal> fetchQuotes(List<String> symbols, String token, boolean tokenProvided, Long userId) {
         if (symbols.isEmpty()) {
             return Collections.emptyMap();
         }
         String url = dataBaseUrl + "/quotes?symbols=" + String.join(",", symbols);
         try {
-            String response = executeGetRequest(url, token);
+            String response = executeGetRequest(url, token, userId);
             if (response == null) {
                 return Collections.emptyMap();
             }
@@ -476,9 +500,9 @@ public class FyersService {
         }
     }
 
-    private Map<String, Object> fetchJsonAsMap(String url, String token) throws IOException {
-        String resolvedToken = resolveToken(token);
-        String response = executeGetRequest(url, resolvedToken);
+    private Map<String, Object> fetchJsonAsMap(String url, String token, Long userId) throws IOException {
+        String resolvedToken = resolveTokenForUser(token, userId);
+        String response = executeGetRequest(url, resolvedToken, userId);
         if (response == null) {
             return Collections.emptyMap();
         }
@@ -497,19 +521,17 @@ public class FyersService {
         return (accessToken != null && !accessToken.isBlank()) ? accessToken : null;
     }
 
-    private Map<String, Object> fetchJsonAsMapWithRefresh(String url, Long userId) throws IOException {
-        String token = fyersTokenService.getAccessToken(userId);
-        try {
-            return fetchJsonAsMap(url, token);
-        } catch (com.apex.backend.exception.FyersApiException e) {
-            if (e.getStatusCode() == 401) {
-                Optional<String> refreshed = fyersTokenService.refreshAccessToken(userId);
-                if (refreshed.isPresent()) {
-                    return fetchJsonAsMap(url, refreshed.get());
-                }
-            }
-            throw e;
+    private String resolveTokenForUser(String token, Long userId) {
+        if (token != null && !token.isBlank()) {
+            return token;
         }
+        if (userId != null) {
+            String userToken = fyersTokenService.getAccessToken(userId);
+            if (userToken != null && !userToken.isBlank()) {
+                return userToken;
+            }
+        }
+        return resolveToken(token);
     }
 
     private FyersOrderStatus parseOrderNode(String orderId, JsonNode orderNode) {
