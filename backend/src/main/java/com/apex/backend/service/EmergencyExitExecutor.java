@@ -6,24 +6,22 @@ import com.apex.backend.model.PositionState;
 import com.apex.backend.model.Trade;
 import com.apex.backend.repository.ExitRetryRepository;
 import com.apex.backend.repository.TradeRepository;
-import com.apex.backend.service.ExecutionCostModel;
 import com.apex.backend.service.ExecutionCostModel.ExecutionSide;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
-@Service
+@Component
 @Slf4j
 @RequiredArgsConstructor
-public class ExitRetryService {
+public class EmergencyExitExecutor {
 
     private final ExitRetryRepository exitRetryRepository;
     private final TradeRepository tradeRepository;
@@ -32,7 +30,6 @@ public class ExitRetryService {
     private final DeadLetterQueueService deadLetterQueueService;
     private final AuditEventService auditEventService;
     private final AlertService alertService;
-    private final ScheduledTaskGuard scheduledTaskGuard;
     private final ApplicationEventPublisher eventPublisher;
 
     @Value("${exit-retry.max-attempts:10}")
@@ -44,19 +41,8 @@ public class ExitRetryService {
     @Value("${exit-retry.max-delay-seconds:300}")
     private int maxDelaySeconds;
 
-    @Scheduled(fixedDelayString = "${exit-retry.poll-interval-ms:15000}")
-    public void processQueue() {
-        scheduledTaskGuard.run("exitRetryQueue", () -> {
-            Instant now = Instant.now();
-            List<ExitRetryRequest> pending = exitRetryRepository.findByResolvedFalseAndNextAttemptAtBefore(now);
-            for (ExitRetryRequest request : pending) {
-                attemptExit(request);
-            }
-        });
-    }
-
     @Transactional
-    public void enqueueExit(Trade trade, String reason) {
+    public void enqueueExitAndAttempt(Trade trade, String reason) {
         if (trade == null || trade.getStatus() == Trade.TradeStatus.CLOSED) {
             return;
         }
@@ -80,11 +66,6 @@ public class ExitRetryService {
                 .build();
         exitRetryRepository.save(request);
         tradeCloseService.markClosing(trade, reason);
-    }
-
-    @Transactional
-    public void enqueueExitAndAttempt(Trade trade, String reason) {
-        enqueueExit(trade, reason);
         exitRetryRepository.findByTradeIdAndResolvedFalse(trade.getId())
                 .forEach(this::attemptExit);
     }
@@ -153,11 +134,11 @@ public class ExitRetryService {
             request.setDlqLogged(true);
             auditEventService.recordEvent(request.getUserId(), "risk_event", "EXIT_RETRY_DLQ",
                     "Exit retry exhausted attempts",
-                    java.util.Map.of("tradeId", request.getTradeId(), "attempts", request.getAttempts(), "error", error));
+                    Map.of("tradeId", request.getTradeId(), "attempts", request.getAttempts(), "error", error));
             eventPublisher.publishEvent(new EmergencyPanicRequestedEvent(
                     request.getUserId(),
                     "EXIT_RETRY_DLQ",
-                    "ExitRetryService",
+                    "EmergencyExitExecutor",
                     Instant.now(),
                     Map.of("tradeId", request.getTradeId(), "attempts", request.getAttempts(), "error", error)
             ));

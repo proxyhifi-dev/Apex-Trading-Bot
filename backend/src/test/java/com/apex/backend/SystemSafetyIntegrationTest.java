@@ -14,6 +14,7 @@ import com.apex.backend.repository.TradeStateAuditRepository;
 import com.apex.backend.repository.UserRepository;
 import com.apex.backend.security.JwtTokenProvider;
 import com.apex.backend.service.EmergencyPanicService;
+import com.apex.backend.service.EmergencyExitExecutor;
 import com.apex.backend.service.ExecutionEngine;
 import com.apex.backend.service.ExitRetryService;
 import com.apex.backend.service.RiskManagementEngine;
@@ -123,6 +124,9 @@ class SystemSafetyIntegrationTest {
     @SpyBean
     private ExitRetryService exitRetryServiceSpy;
 
+    @SpyBean
+    private EmergencyExitExecutor emergencyExitExecutor;
+
     @MockBean
     private FyersBrokerPort fyersBrokerPort;
 
@@ -204,7 +208,7 @@ class SystemSafetyIntegrationTest {
         assertThat(state.isPanicMode()).isTrue();
 
         verify(fyersBrokerPort, times(1)).cancelOrder(user.getId(), "ORD-1");
-        verify(exitRetryServiceSpy, times(1)).enqueueExitAndAttempt(
+        verify(emergencyExitExecutor, times(1)).enqueueExitAndAttempt(
                 Mockito.argThat(candidate -> candidate != null && candidate.getId().equals(trade.getId())),
                 eq("EMERGENCY_PANIC"));
     }

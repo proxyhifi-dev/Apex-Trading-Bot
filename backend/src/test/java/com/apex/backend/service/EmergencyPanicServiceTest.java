@@ -33,8 +33,10 @@ class EmergencyPanicServiceTest {
         OrderIntentRepository orderIntentRepository = mock(OrderIntentRepository.class);
         PaperOrderRepository paperOrderRepository = mock(PaperOrderRepository.class);
         TradeRepository tradeRepository = mock(TradeRepository.class);
-        ExitRetryService exitRetryService = mock(ExitRetryService.class);
+        EmergencyExitExecutor emergencyExitExecutor = mock(EmergencyExitExecutor.class);
         RiskEventService riskEventService = mock(RiskEventService.class);
+        AuditEventService auditEventService = mock(AuditEventService.class);
+        OrderStateMachine orderStateMachine = mock(OrderStateMachine.class);
 
         User user = User.builder().id(1L).username("u").passwordHash("x").build();
         when(userRepository.findAll()).thenReturn(List.of(user));
@@ -46,8 +48,8 @@ class EmergencyPanicServiceTest {
                 Trade.builder().id(10L).userId(1L).symbol("NSE:ABC").quantity(1).entryPrice(java.math.BigDecimal.ONE)
                         .entryTime(java.time.LocalDateTime.now()).status(Trade.TradeStatus.OPEN).build()
         ));
-        when(systemGuardService.setEmergencyMode(eq(true), eq("MANUAL_TRIGGER"), any(Instant.class)))
-                .thenReturn(SystemGuardState.builder().id(1L).emergencyMode(true).build());
+        when(systemGuardService.setPanicMode(eq(true), eq("MANUAL_TRIGGER"), any(Instant.class)))
+                .thenReturn(SystemGuardState.builder().id(1L).panicMode(true).build());
 
         EmergencyPanicService service = new EmergencyPanicService(
                 systemGuardService,
@@ -58,15 +60,17 @@ class EmergencyPanicServiceTest {
                 orderIntentRepository,
                 paperOrderRepository,
                 tradeRepository,
-                exitRetryService,
-                riskEventService
+                emergencyExitExecutor,
+                riskEventService,
+                auditEventService,
+                orderStateMachine
         );
 
         service.triggerGlobalEmergency("MANUAL_TRIGGER");
 
         verify(fyersBrokerPort).cancelOrder(1L, "BRK1");
-        verify(exitRetryService).enqueueExitAndAttempt(any(Trade.class), eq("EMERGENCY_PANIC"));
+        verify(emergencyExitExecutor).enqueueExitAndAttempt(any(Trade.class), eq("EMERGENCY_PANIC"));
         verify(userRepository).saveAll(any());
-        verify(systemGuardService).setEmergencyMode(eq(true), eq("MANUAL_TRIGGER"), any(Instant.class));
+        verify(systemGuardService).setPanicMode(eq(true), eq("MANUAL_TRIGGER"), any(Instant.class));
     }
 }
