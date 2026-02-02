@@ -2,6 +2,7 @@ package com.apex.backend.security;
 
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
@@ -37,14 +38,14 @@ public class TokenEncryptionService {
     private static final SecureRandom RNG = new SecureRandom();
 
     private final Environment environment;
-    private final com.apex.backend.service.SystemGuardService systemGuardService;
-    private final com.apex.backend.service.AuditEventService auditEventService;
+    private final ObjectProvider<com.apex.backend.service.SystemGuardService> systemGuardService;
+    private final ObjectProvider<com.apex.backend.service.AuditEventService> auditEventService;
 
     private volatile SecretKey secretKey;
 
     public TokenEncryptionService(Environment environment,
-                                  com.apex.backend.service.SystemGuardService systemGuardService,
-                                  com.apex.backend.service.AuditEventService auditEventService) {
+                                  ObjectProvider<com.apex.backend.service.SystemGuardService> systemGuardService,
+                                  ObjectProvider<com.apex.backend.service.AuditEventService> auditEventService) {
         this.environment = environment;
         this.systemGuardService = systemGuardService;
         this.auditEventService = auditEventService;
@@ -210,8 +211,14 @@ public class TokenEncryptionService {
 
     private void markSafeMode(String reason, String action, String description, Object metadata) {
         try {
-            systemGuardService.setSafeMode(true, reason, java.time.Instant.now());
-            auditEventService.recordEvent(0L, "security", action, description, metadata);
+            com.apex.backend.service.SystemGuardService guardService = systemGuardService.getIfAvailable();
+            if (guardService != null) {
+                guardService.setSafeMode(true, reason, java.time.Instant.now());
+            }
+            com.apex.backend.service.AuditEventService auditService = auditEventService.getIfAvailable();
+            if (auditService != null) {
+                auditService.recordEvent(0L, "security", action, description, metadata);
+            }
         } catch (Exception e) {
             log.warn("Failed to update safe mode for token encryption issue: {}", e.getMessage());
         }
