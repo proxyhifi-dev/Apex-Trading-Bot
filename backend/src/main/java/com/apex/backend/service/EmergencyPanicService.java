@@ -1,6 +1,7 @@
 package com.apex.backend.service;
 
 import com.apex.backend.entity.SystemGuardState;
+import com.apex.backend.event.EmergencyPanicRequestedEvent;
 import com.apex.backend.model.OrderIntent;
 import com.apex.backend.model.OrderState;
 import com.apex.backend.model.Trade;
@@ -14,6 +15,7 @@ import com.apex.backend.service.risk.FyersBrokerPort;
 import com.apex.backend.service.risk.PaperBrokerPort;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -33,7 +35,7 @@ public class EmergencyPanicService {
     private final OrderIntentRepository orderIntentRepository;
     private final PaperOrderRepository paperOrderRepository;
     private final TradeRepository tradeRepository;
-    private final ExitRetryService exitRetryService;
+    private final EmergencyExitExecutor emergencyExitExecutor;
     private final RiskEventService riskEventService;
     private final AuditEventService auditEventService;
     private final OrderStateMachine orderStateMachine;
@@ -60,6 +62,16 @@ public class EmergencyPanicService {
                 java.util.Map.of("reason", reason, "users", users.size()));
         log.warn("Global emergency panic triggered: reason={} users={}", reason, users.size());
         return state;
+    }
+
+    @EventListener(EmergencyPanicRequestedEvent.class)
+    public void onEmergencyPanicRequested(EmergencyPanicRequestedEvent event) {
+        if (event == null) {
+            return;
+        }
+        log.warn("Emergency panic requested source={} reason={} metadata={}",
+                event.source(), event.reason(), event.metadata());
+        triggerGlobalEmergency(event.reason());
     }
 
     private void cancelAllOpenOrders(Long userId, BrokerPort brokerPort, boolean paperMode) {
@@ -96,7 +108,7 @@ public class EmergencyPanicService {
     private void flattenAllPositions(Long userId) {
         List<Trade> openTrades = tradeRepository.findByUserIdAndStatus(userId, Trade.TradeStatus.OPEN);
         for (Trade trade : openTrades) {
-            exitRetryService.enqueueExitAndAttempt(trade, "EMERGENCY_PANIC");
+            emergencyExitExecutor.enqueueExitAndAttempt(trade, "EMERGENCY_PANIC");
         }
     }
 

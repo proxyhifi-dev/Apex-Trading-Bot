@@ -6,6 +6,7 @@ import com.apex.backend.model.Trade;
 import com.apex.backend.repository.ExitRetryRepository;
 import com.apex.backend.repository.TradeRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,6 +16,7 @@ import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,13 +30,21 @@ class ExitRetryServiceTest {
         ExecutionEngine executionEngine = mock(ExecutionEngine.class);
         TradeCloseService tradeCloseService = mock(TradeCloseService.class);
         DeadLetterQueueService deadLetterQueueService = mock(DeadLetterQueueService.class);
+        AuditEventService auditEventService = mock(AuditEventService.class);
+        AlertService alertService = mock(AlertService.class);
+        ScheduledTaskGuard scheduledTaskGuard = mock(ScheduledTaskGuard.class);
+        ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
 
         ExitRetryService service = new ExitRetryService(
                 exitRetryRepository,
                 tradeRepository,
                 executionEngine,
                 tradeCloseService,
-                deadLetterQueueService
+                deadLetterQueueService,
+                auditEventService,
+                alertService,
+                scheduledTaskGuard,
+                eventPublisher
         );
         setField(service, "maxAttempts", 1);
         setField(service, "retryDelaySeconds", 1);
@@ -68,6 +78,11 @@ class ExitRetryServiceTest {
         when(exitRetryRepository.findByResolvedFalseAndNextAttemptAtBefore(any())).thenReturn(List.of(request));
         when(tradeRepository.findById(10L)).thenReturn(Optional.of(trade));
         when(executionEngine.execute(any())).thenThrow(new RuntimeException("timeout"));
+        doAnswer(invocation -> {
+            Runnable task = invocation.getArgument(1);
+            task.run();
+            return null;
+        }).when(scheduledTaskGuard).run(eq("exitRetryQueue"), any(Runnable.class));
 
         service.processQueue();
 
