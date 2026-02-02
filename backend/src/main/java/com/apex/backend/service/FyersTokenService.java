@@ -15,6 +15,9 @@ public class FyersTokenService {
 
     private final UserRepository userRepository;
     private final FyersAuthService fyersAuthService;
+    private final SystemGuardService systemGuardService;
+    private final BrokerStatusService brokerStatusService;
+    private final AuditEventService auditEventService;
 
     public String getAccessToken(Long userId) {
         return userRepository.findById(userId)
@@ -48,6 +51,10 @@ public class FyersTokenService {
             return Optional.of(tokens.accessToken());
         } catch (Exception e) {
             log.warn("Failed to refresh FYERS token for user {}: {}", userId, e.getMessage());
+            systemGuardService.setSafeMode(true, "FYERS_REFRESH_FAILED", java.time.Instant.now());
+            brokerStatusService.markDegraded("FYERS", "TOKEN_REFRESH_FAILED");
+            auditEventService.recordEvent(userId, "broker_auth", "FYERS_REFRESH_FAILED",
+                    "FYERS refresh token failed", java.util.Map.of("error", e.getMessage()));
             return Optional.empty();
         }
     }

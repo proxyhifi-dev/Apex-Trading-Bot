@@ -3,24 +3,30 @@ package com.apex.backend.service;
 import com.apex.backend.model.SectorMapping;
 import com.apex.backend.repository.SectorMappingRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class SectorService {
 
     private final SectorMappingRepository repository;
 
     @PostConstruct
     public void initDefaultSectors() {
-        if (repository.count() == 0) {
-            save("NSE:HDFCBANK-EQ", "FINANCE");
-            save("NSE:RELIANCE-EQ", "ENERGY");
-            save("NSE:TCS-EQ", "IT");
-            save("NSE:INFY-EQ", "IT");
-            save("NSE:TATAMOTORS-EQ", "AUTO");
+        try {
+            if (repository.count() == 0) {
+                save("NSE:HDFCBANK-EQ", "FINANCE");
+                save("NSE:RELIANCE-EQ", "ENERGY");
+                save("NSE:TCS-EQ", "IT");
+                save("NSE:INFY-EQ", "IT");
+                save("NSE:TATAMOTORS-EQ", "AUTO");
+            }
+        } catch (Exception e) {
+            log.error("Sector initialization failed", e);
         }
     }
 

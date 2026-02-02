@@ -162,7 +162,8 @@ public class ExecutionEngine {
                     request.side().name(),
                     request.orderType().name(),
                     request.limitPrice() == null ? 0.0 : request.limitPrice(),
-                    clientOrderId
+                    clientOrderId,
+                    request.userId()
             );
             intent.setBrokerOrderId(orderId);
             orderStateMachine.transition(intent, OrderState.ACKED, "ACK");
@@ -203,7 +204,7 @@ public class ExecutionEngine {
                 
                 if (executionProperties.isCancelOnTimeout()) {
                     try {
-                        fyersService.cancelOrder(intent.getBrokerOrderId(), token);
+                        fyersService.cancelOrder(intent.getBrokerOrderId(), token, intent.getUserId());
                         orderStateMachine.transition(intent, OrderState.CANCEL_REQUESTED, "PARTIAL_CANCEL");
                         orderIntentRepository.save(intent);
                         log.info("Cancel requested for timed-out order: {}", intent.getClientOrderId());
@@ -217,7 +218,7 @@ public class ExecutionEngine {
             }
             
             attempts++;
-            Optional<FyersOrderStatus> statusOpt = fyersService.getOrderDetails(intent.getBrokerOrderId(), token);
+            Optional<FyersOrderStatus> statusOpt = fyersService.getOrderDetails(intent.getBrokerOrderId(), token, intent.getUserId());
             if (statusOpt.isEmpty()) {
                 sleep();
                 continue;
@@ -312,7 +313,7 @@ public class ExecutionEngine {
         orderIntentRepository.save(intent);
         
         try {
-            fyersService.cancelOrder(intent.getBrokerOrderId(), token);
+            fyersService.cancelOrder(intent.getBrokerOrderId(), token, intent.getUserId());
             log.info("Cancel request sent for order: {} correlationId: {}", 
                 intent.getClientOrderId(), intent.getCorrelationId());
         } catch (Exception e) {

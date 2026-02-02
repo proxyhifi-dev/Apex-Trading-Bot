@@ -37,7 +37,7 @@ public class MarketDataController {
         List<String> symbolList = List.of(symbols.split(","));
         Long userId = requireUserId(principal);
         String token = resolveFyersToken(userId);
-        Map<String, BigDecimal> ltpMap = invokeMarketData(userId, () -> fyersService.getLtpBatch(symbolList, token));
+        Map<String, BigDecimal> ltpMap = invokeMarketData(userId, () -> fyersService.getLtpBatch(symbolList, token, userId));
         return ResponseEntity.ok(ltpMap);
     }
 
@@ -48,7 +48,7 @@ public class MarketDataController {
                                         @AuthenticationPrincipal UserPrincipal principal) {
         Long userId = requireUserId(principal);
         String token = resolveFyersToken(userId);
-        List<Candle> candles = invokeMarketData(userId, () -> fyersService.getHistoricalData(symbol, count, tf, token));
+        List<Candle> candles = invokeMarketData(userId, () -> fyersService.getHistoricalData(symbol, count, tf, token, userId));
         return ResponseEntity.ok(candles);
     }
 

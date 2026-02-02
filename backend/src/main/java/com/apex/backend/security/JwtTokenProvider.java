@@ -10,11 +10,15 @@ import jakarta.annotation.PostConstruct;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtTokenProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(JwtTokenProvider.class);
+
+    private final com.apex.backend.service.SystemGuardService systemGuardService;
+    private final com.apex.backend.service.AuditEventService auditEventService;
 
     @Value("${jwt.secret}")
     private String jwtSecret;
@@ -25,13 +29,34 @@ public class JwtTokenProvider {
     @Value("${jwt.refresh-expiration:604800000}")
     private long jwtRefreshExpirationMs;
 
+    public JwtTokenProvider(com.apex.backend.service.SystemGuardService systemGuardService,
+                            com.apex.backend.service.AuditEventService auditEventService) {
+        this.systemGuardService = systemGuardService;
+        this.auditEventService = auditEventService;
+    }
+
     @PostConstruct
     public void validateSecret() {
         if (jwtSecret == null || jwtSecret.isBlank()) {
-            throw new IllegalStateException("Missing JWT secret. Set JWT_SECRET environment variable.");
+            String reason = "Missing JWT secret. Set JWT_SECRET environment variable.";
+            logger.error(reason);
+            markSafeMode("JWT_SECRET_MISSING", "JWT secret missing; generated ephemeral key");
+            jwtSecret = UUID.randomUUID() + UUID.randomUUID().toString();
         }
         if (jwtSecret.length() < 32) {
-            throw new IllegalStateException("JWT secret must be at least 32 characters.");
+            String reason = "JWT secret must be at least 32 characters.";
+            logger.error(reason);
+            markSafeMode("JWT_SECRET_INVALID", "JWT secret too short; generated ephemeral key");
+            jwtSecret = UUID.randomUUID() + UUID.randomUUID().toString();
+        }
+    }
+
+    private void markSafeMode(String reason, String description) {
+        try {
+            systemGuardService.setSafeMode(true, reason, java.time.Instant.now());
+            auditEventService.recordEvent(0L, "security", reason, description, null);
+        } catch (Exception e) {
+            logger.error("Failed to set safe mode for JWT issue: {}", e.getMessage());
         }
     }
 

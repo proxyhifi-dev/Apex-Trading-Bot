@@ -3,6 +3,7 @@ package com.apex.backend.service;
 import com.apex.backend.exception.FyersApiException;
 import com.apex.backend.exception.FyersCircuitOpenException;
 import com.apex.backend.exception.FyersRateLimitException;
+import com.apex.backend.exception.FyersServerException;
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.ratelimiter.RateLimiter;
@@ -19,11 +20,16 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -38,45 +44,72 @@ public class FyersHttpClient {
     private final BrokerStatusService brokerStatusService;
     private final MetricsService metricsService;
     private final MeterRegistry meterRegistry;
+    private final FyersTokenService fyersTokenService;
+    private final AuditEventService auditEventService;
+    private final LogBroadcastService logBroadcastService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    @org.springframework.beans.factory.annotation.Value("${fyers.api.app-id:}")
-    private String appId;
+    private final AtomicLong lastUnreachableEventAt = new AtomicLong(0L);
 
     @org.springframework.beans.factory.annotation.Value("${fyers.api.rate-limit-backoff-seconds:5}")
     private long rateLimitBackoffSeconds;
 
     @PostConstruct
     void init() {
-        fyersCircuitBreaker.getEventPublisher().onStateTransition(event -> {
-            switch (event.getStateTransition().getToState()) {
-                case OPEN, HALF_OPEN -> brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
-                case CLOSED -> brokerStatusService.markNormal("FYERS");
-                default -> {
+        try {
+            fyersCircuitBreaker.getEventPublisher().onStateTransition(event -> {
+                switch (event.getStateTransition().getToState()) {
+                    case OPEN, HALF_OPEN -> brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
+                    case CLOSED -> brokerStatusService.markNormal("FYERS");
+                    default -> {
+                    }
                 }
-            }
-        });
-        Gauge.builder("broker_circuit_state", fyersCircuitBreaker, breaker -> mapState(breaker.getState()))
-                .tag("broker", "FYERS")
-                .register(meterRegistry);
+            });
+            Gauge.builder("broker_circuit_state", fyersCircuitBreaker, breaker -> mapState(breaker.getState()))
+                    .tag("broker", "FYERS")
+                    .register(meterRegistry);
+        } catch (Exception e) {
+            log.error("Failed to initialize FYERS circuit metrics", e);
+        }
     }
 
     public String get(String url, String token) {
-        return execute(url, token, HttpMethod.GET, null);
+        return execute(url, token, HttpMethod.GET, null, null);
+    }
+
+    public String get(String url, String token, Long userId) {
+        return execute(url, token, HttpMethod.GET, null, userId);
     }
 
     public String post(String url, String token, String body) {
-        return execute(url, token, HttpMethod.POST, body);
+        return execute(url, token, HttpMethod.POST, body, null);
+    }
+
+    public String post(String url, String token, String body, Long userId) {
+        return execute(url, token, HttpMethod.POST, body, userId);
     }
 
     public String delete(String url, String token) {
-        return execute(url, token, HttpMethod.DELETE, null);
+        return execute(url, token, HttpMethod.DELETE, null, null);
+    }
+
+    public String delete(String url, String token, Long userId) {
+        return execute(url, token, HttpMethod.DELETE, null, userId);
     }
 
     public String put(String url, String token, String body) {
-        return execute(url, token, HttpMethod.PUT, body);
+        return execute(url, token, HttpMethod.PUT, body, null);
     }
 
-    private String execute(String url, String token, HttpMethod method, String body) {
+    public String put(String url, String token, String body, Long userId) {
+        return execute(url, token, HttpMethod.PUT, body, userId);
+    }
+
+    private String execute(String url, String token, HttpMethod method, String body, Long userId) {
+        return executeWithRefresh(url, token, method, body, userId, true);
+    }
+
+    private String executeWithRefresh(String url, String token, HttpMethod method, String body, Long userId, boolean allowRefresh) {
         Timer.Sample sample = Timer.start(meterRegistry);
         boolean success = false;
         Supplier<String> supplier = () -> doRequest(url, token, method, body);
@@ -94,15 +127,30 @@ public class FyersHttpClient {
         } catch (CallNotPermittedException e) {
             brokerStatusService.markDegraded("FYERS", "CIRCUIT_OPEN");
             metricsService.incrementBrokerFailures();
+            recordFailure(userId, method, url, null, "CIRCUIT_OPEN", e);
             throw new FyersCircuitOpenException("FYERS circuit breaker open", e);
         } catch (FyersRateLimitException e) {
             brokerStatusService.markRateLimited("FYERS", "RATE_LIMIT",
                     java.time.LocalDateTime.now().plusSeconds(Math.max(1, rateLimitBackoffSeconds)));
             metricsService.incrementBrokerFailures();
+            recordFailure(userId, method, url, 429, "RATE_LIMIT", e);
+            throw e;
+        } catch (FyersApiException e) {
+            if (allowRefresh && userId != null && e.getStatusCode() == 401) {
+                Optional<String> refreshed = fyersTokenService.refreshAccessToken(userId);
+                if (refreshed.isPresent()) {
+                    log.info("FYERS token refreshed for user {}, retrying {}", userId, method);
+                    return executeWithRefresh(url, refreshed.get(), method, body, userId, false);
+                }
+            }
+            brokerStatusService.markDegraded("FYERS", "HTTP_ERROR");
+            metricsService.incrementBrokerFailures();
+            recordFailure(userId, method, url, e.getStatusCode(), "HTTP_ERROR", e);
             throw e;
         } catch (Exception e) {
             brokerStatusService.markDegraded("FYERS", "HTTP_ERROR");
             metricsService.incrementBrokerFailures();
+            recordFailure(userId, method, url, null, "HTTP_ERROR", e);
             throw e;
         } finally {
             sample.stop(Timer.builder("broker_call_latency")
@@ -117,7 +165,7 @@ public class FyersHttpClient {
         try {
             HttpHeaders headers = new HttpHeaders();
             if (token != null && !token.isBlank()) {
-                headers.set("Authorization", appId + ":" + token);
+                headers.set("Authorization", "Bearer " + token);
             }
             if (method == HttpMethod.POST || method == HttpMethod.PUT) {
                 headers.setContentType(MediaType.APPLICATION_JSON);
@@ -130,7 +178,10 @@ public class FyersHttpClient {
             brokerStatusService.markRateLimited("FYERS", "RATE_LIMIT",
                     java.time.LocalDateTime.now().plusSeconds(Math.max(1, rateLimitBackoffSeconds)));
             throw new FyersRateLimitException("FYERS rate limit", e);
-        } catch (ResourceAccessException | HttpServerErrorException e) {
+        } catch (HttpServerErrorException e) {
+            throw new FyersServerException("FYERS server error (" + e.getStatusCode().value() + "): " + e.getResponseBodyAsString(),
+                    e.getStatusCode().value(), e);
+        } catch (ResourceAccessException e) {
             log.warn("FYERS network/server error for {}: {}", url, e.getMessage());
             throw e;
         } catch (HttpClientErrorException e) {
@@ -145,5 +196,29 @@ public class FyersHttpClient {
             case HALF_OPEN -> 2;
             default -> 3;
         };
+    }
+
+    private void recordFailure(Long userId, HttpMethod method, String url, Integer status, String reason, Exception e) {
+        log.warn("FYERS request failed method={} url={} status={} userId={} reason={} message={}",
+                method, url, status, userId, reason, e.getMessage());
+        logBroadcastService.error("FYERS request failed: " + reason);
+        HashMap<String, Object> metadata = new HashMap<>();
+        metadata.put("method", method.name());
+        metadata.put("url", url);
+        if (status != null) {
+            metadata.put("status", status);
+        }
+        metadata.put("reason", reason);
+        metadata.put("timestamp", Instant.now().toString());
+        auditEventService.recordEvent(userId, "BROKER", "FYERS_HTTP_ERROR",
+                "FYERS request failed: " + reason, metadata);
+
+        if (e instanceof ResourceAccessException) {
+            long now = System.currentTimeMillis();
+            long last = lastUnreachableEventAt.get();
+            if (now - last > 60000 && lastUnreachableEventAt.compareAndSet(last, now)) {
+                eventPublisher.publishEvent(new BrokerUnreachableEvent("FYERS", "RESOURCE_ACCESS", Instant.now()));
+            }
+        }
     }
 }

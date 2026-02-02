@@ -125,7 +125,7 @@ public class OrderExecutionService {
             }
             String brokerOrderId = null;
             try {
-                brokerOrderId = placeLiveOrder(request);
+                brokerOrderId = placeLiveOrder(request, userId);
                 OrderResponse response = OrderResponse.builder()
                         .status("SUBMITTED")
                         .brokerOrderId(brokerOrderId)
@@ -162,7 +162,7 @@ public class OrderExecutionService {
             return response;
         }
         try {
-            String brokerOrderId = fyersService.modifyOrder(orderId, request);
+            String brokerOrderId = fyersService.modifyOrder(orderId, request, userId);
             OrderResponse response = OrderResponse.builder()
                     .status("MODIFIED")
                     .brokerOrderId(brokerOrderId)
@@ -192,7 +192,7 @@ public class OrderExecutionService {
             return response;
         }
         try {
-            String brokerOrderId = fyersService.cancelOrder(orderId, null);
+            String brokerOrderId = fyersService.cancelOrder(orderId, null, userId);
             OrderResponse response = OrderResponse.builder()
                     .status("CANCELLED")
                     .brokerOrderId(brokerOrderId)
@@ -217,7 +217,7 @@ public class OrderExecutionService {
                 String brokerOrderId = null;
                 try {
                     brokerOrderId = fyersService.placeOrder(symbol, qty, "SELL", "MARKET", 0.0,
-                            clientOrderId != null && !clientOrderId.isBlank() ? clientOrderId : java.util.UUID.randomUUID().toString());
+                            clientOrderId != null && !clientOrderId.isBlank() ? clientOrderId : java.util.UUID.randomUUID().toString(), userId);
                     OrderResponse response = OrderResponse.builder()
                             .status("SUBMITTED")
                             .brokerOrderId(brokerOrderId)
@@ -250,11 +250,11 @@ public class OrderExecutionService {
         });
     }
 
-    private String placeLiveOrder(PlaceOrderRequest request) {
+    private String placeLiveOrder(PlaceOrderRequest request, Long userId) {
         String type = request.getOrderType().name();
         double price = request.getPrice() != null ? request.getPrice().doubleValue() : 0.0;
         return fyersService.placeOrder(request.getSymbol(), request.getQty(), request.getSide().name(), type, price,
-                request.getClientOrderId() != null ? request.getClientOrderId() : java.util.UUID.randomUUID().toString());
+                request.getClientOrderId() != null ? request.getClientOrderId() : java.util.UUID.randomUUID().toString(), userId);
     }
 
     private void recordAudit(Long userId, String action, String status, String brokerOrderId, String paperOrderId,

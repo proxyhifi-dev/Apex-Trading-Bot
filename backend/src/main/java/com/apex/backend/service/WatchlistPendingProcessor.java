@@ -16,11 +16,12 @@ import java.util.List;
 public class WatchlistPendingProcessor {
 
     private final WatchlistItemRepository watchlistItemRepository;
+    private final ScheduledTaskGuard scheduledTaskGuard;
 
     @Scheduled(fixedDelayString = "${apex.watchlist.pending-interval-ms:120000}")
     @Transactional
     public void scheduledProcessPendingItems() {
-        processPendingItems();
+        scheduledTaskGuard.run("watchlistPendingProcessor", this::processPendingItems);
     }
 
     @Transactional

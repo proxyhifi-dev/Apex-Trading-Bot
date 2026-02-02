@@ -22,11 +22,12 @@ public class ScannerRunSweeper {
     private static final Duration RUNNING_TIMEOUT = Duration.ofMinutes(20);
 
     private final ScannerRunRepository scannerRunRepository;
+    private final ScheduledTaskGuard scheduledTaskGuard;
 
     @Scheduled(fixedDelayString = "${apex.scanner.sweeper-interval-ms:120000}")
     @Transactional
     public void scheduledSweepStuckRuns() {
-        sweepStuckRuns();
+        scheduledTaskGuard.run("scannerRunSweeper", this::sweepStuckRuns);
     }
 
     @Transactional
